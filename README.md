@@ -1,0 +1,1 @@
+this is a tool ive been building to replicate and extend analyses from one paper towards my quantum reliability msc thesis. its a work in progress and so is this documentation ;) sorry for brevity, will improve this soon <3 

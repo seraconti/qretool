@@ -1,0 +1,17 @@
+{
+  "dataset_hash": "sha256:2daa63ca69345f55980e5bc445063e79bdff11527c6c0a2b60e1c6606bdf1da2",
+  "dataset_path": "tool/datasets/6D2S/120423_6D2S_qubit1_before.pickle",
+  "figure_node_label": null,
+  "git_commit": "nogit",
+  "job_file": "qre_tool/core/job.py",
+  "job_file_hash": "sha256:a636f1ff4f7ee2e0badc02a29f41b05d3829fc764c4e079bcbc5555e84325edf",
+  "node_name": "q1_14h_1204_dataset_beforejump_fidelity_raw",
+  "pipeline_steps": [
+    "load_df(dataset=Dataset(path=PosixPath('FOR ZENODO/Main/Fig 2/qubit1.pickle'), schema=None, qubit=None, device=None, duration_h=None, extra={}))",
+    "lookup_prior(fields=['frequency', 'Rabi_frequency'], aliases={'frequency': 'qubit_frequency'})",
+    "filter",
+    "final_filter_stage",
+    "fidelity_raw"
+  ],
+  "targets_rendered": []
+}

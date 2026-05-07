@@ -1,0 +1,21 @@
+{
+  "dataset_hash": "sha256:df97c9f8d73a3d056629ebcd46c47ce5ba739d419ddc0f2ec7a4edb79fdcfa57",
+  "dataset_path": "tool/datasets/6D2S/290623_6D2S_qubit6.pickle",
+  "figure_node_label": "AllanPlot\\ngit:nogit",
+  "git_commit": "nogit",
+  "job_file": "qre_tool/core/job.py",
+  "job_file_hash": "sha256:a636f1ff4f7ee2e0badc02a29f41b05d3829fc764c4e079bcbc5555e84325edf",
+  "node_name": "q6_13h_2906_dataset_Allan",
+  "pipeline_steps": [
+    "load_df(dataset=Dataset(path=PosixPath('FOR ZENODO/Main/Fig 2/qubit6.pickle'), schema=None, qubit=None, device=None, duration_h=None, extra={}))",
+    "lookup_prior(fields=['frequency', 'Rabi_frequency'], aliases={'frequency': 'qubit_frequency'})",
+    "filter",
+    "final_filter_stage",
+    "interpolate",
+    "allan(fractional=True, carrier_col='qubit_frequency')"
+  ],
+  "targets_rendered": [
+    "static",
+    "academic"
+  ]
+}

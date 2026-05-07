@@ -1,0 +1,19 @@
+{
+  "dataset_hash": "sha256:084e2dd245e7067067e08ec04b2927b96cc1df5559724c827e7cee5ef15df90b",
+  "dataset_path": "tool/datasets/2x2/110723_2x2_qubit3.pickle",
+  "figure_node_label": "AllanPlot\\ngit:nogit",
+  "git_commit": "nogit",
+  "job_file": "qre_tool/core/job.py",
+  "job_file_hash": "sha256:a636f1ff4f7ee2e0badc02a29f41b05d3829fc764c4e079bcbc5555e84325edf",
+  "node_name": "q3_2x2_17h_1107_dataset_Allan",
+  "pipeline_steps": [
+    "filter",
+    "final_filter_stage",
+    "interpolate",
+    "allan(fractional=False, carrier_col='frequency')"
+  ],
+  "targets_rendered": [
+    "static",
+    "academic"
+  ]
+}
