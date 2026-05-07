@@ -1,0 +1,21 @@
+{
+  "dataset_hash": "sha256:2d72a3084a14f58163d1ea49538307d91c8913faf9079d79619fc0fc2561f367",
+  "dataset_path": "tool/datasets/6D2S/070723_6D2S_qubit5.pickle",
+  "figure_node_label": "FidelityPlot\\ngit:nogit",
+  "git_commit": "nogit",
+  "job_file": "qre_tool/core/job.py",
+  "job_file_hash": "sha256:a636f1ff4f7ee2e0badc02a29f41b05d3829fc764c4e079bcbc5555e84325edf",
+  "node_name": "q5_100h_0707_dataset_Fidelity",
+  "pipeline_steps": [
+    "load_df(dataset=Dataset(path=PosixPath('FOR ZENODO/Main/Fig 2/qubit5.pickle'), schema=None, qubit=None, device=None, duration_h=None, extra={}))",
+    "lookup_prior(fields=['frequency', 'Rabi_frequency'], aliases={'frequency': 'qubit_frequency'})",
+    "filter",
+    "final_filter_stage",
+    "interpolate",
+    "fidelity_interp"
+  ],
+  "targets_rendered": [
+    "static",
+    "academic"
+  ]
+}

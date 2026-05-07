@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+from pathlib import Path
+
+
+def hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8192), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def hash_string(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+
+def get_git_commit() -> str:
+    repo_root = Path(__file__).resolve().parent
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return "nogit"
+    commit = completed.stdout.strip()
+    return commit or "nogit"
+
+
+def build_prov_record(
+    job_file: str | Path,
+    job_file_hash: str,
+    dataset_path: str | Path,
+    dataset_hash: str,
+    git_commit: str,
+    pipeline_steps: list[str],
+    targets: list[str],
+    node_name: str,
+    figure_node_label: str | None = None,
+) -> dict[str, object]:
+    return {
+        "node_name": node_name,
+        "job_file": str(job_file),
+        "job_file_hash": job_file_hash,
+        "dataset_path": str(dataset_path),
+        "dataset_hash": dataset_hash,
+        "git_commit": git_commit,
+        "pipeline_steps": list(pipeline_steps),
+        "targets_rendered": list(targets),
+        "figure_node_label": figure_node_label,
+    }
+
+
+def _short_hash(value: str, length: int = 6) -> str:
+    stripped = value.removeprefix("sha256:")
+    return stripped[:length]
+
+
+def _mermaid_label(text: str) -> str:
+    escaped = text.replace("\n", "\\n").replace('"', "\\\"")
+    return f'"{escaped}"'
+
+
+def save_prov(record: dict[str, object], out_dir: Path, node_name: str) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    json_path = out_dir / f"{node_name}.prov.json"
+    md_path = out_dir / f"{node_name}.prov.md"
+
+    json_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    dataset_name = Path(str(record["dataset_path"])).name
+    dataset_hash = _short_hash(str(record["dataset_hash"]))
+    steps = [str(step) for step in record.get("pipeline_steps", [])]
+    git_commit = str(record["git_commit"])
+    figure_node_label = record.get("figure_node_label")
+
+    lines = ["graph LR"]
+    lines.append(f"  A[{_mermaid_label(f'{dataset_name}\\n{dataset_hash}')}]")
+    previous_node = "A"
+
+    for index, step in enumerate(steps, start=1):
+        node_id = chr(ord("A") + index)
+        lines.append(f"  {previous_node} --> {node_id}[{_mermaid_label(step)}]")
+        previous_node = node_id
+
+    figure_node = chr(ord("A") + len(steps) + 1)
+    if isinstance(figure_node_label, str) and figure_node_label.strip():
+        final_label = figure_node_label
+    else:
+        final_label = f"{node_name}\\ngit:{git_commit}"
+    lines.append(f"  {previous_node} --> {figure_node}[{_mermaid_label(final_label)}]")
+
+    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
