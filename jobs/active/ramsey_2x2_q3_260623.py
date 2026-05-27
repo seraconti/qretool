@@ -17,7 +17,6 @@ configure_ramsey_job(
         extra={"run_name": 'q3_2x2_14h_2606_dataset'},
     ),
     profile='overnight',
-    plot_mode='dedicated',
     include_fidelity=False,
     figure_prefix='q3_2x2_14h_2606_dataset',
 )

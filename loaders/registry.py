@@ -72,21 +72,48 @@ def _load_yaml(path: Path, meta: dict[str, Any]) -> pd.DataFrame:
 
 
 def _load_hdf(path: Path, meta: dict[str, Any]) -> pd.DataFrame:
+    import h5py
+    
     key = meta.get("key")
-    if key is not None:
-        return _ensure_dataframe(pd.read_hdf(path, key=key))
+    
+    with h5py.File(path, "r") as f:
+        keys = list(f.keys())
+        
+        if not keys:
+            raise ValueError(f"HDF5 file {path} does not contain any datasets")
+        
+        if key is None:
+            if len(keys) > 1:
+                available = ", ".join(keys)
+                raise ValueError(
+                    f"HDF5 file {path} contains multiple datasets ({available}); pass meta={{'key': '<dataset-key>'}}"
+                )
+            key = keys[0]
+        elif key not in f:
+            raise ValueError(f"Dataset '{key}' not found in {path}")
+        
+        dataset = f[key]
+        data = dataset[()]
+        
+        # Convert to DataFrame
+        if len(data.shape) == 1:
+            df = pd.DataFrame({key: data})
+        elif len(data.shape) == 2:
+            df = pd.DataFrame(data)
+        else:
+            raise ValueError(f"Dataset has unsupported shape {data.shape}")
 
-    with pd.HDFStore(path, mode="r") as store:
-        keys = list(store.keys())
-
-    if not keys:
-        raise ValueError(f"HDF5 file {path} does not contain any tables")
-    if len(keys) > 1:
-        available = ", ".join(keys)
-        raise ValueError(
-            f"HDF5 file {path} contains multiple tables ({available}); pass meta={'key': '<table-key>'}"
-        )
-    return _ensure_dataframe(pd.read_hdf(path, key=keys[0]))
+        # Preserve selected file-level metadata for job-specific time semantics.
+        # (Shared steps deliberately do not interpret this; jobs may opt in.)
+        df.attrs["hdf5"] = {
+            "path": str(path),
+            "key": str(key),
+            "measurement_time": str(f.attrs.get("measurement_time")) if "measurement_time" in f.attrs else None,
+            "completed_time": str(f.attrs.get("completed_time")) if "completed_time" in f.attrs else None,
+            "uuid_ns": int(f.attrs["uuid"]) if "uuid" in f.attrs else None,
+            "application": str(f.attrs.get("application")) if "application" in f.attrs else None,
+        }
+        return df
 
 
 @register_loader(".csv")

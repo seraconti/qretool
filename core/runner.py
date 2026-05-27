@@ -11,10 +11,16 @@ from plots.targets import RENDER_TARGETS
 
 
 def _job_file(job: Job) -> Path:
-    module = sys.modules.get(job.__module__)
+    # Prefer explicit job_file attached at import time (main._module_from_path sets this).
+    explicit = getattr(job, "job_file", None)
+    if explicit is not None:
+        return Path(explicit).resolve()
+
+    # Fallback: attempt to locate via job.__module__ (legacy behavior)
+    module = sys.modules.get(getattr(job, "__module__", ""))
     module_file = getattr(module, "__file__", None) if module is not None else None
     if module_file is None:
-        raise ValueError(f"Cannot resolve job file for module '{job.__module__}'")
+        raise ValueError("Cannot resolve job file: attach 'job.job_file' when importing job modules")
     return Path(module_file).resolve()
 
 
@@ -22,9 +28,13 @@ def _project_root(job_file: Path) -> Path:
     return job_file.parents[2]
 
 
-def _resolve_dataset_path(job_file: Path, dataset_path: Path) -> Path:
+def _resolve_dataset_path(job_file: Path, dataset_path: Path, data_root: Path | None = None) -> Path:
     if dataset_path.is_absolute():
         return dataset_path
+    # If caller provided a data_root, resolve relative to it (explicit override)
+    if data_root is not None:
+        return (Path(data_root) / dataset_path).resolve()
+    # Default: resolve relative to the project root inferred from the job file
     return (_project_root(job_file) / dataset_path).resolve()
 
 
@@ -80,7 +90,7 @@ def _load_node(job: Job, ordered_ids: list[str]) -> _DAGNode:
     raise ValueError("Job does not contain a load node")
 
 
-def run_job(job: Job, out_dir: Path, force: bool = False) -> None:
+def run_job(job: Job, out_dir: Path, force: bool = False, data_root: Path | None = None) -> None:
     job_file = _job_file(job)
     job_source = job_file.read_text(encoding="utf-8")
     project_root = _project_root(job_file)
@@ -118,15 +128,35 @@ def run_job(job: Job, out_dir: Path, force: bool = False) -> None:
             for target_name in sink.targets:
                 target = RENDER_TARGETS[target_name]
                 target(plot, result, job_out_dir)
+            # collect all dataset load nodes reachable by this sink (main + companions)
             ancestors = _ancestors(job, sink.input.node_id)
-            load_node = _load_node(job, ordered_ids)
-            dataset = load_node.kwargs["dataset"]
-            dataset_path = _resolve_dataset_path(job_file, Path(dataset.path))
+            dataset_nodes = [node for node_id, node in job.dag.items() if node_id in ancestors and node.fn.__name__ in {"_load_dataset", "_load_dataframe_raw"}]
+            dataset_paths: list[Path] = []
+            dataset_hashes: list[str] = []
+            for node in dataset_nodes:
+                ds = node.kwargs.get("dataset")
+                if ds is None:
+                    continue
+                p = _resolve_dataset_path(job_file, Path(ds.path), data_root=data_root)
+                dataset_paths.append(p)
+                try:
+                    dataset_hashes.append(f"sha256:{hash_file(p)}")
+                except Exception:
+                    dataset_hashes.append("sha256:unreadable")
+
+            # Build provenance record including lists of dataset paths/hashes
+            # stringify dataset paths: prefer project-relative when possible, else absolute
+            def _fmt(p: Path) -> str:
+                try:
+                    return str(p.relative_to(project_root))
+                except Exception:
+                    return str(p)
+
             record = build_prov_record(
                 job_file=job_file.relative_to(project_root),
                 job_file_hash=f"sha256:{job_hash_full}",
-                dataset_path=dataset.path,
-                dataset_hash=f"sha256:{hash_file(dataset_path)}",
+                dataset_paths=[_fmt(p) for p in dataset_paths],
+                dataset_hashes=dataset_hashes,
                 git_commit=git_commit,
                 pipeline_steps=[
                     _format_step(job.dag[node_id])
@@ -144,14 +174,31 @@ def run_job(job: Job, out_dir: Path, force: bool = False) -> None:
         with (job_out_dir / f"{sink.name}.pkl").open("wb") as handle:
             pickle.dump(result, handle)
         ancestors = _ancestors(job, sink.node.node_id)
-        load_node = _load_node(job, ordered_ids)
-        dataset = load_node.kwargs["dataset"]
-        dataset_path = _resolve_dataset_path(job_file, Path(dataset.path))
+        dataset_nodes = [node for node_id, node in job.dag.items() if node_id in ancestors and node.fn.__name__ in {"_load_dataset", "_load_dataframe_raw"}]
+        dataset_paths: list[Path] = []
+        dataset_hashes: list[str] = []
+        for node in dataset_nodes:
+            ds = node.kwargs.get("dataset")
+            if ds is None:
+                continue
+            p = _resolve_dataset_path(job_file, Path(ds.path), data_root=data_root)
+            dataset_paths.append(p)
+            try:
+                dataset_hashes.append(f"sha256:{hash_file(p)}")
+            except Exception:
+                dataset_hashes.append("sha256:unreadable")
+
+        def _fmt(p: Path) -> str:
+            try:
+                return str(p.relative_to(project_root))
+            except Exception:
+                return str(p)
+
         record = build_prov_record(
             job_file=job_file.relative_to(project_root),
             job_file_hash=f"sha256:{job_hash_full}",
-            dataset_path=dataset.path,
-            dataset_hash=f"sha256:{hash_file(dataset_path)}",
+            dataset_paths=[_fmt(p) for p in dataset_paths],
+            dataset_hashes=dataset_hashes,
             git_commit=git_commit,
             pipeline_steps=[
                 _format_step(job.dag[node_id])

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import inspect
 import re
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -11,7 +11,9 @@ import pandas as pd
 
 from loaders.registry import load as load_dataframe
 from core.dataset import Dataset
+from core.types import Norm
 from plots.base import BasePlot
+from transforms.lookup_prior import check_unix_s
 
 
 @dataclass(slots=True)
@@ -45,7 +47,7 @@ class _MaterializeSink:
     name: str
 
 
-def _load_dataset(dataset: Dataset) -> object:
+def _load_dataset(dataset: Dataset) -> Norm:
     frame = load_dataframe(dataset.path, meta=dict(dataset.extra))
     if not isinstance(frame, pd.DataFrame):
         raise TypeError("Dataset loader must return a pandas.DataFrame")
@@ -77,7 +79,7 @@ def _load_dataset(dataset: Dataset) -> object:
     order = np.argsort(t_raw)
     t_raw = t_raw[order]
     f_hz = f_hz[order]
-    t_s = t_raw - float(t_raw[0])
+    t_rel_s = t_raw - float(t_raw[0])
 
     meta = dict(dataset.extra)
     meta.update(
@@ -87,41 +89,65 @@ def _load_dataset(dataset: Dataset) -> object:
             "qubit": dataset.qubit,
             "device": dataset.device,
             "duration_h": dataset.duration_h,
-            "n_points": int(len(t_s)),
+            "n_points": int(len(t_rel_s)),
         }
     )
-    # try to infer an absolute run start from the filename (DDMMYY_ prefix) + earliest timestamp
-    date_match = re.match(r"^(\d{2})(\d{2})(\d{2})_", Path(dataset.path).stem)
-    if date_match is not None:
-        try:
-            day = int(date_match.group(1))
-            month = int(date_match.group(2))
-            year = 2000 + int(date_match.group(3))
-            run_day = pd.Timestamp(year=year, month=month, day=day)
-            run_start = run_day + pd.to_timedelta(float(np.min(t_s)), unit="s")
-            meta["run_start_unix_s"] = float(run_start.value / 1e9)
-        except Exception:
-            meta["run_start_unix_s"] = float(t_raw[0])
+    # Determine run_start_unix_s via three resolution levels (see TIME_SEMANTICS.md):
+    #   1. Explicit: Dataset.extra['run_start_unix_s'] already in meta — validate and use.
+    #   2. date_only_midnight: DDMMYY_ filename prefix — midnight of that date (local naive).
+    #   3. No valid source → raise; do NOT fall back to t_raw[0] (yields ~1970 epoch).
+    if meta.get("run_start_unix_s") is not None:
+        meta["run_start_unix_s"] = check_unix_s(meta["run_start_unix_s"], label="Dataset.extra['run_start_unix_s']")
+        meta["run_start_resolution"] = "explicit"
     else:
-        try:
-            meta["run_start_unix_s"] = float(t_raw[0])
-        except Exception:
-            meta["run_start_unix_s"] = None
+        date_match = re.match(r"^(\d{2})(\d{2})(\d{2})_", Path(dataset.path).stem)
+        if date_match is not None:
+            try:
+                day = int(date_match.group(1))
+                month = int(date_match.group(2))
+                year = 2000 + int(date_match.group(3))
+                run_day = pd.Timestamp(year=year, month=month, day=day)
+                meta["run_start_unix_s"] = float(run_day.value / 1e9)
+                meta["run_start_resolution"] = "date_only_midnight"
+                warnings.warn(
+                    f"[{meta['dataset_id']}] run_start_unix_s derived from DDMMYY filename prefix "
+                    f"as midnight local time (resolution: date_only_midnight). Intra-day "
+                    f"precision is lost; a calibration from earlier the same day or late "
+                    f"the previous day may be selected incorrectly. "
+                    f"Provide Dataset.extra['run_start_unix_s'] for precision.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            except Exception as exc:
+                raise ValueError(
+                    f"Cannot determine run start time for '{meta['dataset_id']}': DDMMYY prefix "
+                    f"found but parsing failed ({exc}). "
+                    f"Provide Dataset.extra['run_start_unix_s'] explicitly."
+                ) from exc
+        else:
+            raise ValueError(
+                f"Cannot determine run start time for '{meta['dataset_id']}'. "
+                f"Provide Dataset.extra['run_start_unix_s'] explicitly, "
+                f"or use a filename with a DDMMYY_ prefix encoding the run date."
+            )
 
-    # default delta (relative to mean) and default omega placeholder
+    # default delta (relative to mean); rabi drive is not synthesized here
     delta_hz = f_hz - float(np.mean(f_hz))
-    omega_hz_arr = np.full_like(delta_hz, 2.0e6, dtype=float)
+    meta.setdefault("rabi_source", "missing")
 
-    norm = {
-        "t_s": t_s,
+    norm = Norm({
+        "t_rel_s": t_rel_s,
         "delta_hz": delta_hz,
-        "omega_hz": omega_hz_arr,
         "raw_frequency_hz": f_hz,
         "meta": meta,
-    }
+    })
     if "normalised chi-square" in frame.columns:
         chi = pd.to_numeric(frame["normalised chi-square"], errors="coerce").to_numpy(dtype=float)[valid][order]
         norm["chi_squared"] = chi
+    if "T2star" in frame.columns:
+        norm["T2star_s"] = pd.to_numeric(frame["T2star"], errors="coerce").to_numpy(dtype=float)[valid][order]
+    if "T2star error" in frame.columns:
+        norm["T2star_error_s"] = pd.to_numeric(frame["T2star error"], errors="coerce").to_numpy(dtype=float)[valid][order]
     return norm
 
 
@@ -138,23 +164,11 @@ def _safe_name(value: str) -> str:
     return cleaned or "node"
 
 
-def _caller_module_name() -> str:
-    frame = inspect.currentframe()
-    if frame is None or frame.f_back is None:
-        return "__main__"
-    caller = frame.f_back
-    try:
-        return str(caller.f_globals.get("__name__", "__main__"))
-    finally:
-        del frame
-
-
 class Job:
     def __init__(self, name: str) -> None:
         self.name = name
         self.dag: dict[str, _DAGNode] = {}
         self.sinks: list[_FigureSink | _MaterializeSink] = []
-        self.__module__ = _caller_module_name()
         self._node_counts: dict[str, int] = {}
 
     def _allocate_node_id(self, base_name: str) -> str:

@@ -21,7 +21,6 @@ configure_ramsey_job(
     job,
     main_node,
     profile='overnight',
-    plot_mode='dedicated',
     include_fidelity=False,
     figure_prefix='q1_2x2_16h_0307_dataset',
 )

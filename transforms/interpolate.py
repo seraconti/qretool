@@ -44,58 +44,57 @@ def run(norm: Mapping[str, object], config: Mapping[str, object]) -> Norm:
     if not isinstance(norm, Mapping):
         raise TypeError("interpolate.run expects normalized dataset mapping input.")
 
-    t_s = np.asarray(norm["t_s"], dtype=float)
+    if "t_rel_s" not in norm:
+        raise KeyError("interpolate.run requires 't_rel_s' (relative seconds) in normalized mapping")
+    t_rel_s = np.asarray(norm["t_rel_s"], dtype=float)
     delta_hz = np.asarray(norm["delta_hz"], dtype=float)
-    omega_hz = np.asarray(norm["omega_hz"], dtype=float)
+    if "omega_hz" in norm:
+        raise KeyError("interpolate.run no longer accepts 'omega_hz'; use 'rabi_hz' if provided")
+    rabi_hz = np.asarray(norm["rabi_hz"], dtype=float) if "rabi_hz" in norm else None
     raw_frequency_hz = np.asarray(norm["raw_frequency_hz"], dtype=float) if "raw_frequency_hz" in norm else None
-    t_unix_s = np.asarray(norm["t_unix_s"], dtype=float) if "t_unix_s" in norm else None
 
-    if len(t_s) < 2:
+    if len(t_rel_s) < 2:
         raise ValueError("Interpolation requires at least two points.")
 
-    order = np.argsort(t_s)
-    t_s = t_s[order]
+    order = np.argsort(t_rel_s)
+    t_rel_s = t_rel_s[order]
     delta_hz = delta_hz[order]
-    omega_hz = omega_hz[order]
+    if rabi_hz is not None:
+        rabi_hz = rabi_hz[order]
     if raw_frequency_hz is not None and len(raw_frequency_hz) == len(order):
         raw_frequency_hz = raw_frequency_hz[order]
-    if t_unix_s is not None and len(t_unix_s) == len(order):
-        t_unix_s = t_unix_s[order]
 
-    t_s = t_s - float(t_s[0])
-    x_uniform = np.linspace(0.0, float(t_s[-1]), num=len(t_s))
-    delta_uniform = scipy.interpolate.pchip_interpolate(t_s, np.nan_to_num(delta_hz), x_uniform)
+    t_rel_s = t_rel_s - float(t_rel_s[0])
+    x_uniform = np.linspace(0.0, float(t_rel_s[-1]), num=len(t_rel_s))
+    delta_uniform = scipy.interpolate.pchip_interpolate(t_rel_s, np.nan_to_num(delta_hz), x_uniform)
 
-    if len(omega_hz) == len(t_s):
-        omega_uniform = scipy.interpolate.pchip_interpolate(t_s, np.nan_to_num(omega_hz), x_uniform)
-    else:
-        omega_uniform = np.full_like(x_uniform, float(np.mean(omega_hz)), dtype=float)
+    rabi_uniform = None
+    if rabi_hz is not None:
+        if len(rabi_hz) == len(t_rel_s):
+            rabi_uniform = scipy.interpolate.pchip_interpolate(t_rel_s, np.nan_to_num(rabi_hz), x_uniform)
+        else:
+            raise ValueError("rabi_hz length must match t_rel_s when provided")
 
     raw_uniform = None
-    if raw_frequency_hz is not None and len(raw_frequency_hz) == len(t_s):
-        raw_uniform = scipy.interpolate.pchip_interpolate(t_s, np.nan_to_num(raw_frequency_hz), x_uniform)
+    if raw_frequency_hz is not None and len(raw_frequency_hz) == len(t_rel_s):
+        raw_uniform = scipy.interpolate.pchip_interpolate(t_rel_s, np.nan_to_num(raw_frequency_hz), x_uniform)
 
-    unix_uniform = None
-    if t_unix_s is not None and len(t_unix_s) == len(t_s):
-        unix_uniform = scipy.interpolate.pchip_interpolate(t_s, np.nan_to_num(t_unix_s), x_uniform)
-
-    idx = np.searchsorted(t_s, x_uniform)
-    left = np.clip(idx - 1, 0, len(t_s) - 1)
-    right = np.clip(idx, 0, len(t_s) - 1)
-    nearest = np.where(np.abs(x_uniform - t_s[left]) <= np.abs(t_s[right] - x_uniform), left, right)
+    idx = np.searchsorted(t_rel_s, x_uniform)
+    left = np.clip(idx - 1, 0, len(t_rel_s) - 1)
+    right = np.clip(idx, 0, len(t_rel_s) - 1)
+    nearest = np.where(np.abs(x_uniform - t_rel_s[left]) <= np.abs(t_rel_s[right] - x_uniform), left, right)
 
     out: Norm = {
-        "t_s": np.asarray(x_uniform, dtype=float),
+        "t_rel_s": np.asarray(x_uniform, dtype=float),
         "delta_hz": np.asarray(delta_uniform, dtype=float),
-        "omega_hz": np.asarray(omega_uniform, dtype=float),
         "meta": dict(norm["meta"]),
     }
+    if rabi_uniform is not None:
+        out["rabi_hz"] = np.asarray(rabi_uniform, dtype=float)
     if raw_uniform is not None:
         out["raw_frequency_hz"] = np.asarray(raw_uniform, dtype=float)
-    if unix_uniform is not None:
-        out["t_unix_s"] = np.asarray(unix_uniform, dtype=float)
 
-    handled_keys = {"t_s", "delta_hz", "omega_hz", "raw_frequency_hz", "t_unix_s", "meta"}
+    handled_keys = {"t_rel_s", "delta_hz", "rabi_hz", "raw_frequency_hz", "meta"}
     for key, value in norm.items():
         if key in handled_keys:
             continue
@@ -107,15 +106,15 @@ def run(norm: Mapping[str, object], config: Mapping[str, object]) -> Norm:
 
             arr_sorted = arr[order]
             if np.issubdtype(arr_sorted.dtype, np.number):
-                out[key] = scipy.interpolate.pchip_interpolate(t_s, np.nan_to_num(arr_sorted.astype(float)), x_uniform)
+                out[key] = scipy.interpolate.pchip_interpolate(t_rel_s, np.nan_to_num(arr_sorted.astype(float)), x_uniform)
             else:
                 out[key] = arr_sorted[nearest]
         except Exception:
             out[key] = value
 
-    out["meta"]["n_points"] = int(len(out["t_s"]))
-    out["meta"]["duration_h"] = float((np.max(out["t_s"]) - np.min(out["t_s"])) / 3600.0)
-    n_real, n_interp = _real_vs_interpolated_counts(t_s, out["t_s"])
+    out["meta"]["n_points"] = int(len(out["t_rel_s"]))
+    out["meta"]["duration_h"] = float((np.max(out["t_rel_s"]) - np.min(out["t_rel_s"])) / 3600.0)
+    n_real, n_interp = _real_vs_interpolated_counts(t_rel_s, out["t_rel_s"])
     total = max(1, n_real + n_interp)
     out["meta"]["n_real_points"] = int(n_real)
     out["meta"]["n_interpolated_points"] = int(n_interp)
@@ -123,7 +122,7 @@ def run(norm: Mapping[str, object], config: Mapping[str, object]) -> Norm:
     out["meta"]["pct_interpolated_points"] = float(100.0 * n_interp / total)
 
     print(
-        f"[interpolate] dataset={out['meta']['dataset_id']} input_points={len(t_s)} output_points={len(out['t_s'])} real={out['meta']['pct_real_points']:.1f}% interp={out['meta']['pct_interpolated_points']:.1f}%",
+        f"[interpolate] dataset={out['meta']['dataset_id']} input_points={len(t_rel_s)} output_points={len(out['t_rel_s'])} real={out['meta']['pct_real_points']:.1f}% interp={out['meta']['pct_interpolated_points']:.1f}%",
         flush=True,
     )
     return out

@@ -4,8 +4,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Callable
 
+import pandas as pd
+
 from analyzers.allan import run as run_allan
-from analyzers.fidelity import run as run_fidelity
+from analyzers.fidelity import make_inputs_from_norm as _fidelity_make_inputs
+from analyzers.fidelity import run as _run_fidelity
 from analyzers.tlf import run as run_tlf
 from core.dataset import Dataset
 from core.job import Job
@@ -14,6 +17,7 @@ from plots.fidelity_plot import FidelityPlot
 from plots.tlf_plot import TLFPlot
 from transforms.filter import run as run_filter
 from transforms.interpolate import run as run_interpolate
+from transforms.lookup_prior import check_unix_s
 
 
 RAMSEY_CONFIG: dict[str, object] = {
@@ -41,6 +45,28 @@ def _copy_config(profile: str) -> dict[str, object]:
     return config
 
 
+def run_start_unix_s_from_hdf5(path: str | Path) -> float:
+    """Derive run_start_unix_s from core-tools HDF5 measurement_time.
+
+    The HDF5 attribute is a naive local timestamp; we keep it naive-as-UTC
+    and validate with check_unix_s.
+    """
+    try:
+        import h5py
+    except ImportError as exc:
+        raise ImportError("h5py is required to read measurement_time from HDF5") from exc
+
+    file_path = Path(path)
+    with h5py.File(file_path, "r") as handle:
+        measurement_time = handle.attrs.get("measurement_time")
+
+    if measurement_time is None:
+        raise KeyError(f"HDF5 file {file_path} is missing measurement_time attribute")
+
+    run_start_local_dt = pd.Timestamp(str(measurement_time))
+    return check_unix_s(float(run_start_local_dt.value / 1e9), label="run_start_unix_s")
+
+
 def _filter_step(config: Mapping[str, object]) -> Callable[[dict[str, object]], dict[str, object]]:
     def step(norm: dict[str, object]) -> dict[str, object]:
         return run_filter(norm, config, None)
@@ -64,7 +90,7 @@ def _allan_step(config: Mapping[str, object]) -> Callable[[dict[str, object]], o
 
 def _fidelity_step(config: Mapping[str, object]) -> Callable[[dict[str, object]], object]:
     def step(norm: dict[str, object]) -> object:
-        return run_fidelity(norm, config)
+        return _run_fidelity(_fidelity_make_inputs(norm, config))
 
     return step
 
@@ -81,9 +107,9 @@ def _tlf_step() -> Callable[[dict[str, object]], dict[str, object]]:
             raise KeyError("TLF analysis requires 'raw_frequency_hz' or 'delta_hz' in normalized mapping")
 
         # timestamps (seconds, relative to start) required for dynamics computation
-        if "t_s" not in norm:
-            raise KeyError("TLF analysis requires 't_s' (relative timestamps in seconds) in normalized mapping for dynamics")
-        timestamps = norm["t_s"]
+        if "t_rel_s" not in norm:
+            raise KeyError("TLF analysis requires 't_rel_s' (relative seconds) in normalized mapping for dynamics")
+        timestamps = norm["t_rel_s"]
 
         result = run_tlf(values_hz, timestamps)
         return {
@@ -95,7 +121,11 @@ def _tlf_step() -> Callable[[dict[str, object]], dict[str, object]]:
     return step
 
 
-def _final_stage(bundle: dict[str, object]) -> dict[str, object]:
+def _final_stage(bundle: object) -> dict[str, object]:
+    from transforms.filter import FilterResult
+    if isinstance(bundle, FilterResult):
+        return dict(bundle.final_norm)
+    # legacy dict path (unmigrated callers)
     return dict(bundle["stages"][bundle["final_stage"]])
 
 
@@ -104,15 +134,12 @@ def configure_ramsey_job(
     dataset: object,
     *,
     profile: str,
-    plot_mode: str,
     include_fidelity: bool,
     include_tlf: bool = False,
     allan_fractional: bool = False,
-    allan_carrier_col: str = "frequency",
+    allan_carrier_col: str = "qubit_frequency_hz",
     figure_prefix: str | None = None,
 ) -> None:
-    del plot_mode
-
     config = _copy_config(profile)
     # dataset may be a Dataset (to load) or a pre-registered NodeHandle (already loaded/enriched)
     if hasattr(dataset, "node_id"):

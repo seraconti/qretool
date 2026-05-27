@@ -37,20 +37,25 @@ def get_git_commit() -> str:
 def build_prov_record(
     job_file: str | Path,
     job_file_hash: str,
-    dataset_path: str | Path,
-    dataset_hash: str,
+    dataset_paths: list[str],
+    dataset_hashes: list[str],
     git_commit: str,
     pipeline_steps: list[str],
     targets: list[str],
     node_name: str,
     figure_node_label: str | None = None,
 ) -> dict[str, object]:
+    # keep backwards-compatible top-level fields for the primary dataset
+    primary_path = dataset_paths[0] if dataset_paths else ""
+    primary_hash = dataset_hashes[0] if dataset_hashes else ""
     return {
         "node_name": node_name,
         "job_file": str(job_file),
         "job_file_hash": job_file_hash,
-        "dataset_path": str(dataset_path),
-        "dataset_hash": dataset_hash,
+        "dataset_path": str(primary_path),
+        "dataset_hash": primary_hash,
+        "dataset_paths": list(dataset_paths),
+        "dataset_hashes": list(dataset_hashes),
         "git_commit": git_commit,
         "pipeline_steps": list(pipeline_steps),
         "targets_rendered": list(targets),
@@ -76,22 +81,37 @@ def save_prov(record: dict[str, object], out_dir: Path, node_name: str) -> None:
 
     json_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    dataset_name = Path(str(record["dataset_path"])).name
-    dataset_hash = _short_hash(str(record["dataset_hash"]))
+    # Support multiple dataset paths (primary + companions)
+    dataset_paths = record.get("dataset_paths") or ([record.get("dataset_path")] if record.get("dataset_path") else [])
+    dataset_hashes = record.get("dataset_hashes") or ([record.get("dataset_hash")] if record.get("dataset_hash") else [])
+    # Build mermaid nodes for each dataset
+    dataset_nodes = []
+    for p, h in zip(dataset_paths, dataset_hashes):
+        name = Path(str(p)).name
+        short = _short_hash(str(h))
+        dataset_nodes.append((name, short))
+    if not dataset_nodes:
+        dataset_nodes = [("unknown", "xxxxxx")]
+
     steps = [str(step) for step in record.get("pipeline_steps", [])]
     git_commit = str(record["git_commit"])
     figure_node_label = record.get("figure_node_label")
 
     lines = ["graph LR"]
-    lines.append(f"  A[{_mermaid_label(f'{dataset_name}\\n{dataset_hash}')}]")
-    previous_node = "A"
+    # create dataset nodes A, B, C... then connect each to the first pipeline step
+    node_letters = []
+    for idx, (name, short) in enumerate(dataset_nodes):
+        node_id = chr(ord("A") + idx)
+        node_letters.append(node_id)
+        lines.append(f"  {node_id}[{_mermaid_label(f'{name}\\n{short}')}]")
 
+    previous_node = node_letters[0]
     for index, step in enumerate(steps, start=1):
-        node_id = chr(ord("A") + index)
+        node_id = chr(ord("A") + len(dataset_nodes) - 1 + index)
         lines.append(f"  {previous_node} --> {node_id}[{_mermaid_label(step)}]")
         previous_node = node_id
 
-    figure_node = chr(ord("A") + len(steps) + 1)
+    figure_node = chr(ord("A") + len(dataset_nodes) + len(steps))
     if isinstance(figure_node_label, str) and figure_node_label.strip():
         final_label = figure_node_label
     else:

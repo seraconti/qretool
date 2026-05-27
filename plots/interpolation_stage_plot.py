@@ -56,8 +56,12 @@ class InterpolationStagePlot(BasePlot):
                 raw_meta = dict(raw_stage.get("meta", {}))
                 interp_meta = dict(interp_stage.get("meta", {}))
 
-                t_raw_h = np.asarray(raw_stage["t_s"], dtype=float) / 3600.0
-                t_interp_h = np.asarray(interp_stage["t_s"], dtype=float) / 3600.0
+                if "t_rel_s" not in raw_stage or "t_rel_s" not in interp_stage:
+                    raise KeyError("InterpolationStagePlot requires 't_rel_s' in both raw and interpolated stages")
+                raw_time = raw_stage["t_rel_s"]
+                interp_time = interp_stage["t_rel_s"]
+                t_raw_h = np.asarray(raw_time, dtype=float) / 3600.0
+                t_interp_h = np.asarray(interp_time, dtype=float) / 3600.0
                 raw_khz = _scale_to_khz(raw_stage["delta_hz"])
                 interp_khz = _scale_to_khz(interp_stage["delta_hz"])
 

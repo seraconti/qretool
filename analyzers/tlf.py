@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 from sklearn.mixture import GaussianMixture
 from typing import Any
@@ -27,6 +27,8 @@ class TLFResult:
     dwell_cv_s0: float | None
     dwell_cv_s1: float | None
 
+    diagnostics: dict[str, object] = field(default_factory=dict)
+
 
 def run(values: np.ndarray, timestamps: np.ndarray) -> TLFResult:
     """Fit 1- and 2-component GMMs and return TLF diagnostics.
@@ -35,7 +37,7 @@ def run(values: np.ndarray, timestamps: np.ndarray) -> TLFResult:
     or other numerical error), fall back by copying gmm1 into both slots and
     set bic_delta=0.0 and is_bimodal=False.
 
-    Timestamps are required (timestamps in seconds, typically `t_s` from the
+    Timestamps are required (seconds, typically `t_rel_s` from the
     normalized mapping) and are used to compute dwell/run-length dynamics.
     """
     if timestamps is None:

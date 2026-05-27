@@ -6,10 +6,17 @@ import re
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 from core.runner import run_job
 from loaders.registry import _LOADER_REGISTRY, load
 from plots.targets import RENDER_TARGETS
 from provenance import hash_string
+
+try:
+    import h5py
+except ImportError:
+    h5py = None
 
 
 def _module_from_path(path: Path):
@@ -20,6 +27,9 @@ def _module_from_path(path: Path):
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
+    job = getattr(module, "job", None)
+    if job is not None:
+        setattr(job, "job_file", path.resolve())
     return module
 
 
@@ -50,7 +60,7 @@ def _schema_stub(frame) -> None:
     print()
     print("class InferredSchema(pa.DataFrameModel):")
     for column, dtype in frame.dtypes.items():
-        safe_column = re.sub(r"[^A-Za-z0-9_]", "_", column)
+        safe_column = re.sub(r"[^A-Za-z0-9_]", "_", str(column))
         if safe_column and safe_column[0].isdigit():
             safe_column = f"_{safe_column}"
         print(f"    {safe_column}: Series[{_dtype_stub(dtype)}]")
@@ -65,6 +75,12 @@ def main() -> None:
     run_parser.add_argument("--all", action="store_true")
     run_parser.add_argument("--include-archived", action="store_true")
     run_parser.add_argument("--force", action="store_true")
+    run_parser.add_argument(
+        "--data-root",
+        type=str,
+        default=None,
+        help="Base directory for resolving relative dataset paths (e.g. 'tool/datasets/...').",
+    )
 
     inspect_parser = subparsers.add_parser("inspect")
     inspect_parser.add_argument("job_file", nargs="?")
@@ -74,6 +90,7 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "run":
+        data_root = Path(args.data_root).expanduser().resolve() if args.data_root else None
         if args.all:
             job_files = [
                 job_file
@@ -85,14 +102,15 @@ def main() -> None:
                     job_file
                     for job_file in sorted(Path("jobs/archived").glob("*.py"))
                     if job_file.name != "__init__.py"
+                    
                 )
             for job_file in job_files:
                 print("\n\n---------------------\nRunning job from", job_file)
-                run_job(_module_from_path(job_file).job, Path("output"), force=args.force)
+                run_job(_module_from_path(job_file).job, Path("output"), force=args.force, data_root=data_root)
             return
         if not args.path:
             parser.error("run requires a path unless --all is set")
-        run_job(_module_from_path(Path(args.path)).job, Path("output"), force=args.force)
+        run_job(_module_from_path(Path(args.path)).job, Path("output"), force=args.force, data_root=data_root)
         return
     if args.command == "inspect":
         print("Loaders:", ", ".join(sorted(_LOADER_REGISTRY)))
@@ -100,7 +118,32 @@ def main() -> None:
         if args.job_file:
             _print_job(_module_from_path(Path(args.job_file)).job)
         return
-    _schema_stub(load(Path(args.file)))
+    if args.command == "schema-wizard":
+        file_path = Path(args.file)
+        
+        # Special handling for HDF5 files with multiple datasets
+        if file_path.suffix.lower() in {".h5", ".hdf5"} and h5py:
+            with h5py.File(file_path, "r") as f:
+                keys = list(f.keys())
+                if len(keys) > 1:
+                    print(f"Multiple datasets found: {', '.join(keys)}\n")
+                    for key in keys:
+                        print(f"\n{'='*60}")
+                        print(f"Dataset: {key}")
+                        print('='*60)
+                        dataset = f[key]
+                        data = dataset[()]
+                        if len(data.shape) == 2:
+                            df = pd.DataFrame(data)
+                        elif len(data.shape) == 1:
+                            df = pd.DataFrame({key: data})
+                        else:
+                            print(f"Unsupported shape: {data.shape}")
+                            continue
+                        _schema_stub(df)
+                    return
+        
+        _schema_stub(load(file_path))
 
 
 if __name__ == "__main__":

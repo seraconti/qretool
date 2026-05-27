@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections.abc import Mapping
 
 import allantools
@@ -14,6 +14,7 @@ class AllanResult:
     meta: dict[str, object]
     fractional_adev: np.ndarray | None = None
     carrier_hz: float | None = None
+    diagnostics: dict[str, object] = field(default_factory=dict)
 
 
 def infer_sample_period_s(timestamps: np.ndarray) -> float:
@@ -59,7 +60,7 @@ def _transform_signal(freq_hz: np.ndarray, mode: str) -> tuple[np.ndarray, float
     raise ValueError(f"Unknown Allan mode '{mode}'.")
 
 
-def run(norm: Mapping[str, object], config: Mapping[str, object], fractional: bool = False, carrier_col: str = "frequency") -> AllanResult:
+def run(norm: Mapping[str, object], config: Mapping[str, object], fractional: bool = False, carrier_col: str = "qubit_frequency_hz") -> AllanResult:
     """Compute Allan deviation for a normalized Ramsey dataset.
 
     Inputs are expected to use seconds for time and hertz for frequency.
@@ -67,9 +68,11 @@ def run(norm: Mapping[str, object], config: Mapping[str, object], fractional: bo
     if not isinstance(norm, Mapping):
         raise TypeError("allan.run expects normalized dataset mapping input.")
 
-    t_s = np.asarray(norm["t_s"], dtype=float)
+    if "t_rel_s" not in norm:
+        raise KeyError("allan.run requires 't_rel_s' (relative seconds) in normalized mapping")
+    t_rel_s = np.asarray(norm["t_rel_s"], dtype=float)
     delta_hz = np.asarray(norm["delta_hz"], dtype=float)
-    dt_s = infer_sample_period_s(t_s)
+    dt_s = infer_sample_period_s(t_rel_s)
     fs_hz = 1.0 / float(dt_s)
     meta_in = dict(norm.get("meta", {})) if isinstance(norm.get("meta", {}), Mapping) else {}
 

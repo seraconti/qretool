@@ -14,20 +14,23 @@ from plots.theme import qubit_color
 # Threshold selection: nines thresholds that the infidelity data crosses
 # ---------------------------------------------------------------------------
 
-def _fidelity_panel_thresholds(infidelity: np.ndarray) -> list[tuple[str, float]]:
-    """Return nines thresholds (in infidelity units) that the data crosses."""
+def _fidelity_panel_thresholds(
+    infidelity: np.ndarray,
+) -> list[tuple[str, float, bool]]:
+    """Return nines thresholds (infidelity units, big_values_good=False) that the data crosses."""
     inf = np.asarray(infidelity, dtype=float)
     inf_finite = inf[np.isfinite(inf) & (inf > 0)]
     if len(inf_finite) == 0:
         return []
     inf_min, inf_max = float(np.min(inf_finite)), float(np.max(inf_finite))
-    thresholds: list[tuple[str, float]] = []
+    thresholds: list[tuple[str, float, bool]] = []
     for n in range(0, 8):
         # n=0 → infidelity<0.01 = 99% fidelity; n=1 → infidelity<0.001 = 99.9%; ...
         inf_thr = 10.0 ** (-(n + 2))
         label = "99" + ("." + "9" * n if n > 0 else "") + "%"
         if inf_min < inf_thr < inf_max:
-            thresholds.append((label, inf_thr))
+            # big_values_good=False: above this infidelity threshold = out-of-spec
+            thresholds.append((label, inf_thr, False))
     return thresholds
 
 
@@ -58,18 +61,21 @@ def make_fidelity_panel_data(result: FidelityResult, dataset_id: str = "") -> No
     if profile:
         meta["profile"] = str(profile)
 
+    if rabi_base_hz is not None:
+        rabi_mhz = float(rabi_base_hz) / 1e6
+        primary_label = f"Infidelity  ({rabi_mhz:.4g} MHz Rabi)"
+    else:
+        primary_label = "Infidelity"
+
     return NonRepairablePanelData(
         t_h=t_h,
         primary_series=infidelity,
-        primary_label="Infidelity",
+        primary_label=primary_label,
         thresholds=thresholds,
         meta=meta,
         traces=traces,
         use_log_scale=True,
-        higher_is_better=False,
         color=qubit_color(dataset_id=dataset_id),
-        # above infidelity threshold = out of spec (high infidelity is bad)
-        direction="above",
     )
 
 
