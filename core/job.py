@@ -62,6 +62,9 @@ def _load_dataset(dataset: Dataset) -> Norm:
 
     if dataset.schema is not None:
         schema = dataset.schema
+        if hasattr(schema, "to_norm"):
+            # Event-log schemas bypass standard time-series normalization entirely.
+            return schema.to_norm(frame, dataset)
         if hasattr(schema, "validate"):
             frame = schema.validate(frame, dataset=dataset)
 

@@ -1,4 +1,13 @@
 # Ignore all Markdown files except README.md
 *.md
 !README.md
+!TIME_SEMANTICS.md
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Generated outputs
+output/
+output_backup/
 
