@@ -30,9 +30,6 @@ Canonical Norm frequency keys:
 | `rabi_hz` | Rabi drive frequency from calibration |
 | `qubit_frequency_hz` | Carrier/qubit frequency from calibration (was `qubit_frequency`) |
 
-**Legacy aliases handled by the Norm compat shim:**
-`Rabi_frequency` → `rabi_hz` (emits `DeprecationWarning`),
-`qubit_frequency` → `qubit_frequency_hz` (emits `DeprecationWarning`).
 
 **Source column names** in the calibration pickles (`FOR ZENODO/Main/Fig 2/qubit*.pickle`)
 are not renamed — they remain `frequency` and `Rabi_frequency` as verified in the

@@ -110,7 +110,7 @@ class RepairablePanel(BasePlot):
         t0 = float(pd_.event_times_unix_s[0])
         elapsed_days = (pd_.event_times_unix_s - t0) / 86400.0
         intervals_h = pd_.intervals_s / 3600.0
-        ax.scatter(elapsed_days, intervals_h, s=4, alpha=0.35, color=color, linewidths=0)
+        ax.scatter(elapsed_days, intervals_h, s=4, alpha=0.8, color=color, linewidths=0)
         mean_h = pd_.stats["mean_s"] / 3600.0
         ax.axhline(mean_h, color="gray", linestyle="--", linewidth=1.2,
                    label=f"Mean MTBF = {_human_time(pd_.stats['mean_s'])}")
@@ -155,7 +155,7 @@ class RepairablePanel(BasePlot):
         ax.set_xlabel("Interval (s)")
         ax.set_ylabel("Count")
         ax.set_title("Distribution of inter-event intervals")
-        ax.grid(True, which="both", color="lightgray", alpha=0.4)
+        ax.grid(True, which="both", color="lightgray", alpha=0.8)
 
     @staticmethod
     def _draw_summary(ax: plt.Axes, pd_: RepairablePanelData) -> None:

@@ -8,6 +8,7 @@ NOTE: This file exceeds the 200-line guideline (~580 lines). A split into
 panels/_non_repairable_compute.py is the natural next step but has been
 deferred; these views are panel-internal by spec.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -83,6 +84,7 @@ class NonRepairablePanelData:
 # ---------------------------------------------------------------------------
 # Module-level compute helpers (no domain assumptions)
 # ---------------------------------------------------------------------------
+
 
 def _compute_cv(series: np.ndarray) -> float:
     s = np.asarray(series, dtype=float)
@@ -165,7 +167,13 @@ def _analyze_threshold_windows(
 
     def _stats(windows: list[float]) -> dict[str, object]:
         if not windows:
-            return {"longest": np.nan, "mean": np.nan, "median": np.nan, "p90": np.nan, "count": 0}
+            return {
+                "longest": np.nan,
+                "mean": np.nan,
+                "median": np.nan,
+                "p90": np.nan,
+                "count": 0,
+            }
         w = np.asarray(windows, dtype=float)
         return {
             "longest": float(np.max(w)),
@@ -185,7 +193,10 @@ def _window_survival(windows_min: list[float]) -> list[tuple[float, float]]:
         return []
     unique_w = np.unique(np.sort(w))
     return [
-        (float(length), float(np.clip(np.round(np.sum(w >= length) / len(w), 10), 0.0, 1.0)))
+        (
+            float(length),
+            float(np.clip(np.round(np.sum(w >= length) / len(w), 10), 0.0, 1.0)),
+        )
         for length in unique_w
     ]
 
@@ -193,6 +204,7 @@ def _window_survival(windows_min: list[float]) -> list[tuple[float, float]]:
 # ---------------------------------------------------------------------------
 # Panel class
 # ---------------------------------------------------------------------------
+
 
 class NonRepairablePanel(BasePlot):
     """Degradation analysis panel for non-repairable systems.
@@ -207,7 +219,9 @@ class NonRepairablePanel(BasePlot):
       - Summary text (CV, initial value, per-threshold stats, MTTF)
     """
 
-    def build_matplotlib(self, result: NonRepairablePanelData, style: str = "default") -> plt.Figure:
+    def build_matplotlib(
+        self, result: NonRepairablePanelData, style: str = "default"
+    ) -> plt.Figure:
         if not isinstance(result, NonRepairablePanelData):
             raise TypeError("NonRepairablePanel expects NonRepairablePanelData")
         pd_ = result
@@ -221,12 +235,18 @@ class NonRepairablePanel(BasePlot):
             # Scale the compliance-timeline row so labels don't overlap for wide ladders.
             thr_row_h = max(0.9, 0.22 * n_thr)
             figheight = 16.0 + (2.5 if has_extra_row else 0.0) + (thr_row_h - 0.9)
-            fig = plt.figure(figsize=(14, figheight), constrained_layout=True, facecolor="white")
+            fig = plt.figure(
+                figsize=(14, figheight), constrained_layout=True, facecolor="white"
+            )
 
             if has_extra_row:
-                gs = fig.add_gridspec(6, 2, height_ratios=[1.8, thr_row_h, 3.2, 2.0, 2.0, 1.2])
+                gs = fig.add_gridspec(
+                    6, 2, height_ratios=[1.8, thr_row_h, 3.2, 2.0, 2.0, 1.2]
+                )
             else:
-                gs = fig.add_gridspec(5, 2, height_ratios=[1.8, thr_row_h, 3.2, 2.0, 1.2])
+                gs = fig.add_gridspec(
+                    5, 2, height_ratios=[1.8, thr_row_h, 3.2, 2.0, 1.2]
+                )
 
             ax_primary = fig.add_subplot(gs[0, :])
             ax_thr = fig.add_subplot(gs[1, :])
@@ -254,7 +274,11 @@ class NonRepairablePanel(BasePlot):
                 ax_sum = fig.add_subplot(gs[4, :])
 
             color = pd_.color if pd_.color is not None else "C0"
-            traces = pd_.traces if pd_.traces is not None else [(pd_.primary_label, pd_.primary_series)]
+            traces = (
+                pd_.traces
+                if pd_.traces is not None
+                else [(pd_.primary_label, pd_.primary_series)]
+            )
 
             self._draw_primary(ax_primary, pd_, color)
             self._draw_threshold_timeline(ax_thr, pd_)
@@ -315,9 +339,7 @@ class NonRepairablePanel(BasePlot):
             result[label] = cum
         return result
 
-    def _cumulative_damage(
-        self, data: NonRepairablePanelData
-    ) -> dict[str, np.ndarray]:
+    def _cumulative_damage(self, data: NonRepairablePanelData) -> dict[str, np.ndarray]:
         """Trapezoidal cumulative damage per threshold (primary_unit · h)."""
         t = np.asarray(data.t_h, dtype=float)
         s = np.asarray(data.primary_series, dtype=float)
@@ -342,9 +364,7 @@ class NonRepairablePanel(BasePlot):
             result[label] = cum
         return result
 
-    def _mttf(
-        self, data: NonRepairablePanelData
-    ) -> dict[str, float | None]:
+    def _mttf(self, data: NonRepairablePanelData) -> dict[str, float | None]:
         """First threshold-crossing time (elapsed hours from t[0]) per threshold."""
         t = np.asarray(data.t_h, dtype=float)
         s = np.asarray(data.primary_series, dtype=float)
@@ -370,11 +390,20 @@ class NonRepairablePanel(BasePlot):
         if not (np.isfinite(lo) and np.isfinite(hi) and lo > 0.0 and hi > 0.0):
             return
         for power in range(int(np.floor(np.log10(lo))), int(np.ceil(np.log10(hi))) + 1):
-            ax.axhline(10.0**power, color="gray", linestyle="--", linewidth=0.7, alpha=0.3, zorder=0)
+            ax.axhline(
+                10.0**power,
+                color="gray",
+                linestyle="--",
+                linewidth=0.7,
+                alpha=0.3,
+                zorder=0,
+            )
 
     @staticmethod
     def _adaptive_ylim(series_list: list[np.ndarray]) -> tuple[float, float]:
-        all_values = np.concatenate([np.asarray(s, dtype=float) for s in series_list if len(s) > 0])
+        all_values = np.concatenate(
+            [np.asarray(s, dtype=float) for s in series_list if len(s) > 0]
+        )
         finite = all_values[np.isfinite(all_values)]
         if len(finite) == 0:
             return 0.0, 1.0
@@ -386,25 +415,53 @@ class NonRepairablePanel(BasePlot):
         pad = 0.15 * span
         return q_lo - pad, q_hi + pad
 
-    def _draw_primary(self, ax: plt.Axes, pd_: NonRepairablePanelData, color: object) -> None:
+    def _draw_primary(
+        self, ax: plt.Axes, pd_: NonRepairablePanelData, color: object
+    ) -> None:
         plot_fn = ax.semilogy if pd_.use_log_scale else ax.plot
         plot_fn(pd_.t_h, pd_.primary_series, color=color, linewidth=1.2, zorder=2)
         if pd_.use_log_scale:
             self._draw_decade_guides(ax, pd_.primary_series)
         for i, (label, thr_val, _) in enumerate(pd_.thresholds):
             thr_color = _THRESHOLD_COLORS[i % len(_THRESHOLD_COLORS)]
-            ax.axhline(thr_val, color=thr_color, linestyle="--", linewidth=1.0,
-                       alpha=0.75, label=label, zorder=1)
+            ax.axhline(
+                thr_val,
+                color=thr_color,
+                linestyle="--",
+                linewidth=1.0,
+                alpha=0.75,
+                label=label,
+                zorder=1,
+            )
         if pd_.thresholds:
-            ax.legend(frameon=False, fontsize=7, loc="upper right")
+            # Outside the right spine: full-width axis, so this lands in the
+            # figure margin and is captured by bbox_inches="tight" without
+            # overflowing onto the data or x-axis ticks (constrained_layout
+            # won't shrink the short primary axis to fit a tall legend).
+            ax.legend(
+                frameon=False,
+                fontsize=7,
+                loc="upper left",
+                bbox_to_anchor=(1.01, 1.0),
+                borderaxespad=0.0,
+            )
         ax.set_ylabel(pd_.primary_label)
         ax.set_xlabel("Elapsed time (h)")
         ax.set_title(pd_.primary_label)
         ax.grid(True, which="both", color="lightgray", alpha=0.4)
 
-    def _draw_threshold_timeline(self, ax: plt.Axes, pd_: NonRepairablePanelData) -> None:
+    def _draw_threshold_timeline(
+        self, ax: plt.Axes, pd_: NonRepairablePanelData
+    ) -> None:
         if not pd_.thresholds:
-            ax.text(0.5, 0.5, "No thresholds defined", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "No thresholds defined",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             ax.axis("off")
             return
 
@@ -430,8 +487,14 @@ class NonRepairablePanel(BasePlot):
         ]
 
         if not plotted:
-            ax.text(0.5, 0.5, "No thresholds with ≥5% in-spec time",
-                    ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "No thresholds with ≥5% in-spec time",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             ax.axis("off")
             return
 
@@ -450,21 +513,41 @@ class NonRepairablePanel(BasePlot):
             for idx in range(1, len(pd_.t_h)):
                 if bool(above[idx]) != state:
                     end = float(pd_.t_h[idx])
-                    ax.barh(y_pos, end - start, left=start, height=0.75,
-                            color=color_if_above if state else color_if_below,
-                            alpha=0.7, edgecolor="none")
+                    ax.barh(
+                        y_pos,
+                        end - start,
+                        left=start,
+                        height=0.75,
+                        color=color_if_above if state else color_if_below,
+                        alpha=0.7,
+                        edgecolor="none",
+                    )
                     start, state = end, bool(above[idx])
-            ax.barh(y_pos, float(pd_.t_h[-1]) - start, left=start, height=0.75,
-                    color=color_if_above if state else color_if_below,
-                    alpha=0.7, edgecolor="none")
+            ax.barh(
+                y_pos,
+                float(pd_.t_h[-1]) - start,
+                left=start,
+                height=0.75,
+                color=color_if_above if state else color_if_below,
+                alpha=0.7,
+                edgecolor="none",
+            )
 
             if pd_.include_mttf:
                 mttf = mttf_map.get(label)
                 mttf_str = f"MTTF={mttf:.1f}h" if mttf is not None else "—"
                 # y fraction: assumes ylim = [-0.5, n_plot - 0.5] (set below)
                 y_frac = (y_pos + 0.5) / n_plot
-                ax.text(1.01, y_frac, mttf_str, transform=ax.transAxes,
-                        ha="left", va="center", fontsize=7, clip_on=False)
+                ax.text(
+                    1.01,
+                    y_frac,
+                    mttf_str,
+                    transform=ax.transAxes,
+                    ha="left",
+                    va="center",
+                    fontsize=7,
+                    clip_on=False,
+                )
 
         ax.set_ylim(-0.5, n_plot - 0.5)
         ax.set_yticks(np.arange(n_plot))
@@ -484,11 +567,19 @@ class NonRepairablePanel(BasePlot):
         title: str = "",
     ) -> None:
         from plots.theme import mix_with_white
+
         colors = [base_color, mix_with_white(base_color, amount=0.3)]
         styles = ["-", "--"]
         for i, (label, series) in enumerate(traces):
-            ax.plot(pd_.t_h, series, styles[i % 2], linewidth=1.0,
-                    color=colors[i % 2], alpha=0.9, label=label)
+            ax.plot(
+                pd_.t_h,
+                series,
+                styles[i % 2],
+                linewidth=1.0,
+                color=colors[i % 2],
+                alpha=0.9,
+                label=label,
+            )
         if not pd_.use_log_scale:
             lo, hi = self._adaptive_ylim([s for _, s in traces])
             ax.set_ylim(lo, hi)
@@ -507,13 +598,23 @@ class NonRepairablePanel(BasePlot):
         base_color: object,
     ) -> None:
         from plots.theme import mix_with_white
+
         colors = [base_color, mix_with_white(base_color, amount=0.3)]
         for i, (label, series) in enumerate(traces):
             xb, med, q1, q3, p90 = _binned_stats(pd_.t_h, series)
             if len(xb) == 0:
                 continue
             color = colors[i % 2]
-            ax.plot(xb, med, "-", linewidth=1.2, color=color, alpha=0.95, label=label, zorder=2)
+            ax.plot(
+                xb,
+                med,
+                "-",
+                linewidth=1.2,
+                color=color,
+                alpha=0.95,
+                label=label,
+                zorder=2,
+            )
             ax.fill_between(xb, q1, q3, color=color, alpha=0.2, zorder=1)
             ax.plot(xb, p90, "--", linewidth=0.7, color=color, alpha=0.5, zorder=1)
         if not pd_.use_log_scale:
@@ -528,26 +629,48 @@ class NonRepairablePanel(BasePlot):
 
     def _draw_survival(self, ax: plt.Axes, pd_: NonRepairablePanelData) -> None:
         if not pd_.thresholds:
-            ax.text(0.5, 0.5, "No thresholds defined", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "No thresholds defined",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             ax.axis("off")
             return
 
         plotted = 0
         for i, (label, thr_val, big_values_good) in enumerate(pd_.thresholds):
-            good_windows = self._collect_windows(pd_.t_h, pd_.primary_series, thr_val, big_values_good)
+            good_windows = self._collect_windows(
+                pd_.t_h, pd_.primary_series, thr_val, big_values_good
+            )
             survival = _window_survival(good_windows)
             if not survival:
                 continue
             surv_x, surv_y = zip(*survival)
             color = _THRESHOLD_COLORS[i % len(_THRESHOLD_COLORS)]
-            ax.semilogy(surv_x, surv_y, linewidth=1.2, markersize=4,
-                        markevery=max(1, len(surv_x) // 10),
-                        color=color, label=label, linestyle="-")
+            ax.semilogy(
+                surv_x,
+                surv_y,
+                linewidth=1.2,
+                markersize=4,
+                markevery=max(1, len(surv_x) // 10),
+                color=color,
+                label=label,
+                linestyle="-",
+            )
             plotted += 1
 
         if plotted == 0:
-            ax.text(0.5, 0.5, "No in-spec windows for defined thresholds",
-                    ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "No in-spec windows for defined thresholds",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             ax.axis("off")
             return
 
@@ -555,7 +678,13 @@ class NonRepairablePanel(BasePlot):
         ax.set_ylabel("Fraction of windows lasting ≥ length")
         ax.set_title("In-spec window survival per threshold")
         ax.grid(True, which="both", color="lightgray", alpha=0.4)
-        ax.legend(frameon=False, loc="upper right", fontsize=7)
+        ax.legend(
+            frameon=False,
+            fontsize=7,
+            loc="upper left",
+            bbox_to_anchor=(1.01, 1.0),
+            borderaxespad=0.0,
+        )
 
     @staticmethod
     def _collect_windows(
@@ -595,7 +724,14 @@ class NonRepairablePanel(BasePlot):
     def _draw_cumulative_time(self, ax: plt.Axes, pd_: NonRepairablePanelData) -> None:
         """Cumulative time out of spec per threshold (hours)."""
         if not pd_.thresholds:
-            ax.text(0.5, 0.5, "No thresholds defined", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "No thresholds defined",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             ax.axis("off")
             return
 
@@ -606,24 +742,47 @@ class NonRepairablePanel(BasePlot):
             arr = cum_time.get(label)
             if arr is None or len(arr) == 0:
                 continue
-            ax.plot(t, arr, color=_THRESHOLD_COLORS[i % len(_THRESHOLD_COLORS)],
-                    linewidth=1.2, label=label)
+            ax.plot(
+                t,
+                arr,
+                color=_THRESHOLD_COLORS[i % len(_THRESHOLD_COLORS)],
+                linewidth=1.2,
+                label=label,
+            )
             plotted += 1
 
         if plotted == 0:
-            ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes
+            )
             return
 
         ax.set_xlabel("Elapsed time (h)")
         ax.set_ylabel("Cumulative time out of spec (h)")
         ax.set_title("Cumulative time out of spec")
         ax.grid(True, alpha=0.25)
-        ax.legend(frameon=False, fontsize=7)
+        # Half-width axis: keep the legend inside, in the empty top-left corner
+        # (cumulative curves rise toward top-right). Columns cap it at ≤5 rows.
+        ax.legend(
+            frameon=False,
+            fontsize=7,
+            loc="upper left",
+            ncol=max(1, (len(pd_.thresholds) + 4) // 5),
+        )
 
-    def _draw_cumulative_damage(self, ax: plt.Axes, pd_: NonRepairablePanelData) -> None:
+    def _draw_cumulative_damage(
+        self, ax: plt.Axes, pd_: NonRepairablePanelData
+    ) -> None:
         """Cumulative damage per threshold (primary_unit · h)."""
         if not pd_.thresholds:
-            ax.text(0.5, 0.5, "No thresholds defined", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "No thresholds defined",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             ax.axis("off")
             return
 
@@ -635,19 +794,32 @@ class NonRepairablePanel(BasePlot):
             arr = cum_dmg.get(label)
             if arr is None or len(arr) == 0:
                 continue
-            ax.plot(t, arr, color=_THRESHOLD_COLORS[i % len(_THRESHOLD_COLORS)],
-                    linewidth=1.2, label=label)
+            ax.plot(
+                t,
+                arr,
+                color=_THRESHOLD_COLORS[i % len(_THRESHOLD_COLORS)],
+                linewidth=1.2,
+                label=label,
+            )
             plotted += 1
 
         if plotted == 0:
-            ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes
+            )
             return
 
         ax.set_xlabel("Elapsed time (h)")
         ax.set_ylabel(ylabel)
         ax.set_title("Cumulative damage")
         ax.grid(True, alpha=0.25)
-        ax.legend(frameon=False, fontsize=7)
+        # Half-width axis: legend in the empty top-left corner, columnized.
+        ax.legend(
+            frameon=False,
+            fontsize=7,
+            loc="upper left",
+            ncol=max(1, (len(pd_.thresholds) + 4) // 5),
+        )
 
     def _draw_summary(self, ax: plt.Axes, pd_: NonRepairablePanelData) -> None:
         series = pd_.primary_series
@@ -657,8 +829,12 @@ class NonRepairablePanel(BasePlot):
         lines: list[str] = [
             f"Metric: {pd_.primary_label}",
             f"Points: {len(finite)}",
-            f"Initial value: {float(finite[0]):.6g}" if len(finite) > 0 else "Initial value: N/A",
-            f"Range: {float(np.min(finite)):.6g} to {float(np.max(finite)):.6g}" if len(finite) > 0 else "Range: N/A",
+            f"Initial value: {float(finite[0]):.6g}"
+            if len(finite) > 0
+            else "Initial value: N/A",
+            f"Range: {float(np.min(finite)):.6g} to {float(np.max(finite)):.6g}"
+            if len(finite) > 0
+            else "Range: N/A",
             f"CV: {cv:.4f}" if np.isfinite(cv) else "CV: N/A",
         ]
         if pd_.meta:
@@ -707,8 +883,17 @@ class NonRepairablePanel(BasePlot):
 
         ax.axis("off")
         ax.text(
-            0.02, 0.98, "\n".join(lines).strip(),
-            transform=ax.transAxes, ha="left", va="top", fontsize=7.5,
+            0.02,
+            0.98,
+            "\n".join(lines).strip(),
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=7.5,
             family="monospace",
-            bbox={"facecolor": "lightyellow", "edgecolor": "gray", "boxstyle": "round,pad=0.5"},
+            bbox={
+                "facecolor": "lightyellow",
+                "edgecolor": "gray",
+                "boxstyle": "round,pad=0.5",
+            },
         )

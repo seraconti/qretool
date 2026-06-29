@@ -48,15 +48,15 @@ configure_ramsey_job(
 # For devices outside the 1–10 µs T2* range, supply different values.
 _T2STAR_THRESHOLDS: list[tuple[str, float, bool]] = [
     ("1 µs",  1e-6,  True),
-    ("2 µs",  2e-6,  True),
+    #("2 µs",  2e-6,  True),
     ("3 µs",  3e-6,  True),
-    ("4 µs",  4e-6,  True),
+    #("4 µs",  4e-6,  True),
     ("5 µs",  5e-6,  True),
-    ("6 µs",  6e-6,  True),
-    ("7 µs",  7e-6,  True),
-    ("8 µs",  8e-6,  True),
-    ("9 µs",  9e-6,  True),
-    ("10 µs", 10e-6, True),
+    #("6 µs",  6e-6,  True),
+    #("7 µs",  7e-6,  True),
+    #("8 µs",  8e-6,  True),
+    #("9 µs",  9e-6,  True),
+    #("10 µs", 10e-6, True),
 ]
 
 _t2star_filtered = job.step(_filter_step(RAMSEY_CONFIG), main_node, name="t2star_filter")
