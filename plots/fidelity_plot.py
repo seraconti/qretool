@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 
 from analyzers.fidelity import FidelityResult
+from panels._non_repairable_compute import build_non_repairable_panel_data
 from panels.non_repairable import NonRepairablePanel, NonRepairablePanelData
 from plots.base import BasePlot
 from plots.theme import qubit_color
@@ -13,6 +14,7 @@ from plots.theme import qubit_color
 # ---------------------------------------------------------------------------
 # Threshold selection: nines thresholds that the infidelity data crosses
 # ---------------------------------------------------------------------------
+
 
 def _fidelity_panel_thresholds(
     infidelity: np.ndarray,
@@ -38,7 +40,10 @@ def _fidelity_panel_thresholds(
 # Adapter: FidelityResult → NonRepairablePanelData
 # ---------------------------------------------------------------------------
 
-def make_fidelity_panel_data(result: FidelityResult, dataset_id: str = "") -> NonRepairablePanelData:
+
+def make_fidelity_panel_data(
+    result: FidelityResult, dataset_id: str = ""
+) -> NonRepairablePanelData:
     """Convert FidelityResult to NonRepairablePanelData for NonRepairablePanel."""
     frame = result.frame
     t_h = frame["t_rel_s"].to_numpy(dtype=float) / 3600.0
@@ -49,8 +54,14 @@ def make_fidelity_panel_data(result: FidelityResult, dataset_id: str = "") -> No
     traces: list[tuple[str, np.ndarray]] | None = None
     if "infidelity_f0" in frame.columns:
         traces = [
-            ("f−fₘₑₐₙ", np.clip(frame["infidelity"].to_numpy(dtype=float), 1e-16, None)),
-            ("f−f₀", np.clip(frame["infidelity_f0"].to_numpy(dtype=float), 1e-16, None)),
+            (
+                "f−fₘₑₐₙ",
+                np.clip(frame["infidelity"].to_numpy(dtype=float), 1e-16, None),
+            ),
+            (
+                "f−f₀",
+                np.clip(frame["infidelity_f0"].to_numpy(dtype=float), 1e-16, None),
+            ),
         ]
 
     meta: dict[str, object] = {"dataset": dataset_id}
@@ -67,7 +78,7 @@ def make_fidelity_panel_data(result: FidelityResult, dataset_id: str = "") -> No
     else:
         primary_label = "Infidelity"
 
-    return NonRepairablePanelData(
+    return build_non_repairable_panel_data(
         t_h=t_h,
         primary_series=infidelity,
         primary_label=primary_label,
@@ -83,8 +94,11 @@ def make_fidelity_panel_data(result: FidelityResult, dataset_id: str = "") -> No
 # Plot class
 # ---------------------------------------------------------------------------
 
+
 class FidelityPlot(BasePlot):
-    def build_matplotlib(self, result: FidelityResult, style: str = "default") -> plt.Figure:
+    def build_matplotlib(
+        self, result: FidelityResult, style: str = "default"
+    ) -> plt.Figure:
         if not isinstance(result, FidelityResult):
             raise TypeError("FidelityPlot expects a FidelityResult")
         panel_data = make_fidelity_panel_data(

@@ -13,6 +13,7 @@ thresholds via the `thresholds=` argument to make_panel_data:
 Values in the ladder are in SI seconds; make_panel_data converts to µs for
 display.  Labels are in µs.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
+from panels._non_repairable_compute import build_non_repairable_panel_data
 from panels.non_repairable import NonRepairablePanelData
 
 
@@ -39,7 +41,9 @@ class T2StarInputs:
     dataset_id: str = ""
 
 
-def make_inputs_from_norm(norm: Mapping[str, object], config: Mapping[str, object] | None = None) -> T2StarInputs:
+def make_inputs_from_norm(
+    norm: Mapping[str, object], config: Mapping[str, object] | None = None
+) -> T2StarInputs:
     """Extract T2StarInputs from a normalized mapping."""
     if "t_rel_s" not in norm:
         raise KeyError("T2* requires 't_rel_s' in the normalized mapping.")
@@ -51,7 +55,9 @@ def make_inputs_from_norm(norm: Mapping[str, object], config: Mapping[str, objec
     meta = norm.get("meta", {}) if isinstance(norm.get("meta", {}), Mapping) else {}
     dataset_id = str(meta.get("dataset_id", ""))
     t2star_error_s = (
-        np.asarray(norm["T2star_error_s"], dtype=float) if "T2star_error_s" in norm else None
+        np.asarray(norm["T2star_error_s"], dtype=float)
+        if "T2star_error_s" in norm
+        else None
     )
     return T2StarInputs(
         t_rel_s=np.asarray(norm["t_rel_s"], dtype=float),
@@ -107,15 +113,15 @@ def run(inputs: T2StarInputs) -> T2StarResult:
 # ---------------------------------------------------------------------------
 
 T2STAR_DEFAULT_LADDER: list[tuple[str, float, bool]] = [
-    ("1 µs",  1e-6,  True),
-    ("2 µs",  2e-6,  True),
-    ("3 µs",  3e-6,  True),
-    ("4 µs",  4e-6,  True),
-    ("5 µs",  5e-6,  True),
-    ("6 µs",  6e-6,  True),
-    ("7 µs",  7e-6,  True),
-    ("8 µs",  8e-6,  True),
-    ("9 µs",  9e-6,  True),
+    ("1 µs", 1e-6, True),
+    ("2 µs", 2e-6, True),
+    ("3 µs", 3e-6, True),
+    ("4 µs", 4e-6, True),
+    ("5 µs", 5e-6, True),
+    ("6 µs", 6e-6, True),
+    ("7 µs", 7e-6, True),
+    ("8 µs", 8e-6, True),
+    ("9 µs", 9e-6, True),
     ("10 µs", 10e-6, True),
 ]
 
@@ -123,6 +129,7 @@ T2STAR_DEFAULT_LADDER: list[tuple[str, float, bool]] = [
 # ---------------------------------------------------------------------------
 # Panel-data factory
 # ---------------------------------------------------------------------------
+
 
 def make_panel_data(
     result: T2StarResult,
@@ -151,7 +158,7 @@ def make_panel_data(
     if "std_us" in result.meta:
         meta["std T2*"] = f"{result.meta['std_us']:.4g} µs"
 
-    return NonRepairablePanelData(
+    return build_non_repairable_panel_data(
         t_h=t_h,
         primary_series=t2star_us,
         primary_label=label,

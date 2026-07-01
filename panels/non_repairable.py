@@ -1,18 +1,21 @@
 """Generic non-repairable panel: degradation view with optional cumulative metrics.
 
-Accepts any monotonic or time-varying metric via NonRepairablePanelData.
-No fidelity-specific logic lives here — fidelity adaptation is in
-plots/fidelity_plot.py.
+Two halves:
+  - NonRepairablePanelData is the COMPLETE typed artifact — raw inputs plus every
+    data-derived quantity (cumulative time/damage, MTTF, window stats, survival,
+    binned stats, CV, in-spec fractions). It is built solely by
+    panels._non_repairable_compute.build_non_repairable_panel_data.
+  - NonRepairablePanel is a PURE renderer: it reads fields and draws. It performs no
+    data arithmetic; only axis/theme concerns (adaptive y-limits, decade-guide ticks,
+    colors) live here.
 
-NOTE: This file exceeds the 200-line guideline (~580 lines). A split into
-panels/_non_repairable_compute.py is the natural next step but has been
-deferred; these views are panel-internal by spec.
+Accepts any monotonic or time-varying metric. No fidelity-specific logic lives here —
+fidelity adaptation is in plots/fidelity_plot.py.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -38,13 +41,16 @@ _THRESHOLD_COLORS = [
 
 @dataclass
 class NonRepairablePanelData:
-    """Input contract for NonRepairablePanel.
+    """Complete typed contract for NonRepairablePanel.
 
-    All compliance analysis (CV, threshold stats, window survival, cumulative
-    metrics) is computed internally. Callers provide only raw data and labeling.
+    Built by build_non_repairable_panel_data (panels/_non_repairable_compute.py),
+    which is the sole constructor path: the renderer assumes the derived fields are
+    populated. Directly constructing this dataclass leaves the derived fields empty
+    (their defaults) and the renderer will show empty derived views — go through the
+    builder. A completeness validator is deferred (see the restructure plan).
 
-    Fields
-    ------
+    Raw input fields
+    ----------------
     t_h              : time array in hours (x-axis for all subplots)
     primary_series   : metric values (same units as threshold values)
     primary_label    : y-axis label, e.g. "Infidelity" or "T2* (µs)"
@@ -53,20 +59,26 @@ class NonRepairablePanelData:
                          (lower is better, e.g. infidelity)
                        big_values_good=True: below threshold = out-of-spec
                          (higher is better, e.g. T2*)
-                       Each threshold's polarity is independent.
     meta             : arbitrary dict shown in summary text (≤4 items displayed)
     traces           : optional extra labeled series for zoom/binned subplots;
                        None → panel uses primary_series as the sole trace
     use_log_scale    : semilogy on the primary panel (default False)
     color            : matplotlib color for primary trace; "C0" if None
-    damage_fn        : applied to per-threshold excess before cumulative-damage
-                       integration. None = identity (linear in excess).
-                       Signature: (excess: np.ndarray) -> np.ndarray
     include_cumulative_time   : render cumulative time-out-of-spec subplot
     include_cumulative_damage : render cumulative damage subplot
-    include_mttf     : include first-crossing times in summary text
+    include_mttf     : include first-crossing times in summary/timeline text
+
+    Note: damage is no longer a field here. The damage function is a builder
+    parameter only (# EXTENSION: future DamageModel) — a callable cannot be hashed
+    deterministically for identity nor labeled stably, so it never enters the
+    materialized artifact; only the resulting damage curve does.
+
+    Derived fields (populated by the builder)
+    -----------------------------------------
+    Keyed by threshold label unless noted. See _non_repairable_compute for the math.
     """
 
+    # raw inputs
     t_h: np.ndarray
     primary_series: np.ndarray
     primary_label: str
@@ -75,141 +87,36 @@ class NonRepairablePanelData:
     traces: list[tuple[str, np.ndarray]] | None = None
     use_log_scale: bool = False
     color: object = None
-    damage_fn: Callable[[np.ndarray], np.ndarray] | None = None
     include_cumulative_time: bool = True
     include_cumulative_damage: bool = True
     include_mttf: bool = True
 
-
-# ---------------------------------------------------------------------------
-# Module-level compute helpers (no domain assumptions)
-# ---------------------------------------------------------------------------
-
-
-def _compute_cv(series: np.ndarray) -> float:
-    s = np.asarray(series, dtype=float)
-    s = s[np.isfinite(s)]
-    if len(s) == 0:
-        return np.nan
-    mean = float(np.mean(s))
-    if mean == 0.0:
-        return np.nan
-    return float(np.std(s) / abs(mean))
-
-
-def _binned_stats(
-    t_h: np.ndarray, values: np.ndarray, bin_h: float = 0.5
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    t = np.asarray(t_h, dtype=float)
-    v = np.asarray(values, dtype=float)
-    mask = np.isfinite(t) & np.isfinite(v)
-    t, v = t[mask], v[mask]
-    if len(t) == 0:
-        return (np.array([]),) * 5
-    t0, t1 = float(np.min(t)), float(np.max(t))
-    if t1 <= t0:
-        return (
-            np.array([t0]),
-            np.array([float(np.median(v))]),
-            np.array([float(np.percentile(v, 25))]),
-            np.array([float(np.percentile(v, 75))]),
-            np.array([float(np.percentile(v, 90))]),
-        )
-    edges = np.arange(t0, t1 + bin_h, bin_h)
-    if len(edges) < 2:
-        edges = np.array([t0, t1 + bin_h])
-    idx = np.digitize(t, edges) - 1
-    centers, medians, q1s, q3s, p90s = [], [], [], [], []
-    for i in range(len(edges) - 1):
-        yy = v[idx == i]
-        if len(yy) == 0:
-            continue
-        centers.append(0.5 * (edges[i] + edges[i + 1]))
-        medians.append(float(np.median(yy)))
-        q1s.append(float(np.percentile(yy, 25)))
-        q3s.append(float(np.percentile(yy, 75)))
-        p90s.append(float(np.percentile(yy, 90)))
-    return (
-        np.asarray(centers),
-        np.asarray(medians),
-        np.asarray(q1s),
-        np.asarray(q3s),
-        np.asarray(p90s),
+    # derived (populated by build_non_repairable_panel_data)
+    cumulative_time_per_threshold: dict[str, np.ndarray] = field(default_factory=dict)
+    cumulative_damage_per_threshold: dict[str, np.ndarray] = field(default_factory=dict)
+    mttf_per_threshold: dict[str, float | None] = field(default_factory=dict)
+    threshold_window_stats: dict[str, dict[str, object]] = field(default_factory=dict)
+    window_survival_per_threshold: dict[str, list[tuple[float, float]]] = field(
+        default_factory=dict
     )
-
-
-def _analyze_threshold_windows(
-    t_h: np.ndarray, series: np.ndarray, threshold_value: float
-) -> dict[str, object]:
-    """Factual above/below window statistics; direction-agnostic."""
-    t = np.asarray(t_h, dtype=float)
-    s = np.asarray(series, dtype=float)
-    mask = np.isfinite(t) & np.isfinite(s)
-    t, s = t[mask], s[mask]
-    if len(t) < 2:
-        return {"above": {}, "below": {}}
-
-    dt = np.diff(t) * 60.0  # minutes
-    above = s >= threshold_value
-    windows_above: list[float] = []
-    windows_below: list[float] = []
-    current = 0.0
-    in_above = bool(above[0]) if len(above) > 0 else False
-
-    for i in range(len(above) - 1):
-        current += float(dt[i])
-        if above[i] != above[i + 1]:
-            (windows_above if in_above else windows_below).append(current)
-            current = 0.0
-            in_above = above[i + 1]
-    current += float(dt[-1]) if len(dt) > 0 else 0.0
-    (windows_above if in_above else windows_below).append(current)
-
-    def _stats(windows: list[float]) -> dict[str, object]:
-        if not windows:
-            return {
-                "longest": np.nan,
-                "mean": np.nan,
-                "median": np.nan,
-                "p90": np.nan,
-                "count": 0,
-            }
-        w = np.asarray(windows, dtype=float)
-        return {
-            "longest": float(np.max(w)),
-            "mean": float(np.mean(w)),
-            "median": float(np.median(w)),
-            "p90": float(np.percentile(w, 90)),
-            "count": len(windows),
-        }
-
-    return {"above": _stats(windows_above), "below": _stats(windows_below)}
-
-
-def _window_survival(windows_min: list[float]) -> list[tuple[float, float]]:
-    w = np.asarray(windows_min, dtype=float)
-    w = w[np.isfinite(w)]
-    if len(w) == 0:
-        return []
-    unique_w = np.unique(np.sort(w))
-    return [
-        (
-            float(length),
-            float(np.clip(np.round(np.sum(w >= length) / len(w), 10), 0.0, 1.0)),
-        )
-        for length in unique_w
-    ]
+    binned_stats_per_trace: dict[str, tuple[np.ndarray, ...]] = field(
+        default_factory=dict
+    )
+    cv: float = float("nan")
+    threshold_in_spec_frac: dict[str, float] = field(default_factory=dict)
+    threshold_summary: dict[str, dict[str, float] | None] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
-# Panel class
+# Panel class (pure renderer)
 # ---------------------------------------------------------------------------
 
 
 class NonRepairablePanel(BasePlot):
     """Degradation analysis panel for non-repairable systems.
 
-    Renders up to 8 axes depending on NonRepairablePanelData flags:
+    Pure renderer over a complete NonRepairablePanelData. Renders up to 8 axes
+    depending on the data's flags:
       - Primary time series with per-threshold dashed lines
       - Threshold compliance timeline (Gantt-style, per-threshold direction)
       - Detail view (zoom) and 30-min binned statistics
@@ -299,89 +206,7 @@ class NonRepairablePanel(BasePlot):
     def build_plotly(self, result: object) -> go.Figure:
         raise NotImplementedError(f"{self.__class__.__name__} has no plotly backend")
 
-    # --- private compute methods ---
-
-    @staticmethod
-    def _out_of_spec_mask(
-        series: np.ndarray, threshold_value: float, big_values_good: bool
-    ) -> np.ndarray:
-        if not big_values_good:
-            return series > threshold_value
-        return series < threshold_value
-
-    @staticmethod
-    def _excess(
-        series: np.ndarray, threshold_value: float, big_values_good: bool
-    ) -> np.ndarray:
-        if not big_values_good:
-            return np.maximum(series - threshold_value, 0.0)
-        return np.maximum(threshold_value - series, 0.0)
-
-    def _cumulative_time_out_of_spec(
-        self, data: NonRepairablePanelData
-    ) -> dict[str, np.ndarray]:
-        """Left-Riemann cumulative time out of spec per threshold (hours)."""
-        t = np.asarray(data.t_h, dtype=float)
-        s = np.asarray(data.primary_series, dtype=float)
-        mask = np.isfinite(t) & np.isfinite(s)
-        t_f, s_f = t[mask], s[mask]
-
-        result: dict[str, np.ndarray] = {}
-        for label, thr_val, big_values_good in data.thresholds:
-            if len(t_f) < 2:
-                result[label] = np.zeros(len(t_f))
-                continue
-            oos = self._out_of_spec_mask(s_f, thr_val, big_values_good)
-            dt_h = np.diff(t_f)
-            increments = oos[:-1].astype(float) * dt_h
-            cum = np.zeros(len(t_f))
-            cum[1:] = np.cumsum(increments)
-            result[label] = cum
-        return result
-
-    def _cumulative_damage(self, data: NonRepairablePanelData) -> dict[str, np.ndarray]:
-        """Trapezoidal cumulative damage per threshold (primary_unit · h)."""
-        t = np.asarray(data.t_h, dtype=float)
-        s = np.asarray(data.primary_series, dtype=float)
-        mask = np.isfinite(t) & np.isfinite(s)
-        t_f, s_f = t[mask], s[mask]
-
-        damage_fn: Callable[[np.ndarray], np.ndarray] = (
-            data.damage_fn if data.damage_fn is not None else lambda x: x
-        )
-
-        result: dict[str, np.ndarray] = {}
-        for label, thr_val, big_values_good in data.thresholds:
-            if len(t_f) < 2:
-                result[label] = np.zeros(len(t_f))
-                continue
-            excess = self._excess(s_f, thr_val, big_values_good)
-            damage_rate = damage_fn(excess)
-            dt_h = np.diff(t_f)
-            trap_steps = 0.5 * (damage_rate[:-1] + damage_rate[1:]) * dt_h
-            cum = np.zeros(len(t_f))
-            cum[1:] = np.cumsum(trap_steps)
-            result[label] = cum
-        return result
-
-    def _mttf(self, data: NonRepairablePanelData) -> dict[str, float | None]:
-        """First threshold-crossing time (elapsed hours from t[0]) per threshold."""
-        t = np.asarray(data.t_h, dtype=float)
-        s = np.asarray(data.primary_series, dtype=float)
-        mask = np.isfinite(t) & np.isfinite(s)
-        t_f, s_f = t[mask], s[mask]
-
-        result: dict[str, float | None] = {}
-        for label, thr_val, big_values_good in data.thresholds:
-            oos = self._out_of_spec_mask(s_f, thr_val, big_values_good)
-            indices = np.where(oos)[0]
-            if len(indices) == 0 or len(t_f) == 0:
-                result[label] = None
-            else:
-                result[label] = float(t_f[indices[0]]) - float(t_f[0])
-        return result
-
-    # --- private drawing methods ---
+    # --- axis/theme helpers (render-local; functions of axes/theme, not of data) ---
 
     @staticmethod
     def _draw_decade_guides(ax: plt.Axes, values: np.ndarray) -> None:
@@ -414,6 +239,8 @@ class NonRepairablePanel(BasePlot):
         span = max(1e-9, q_hi - q_lo)
         pad = 0.15 * span
         return q_lo - pad, q_hi + pad
+
+    # --- private drawing methods (read precomputed fields; no data arithmetic) ---
 
     def _draw_primary(
         self, ax: plt.Axes, pd_: NonRepairablePanelData, color: object
@@ -465,25 +292,12 @@ class NonRepairablePanel(BasePlot):
             ax.axis("off")
             return
 
-        t = np.asarray(pd_.t_h, dtype=float)
-        s = np.asarray(pd_.primary_series, dtype=float)
-        mask = np.isfinite(t) & np.isfinite(s)
-        t_f, s_f = t[mask], s[mask]
-        total_h = float(t_f[-1] - t_f[0]) if len(t_f) > 1 else 0.0
-
-        def _in_spec_frac(thr_val: float, big_values_good: bool) -> float:
-            if len(t_f) < 2 or total_h == 0.0:
-                return 0.0
-            oos = self._out_of_spec_mask(s_f, thr_val, big_values_good)
-            dt = np.diff(t_f)
-            oos_h = float(np.sum(dt[oos[:-1]]))
-            return 1.0 - oos_h / total_h
-
         # Only plot thresholds with ≥5% in-spec time; keep all in textual summary.
+        # (Decision: keep the cull, preserving current figures.)
         plotted = [
             (label, thr_val, bvg)
             for label, thr_val, bvg in pd_.thresholds
-            if _in_spec_frac(thr_val, bvg) >= 0.05
+            if pd_.threshold_in_spec_frac.get(label, 0.0) >= 0.05
         ]
 
         if not plotted:
@@ -498,7 +312,7 @@ class NonRepairablePanel(BasePlot):
             ax.axis("off")
             return
 
-        mttf_map = self._mttf(pd_) if pd_.include_mttf else {}
+        mttf_map = pd_.mttf_per_threshold if pd_.include_mttf else {}
         n_plot = len(plotted)
         y_positions = np.arange(n_plot)[::-1]
 
@@ -600,8 +414,11 @@ class NonRepairablePanel(BasePlot):
         from plots.theme import mix_with_white
 
         colors = [base_color, mix_with_white(base_color, amount=0.3)]
-        for i, (label, series) in enumerate(traces):
-            xb, med, q1, q3, p90 = _binned_stats(pd_.t_h, series)
+        for i, (label, _series) in enumerate(traces):
+            stats = pd_.binned_stats_per_trace.get(label)
+            if stats is None:
+                continue
+            xb, med, q1, q3, p90 = stats
             if len(xb) == 0:
                 continue
             color = colors[i % 2]
@@ -641,11 +458,8 @@ class NonRepairablePanel(BasePlot):
             return
 
         plotted = 0
-        for i, (label, thr_val, big_values_good) in enumerate(pd_.thresholds):
-            good_windows = self._collect_windows(
-                pd_.t_h, pd_.primary_series, thr_val, big_values_good
-            )
-            survival = _window_survival(good_windows)
+        for i, (label, _thr_val, _bvg) in enumerate(pd_.thresholds):
+            survival = pd_.window_survival_per_threshold.get(label, [])
             if not survival:
                 continue
             surv_x, surv_y = zip(*survival)
@@ -686,41 +500,6 @@ class NonRepairablePanel(BasePlot):
             borderaxespad=0.0,
         )
 
-    @staticmethod
-    def _collect_windows(
-        t_h: np.ndarray,
-        series: np.ndarray,
-        threshold_value: float,
-        big_values_good: bool,
-    ) -> list[float]:
-        """Window lengths (minutes) for in-spec state.
-
-        big_values_good=True: out-of-spec = below threshold → in-spec = above (e.g. T2*)
-        big_values_good=False: out-of-spec = above threshold → in-spec = below (e.g. infidelity)
-        """
-        t = np.asarray(t_h, dtype=float)
-        s = np.asarray(series, dtype=float)
-        mask = np.isfinite(t) & np.isfinite(s)
-        t, s = t[mask], s[mask]
-        if len(t) < 2:
-            return []
-        dt = np.diff(t) * 60.0
-        good = s >= threshold_value if big_values_good else s < threshold_value
-        windows: list[float] = []
-        current = 0.0
-        in_good = bool(good[0]) if len(good) > 0 else False
-        for i in range(len(good) - 1):
-            current += float(dt[i])
-            if good[i] != good[i + 1]:
-                if in_good:
-                    windows.append(current)
-                current = 0.0
-                in_good = good[i + 1]
-        current += float(dt[-1]) if len(dt) > 0 else 0.0
-        if in_good:
-            windows.append(current)
-        return windows
-
     def _draw_cumulative_time(self, ax: plt.Axes, pd_: NonRepairablePanelData) -> None:
         """Cumulative time out of spec per threshold (hours)."""
         if not pd_.thresholds:
@@ -735,7 +514,7 @@ class NonRepairablePanel(BasePlot):
             ax.axis("off")
             return
 
-        cum_time = self._cumulative_time_out_of_spec(pd_)
+        cum_time = pd_.cumulative_time_per_threshold
         t = np.asarray(pd_.t_h, dtype=float)
         plotted = 0
         for i, (label, _, _) in enumerate(pd_.thresholds):
@@ -786,7 +565,7 @@ class NonRepairablePanel(BasePlot):
             ax.axis("off")
             return
 
-        cum_dmg = self._cumulative_damage(pd_)
+        cum_dmg = pd_.cumulative_damage_per_threshold
         t = np.asarray(pd_.t_h, dtype=float)
         ylabel = f"Cumulative damage ({pd_.primary_label} · h)"
         plotted = 0
@@ -823,7 +602,7 @@ class NonRepairablePanel(BasePlot):
 
     def _draw_summary(self, ax: plt.Axes, pd_: NonRepairablePanelData) -> None:
         series = pd_.primary_series
-        cv = _compute_cv(series)
+        cv = pd_.cv
         finite = series[np.isfinite(series)]
 
         lines: list[str] = [
@@ -842,24 +621,18 @@ class NonRepairablePanel(BasePlot):
             for k, v in list(pd_.meta.items())[:4]:
                 lines.append(f"{k}: {v}")
 
-        mttf_map: dict[str, float | None] = self._mttf(pd_) if pd_.include_mttf else {}
+        mttf_map = pd_.mttf_per_threshold if pd_.include_mttf else {}
 
         for label, thr_val, big_values_good in pd_.thresholds:
-            t = np.asarray(pd_.t_h, dtype=float)
-            s = np.asarray(series, dtype=float)
-            mask_finite = np.isfinite(t) & np.isfinite(s)
-            t_f, s_f = t[mask_finite], s[mask_finite]
-            if len(t_f) < 2:
+            summ = pd_.threshold_summary.get(label)
+            if summ is None:
                 continue
-            oos = self._out_of_spec_mask(s_f, thr_val, big_values_good)
-            dt = np.diff(t_f)
-            total_h = float(t_f[-1] - t_f[0])
-            time_oos_h = float(np.sum(dt[oos[:-1]])) if len(dt) > 0 else 0.0
-            frac_oos = 100.0 * time_oos_h / total_h if total_h > 0 else 0.0
+            time_oos_h = summ["time_oos_h"]
+            frac_oos = summ["frac_oos_pct"]
             lines.append("")
             lines.append(f"{label} (thr={thr_val:.6g}):")
             lines.append(f"  Out of spec: {time_oos_h:.2f} h ({frac_oos:.1f}%)")
-            w = _analyze_threshold_windows(pd_.t_h, series, thr_val)
+            w = pd_.threshold_window_stats.get(label, {"above": {}, "below": {}})
             # big_values_good=False (infidelity): above threshold = oos, below = in-spec
             # big_values_good=True  (T2*):        below threshold = oos, above = in-spec
             oos_key = "above" if not big_values_good else "below"
