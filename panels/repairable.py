@@ -1,14 +1,23 @@
 """Panel for repairable-system MTBF analysis.
 
-Renders a 4-subplot figure from RepairablePanelData:
+Two halves:
+  - RepairablePanelData is the COMPLETE typed artifact — raw inputs plus every
+    data-derived quantity (elapsed days, intervals in hours, 14-day binned stats,
+    log-spaced histogram). Built solely by
+    panels._repairable_compute.build_repairable_panel_data.
+  - RepairablePanel is a PURE renderer: it reads fields and draws. No data
+    arithmetic at draw time.
+
+Renders a 4-subplot figure:
   - Top:           inter-event interval vs. elapsed days (scatter, log y)
   - Middle:        14-day binned moving average (median, IQR, p90)
   - Bottom-left:   histogram on log x-axis (multimodal distribution)
   - Bottom-right:  summary text in human-readable time units
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,16 +29,41 @@ from plots.fidelity_helpers import apply_common_style
 from plots.theme import qubit_color
 
 
+def _empty() -> np.ndarray:
+    return np.array([])
+
+
 @dataclass
 class RepairablePanelData:
+    """Complete typed contract for RepairablePanel.
+
+    Built by build_repairable_panel_data (panels/_repairable_compute.py), the sole
+    constructor path. Directly constructing this leaves the derived fields empty and
+    the renderer shows empty views — go through the builder.
+    """
+
+    # raw inputs
     intervals_s: np.ndarray
     event_times_unix_s: np.ndarray
     stats: dict
     meta: dict
 
+    # derived (populated by build_repairable_panel_data)
+    elapsed_days: np.ndarray = field(default_factory=_empty)
+    intervals_h: np.ndarray = field(default_factory=_empty)
+    binned_interval_stats: tuple[np.ndarray, ...] = field(
+        default_factory=lambda: (_empty(),) * 5
+    )
+    histogram_counts: np.ndarray = field(default_factory=_empty)
+    histogram_edges: np.ndarray = field(default_factory=_empty)
+
 
 def make_mtbf_panel_data(result: MtbfResult) -> RepairablePanelData:
-    return RepairablePanelData(
+    """Adapter: MtbfResult → complete RepairablePanelData (via the output-builder)."""
+    # Local import breaks the module cycle (compute imports RepairablePanelData here).
+    from panels._repairable_compute import build_repairable_panel_data
+
+    return build_repairable_panel_data(
         intervals_s=result.intervals_s,
         event_times_unix_s=result.event_times_unix_s,
         stats=result.stats,
@@ -41,43 +75,18 @@ def _human_time(seconds: float) -> str:
     if seconds < 120:
         return f"{seconds:.1f} s"
     if seconds < 7200:
-        return f"{seconds/60:.1f} min"
+        return f"{seconds / 60:.1f} min"
     if seconds < 172800:
-        return f"{seconds/3600:.2f} h"
-    return f"{seconds/86400:.2f} days"
-
-
-def _binned_interval_stats(
-    elapsed_days: np.ndarray,
-    intervals_h: np.ndarray,
-    bin_days: float = 14.0,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Bin intervals by elapsed days; return (centers, median, q1, q3, p90)."""
-    t0, t1 = float(np.min(elapsed_days)), float(np.max(elapsed_days))
-    edges = np.arange(t0, t1 + bin_days, bin_days)
-    if len(edges) < 2:
-        edges = np.array([t0, t1 + bin_days])
-    idx = np.digitize(elapsed_days, edges) - 1
-    centers, medians, q1s, q3s, p90s = [], [], [], [], []
-    for i in range(len(edges) - 1):
-        vals = intervals_h[idx == i]
-        if len(vals) == 0:
-            continue
-        centers.append(0.5 * (edges[i] + edges[i + 1]))
-        medians.append(float(np.median(vals)))
-        q1s.append(float(np.percentile(vals, 25)))
-        q3s.append(float(np.percentile(vals, 75)))
-        p90s.append(float(np.percentile(vals, 90)))
-    return (
-        np.asarray(centers), np.asarray(medians),
-        np.asarray(q1s), np.asarray(q3s), np.asarray(p90s),
-    )
+        return f"{seconds / 3600:.2f} h"
+    return f"{seconds / 86400:.2f} days"
 
 
 class RepairablePanel(BasePlot):
-    """MTBF analysis panel for calibration-event logs."""
+    """MTBF analysis panel for calibration-event logs (pure renderer)."""
 
-    def build_matplotlib(self, result: RepairablePanelData, style: str = "default") -> plt.Figure:
+    def build_matplotlib(
+        self, result: RepairablePanelData, style: str = "default"
+    ) -> plt.Figure:
         if not isinstance(result, RepairablePanelData):
             raise TypeError("RepairablePanel expects RepairablePanelData")
         pd_ = result
@@ -85,7 +94,9 @@ class RepairablePanel(BasePlot):
 
         plt_style = "default" if style == "default" else "classic"
         with plt.style.context(plt_style):
-            fig = plt.figure(figsize=(14, 13), constrained_layout=True, facecolor="white")
+            fig = plt.figure(
+                figsize=(14, 13), constrained_layout=True, facecolor="white"
+            )
             gs = fig.add_gridspec(3, 2, height_ratios=[1.6, 1.2, 1.0])
             ax_scatter = fig.add_subplot(gs[0, :])
             ax_roll = fig.add_subplot(gs[1, :])
@@ -107,13 +118,22 @@ class RepairablePanel(BasePlot):
 
     @staticmethod
     def _draw_scatter(ax: plt.Axes, pd_: RepairablePanelData, color: str) -> None:
-        t0 = float(pd_.event_times_unix_s[0])
-        elapsed_days = (pd_.event_times_unix_s - t0) / 86400.0
-        intervals_h = pd_.intervals_s / 3600.0
-        ax.scatter(elapsed_days, intervals_h, s=4, alpha=0.8, color=color, linewidths=0)
+        ax.scatter(
+            pd_.elapsed_days,
+            pd_.intervals_h,
+            s=4,
+            alpha=0.8,
+            color=color,
+            linewidths=0,
+        )
         mean_h = pd_.stats["mean_s"] / 3600.0
-        ax.axhline(mean_h, color="gray", linestyle="--", linewidth=1.2,
-                   label=f"Mean MTBF = {_human_time(pd_.stats['mean_s'])}")
+        ax.axhline(
+            mean_h,
+            color="gray",
+            linestyle="--",
+            linewidth=1.2,
+            label=f"Mean MTBF = {_human_time(pd_.stats['mean_s'])}",
+        )
         ax.set_yscale("log")
         ax.set_xlabel("Elapsed time (days)")
         ax.set_ylabel("Inter-event interval (h)")
@@ -126,16 +146,26 @@ class RepairablePanel(BasePlot):
 
     @staticmethod
     def _draw_rolling(ax: plt.Axes, pd_: RepairablePanelData, color: str) -> None:
-        t0 = float(pd_.event_times_unix_s[0])
-        elapsed_days = (pd_.event_times_unix_s - t0) / 86400.0
-        intervals_h = pd_.intervals_s / 3600.0
-        centers, medians, q1s, q3s, p90s = _binned_interval_stats(elapsed_days, intervals_h)
+        centers, medians, q1s, q3s, p90s = pd_.binned_interval_stats
         if len(centers) == 0:
             ax.axis("off")
             return
-        ax.plot(centers, medians, "-", linewidth=1.4, color=color, label="Median", zorder=2)
-        ax.fill_between(centers, q1s, q3s, color=color, alpha=0.2, zorder=1, label="IQR")
-        ax.plot(centers, p90s, "--", linewidth=0.8, color=color, alpha=0.55, label="p90", zorder=1)
+        ax.plot(
+            centers, medians, "-", linewidth=1.4, color=color, label="Median", zorder=2
+        )
+        ax.fill_between(
+            centers, q1s, q3s, color=color, alpha=0.2, zorder=1, label="IQR"
+        )
+        ax.plot(
+            centers,
+            p90s,
+            "--",
+            linewidth=0.8,
+            color=color,
+            alpha=0.55,
+            label="p90",
+            zorder=1,
+        )
         ax.set_xlabel("Elapsed time (days)")
         ax.set_ylabel("Interval (h)")
         ax.set_title("14-day binned statistics (median, IQR, p90)")
@@ -144,13 +174,11 @@ class RepairablePanel(BasePlot):
 
     @staticmethod
     def _draw_histogram(ax: plt.Axes, pd_: RepairablePanelData, color: str) -> None:
-        ivs = pd_.intervals_s
-        valid = ivs[ivs > 0]
-        if len(valid) == 0:
+        counts, edges = pd_.histogram_counts, pd_.histogram_edges
+        if len(counts) == 0:
             ax.axis("off")
             return
-        log_bins = np.logspace(np.log10(float(np.min(valid))), np.log10(float(np.max(valid))), 50)
-        ax.hist(valid, bins=log_bins, color=color, alpha=0.75, edgecolor="none")
+        ax.stairs(counts, edges, fill=True, color=color, alpha=0.75)
         ax.set_xscale("log")
         ax.set_xlabel("Interval (s)")
         ax.set_ylabel("Count")
@@ -174,8 +202,17 @@ class RepairablePanel(BasePlot):
         ]
         ax.axis("off")
         ax.text(
-            0.05, 0.95, "\n".join(lines),
-            transform=ax.transAxes, ha="left", va="top", fontsize=8.5,
+            0.05,
+            0.95,
+            "\n".join(lines),
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=8.5,
             family="monospace",
-            bbox={"facecolor": "lightyellow", "edgecolor": "gray", "boxstyle": "round,pad=0.5"},
+            bbox={
+                "facecolor": "lightyellow",
+                "edgecolor": "gray",
+                "boxstyle": "round,pad=0.5",
+            },
         )
