@@ -76,6 +76,11 @@ def main() -> None:
     run_parser.add_argument("--include-archived", action="store_true")
     run_parser.add_argument("--force", action="store_true")
     run_parser.add_argument(
+        "--reuse-deps",
+        action="store_true",
+        help="For composite jobs: reuse included sub-jobs' cached artifacts instead of re-running them.",
+    )
+    run_parser.add_argument(
         "--data-root",
         type=str,
         default=None,
@@ -90,7 +95,9 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "run":
-        data_root = Path(args.data_root).expanduser().resolve() if args.data_root else None
+        data_root = (
+            Path(args.data_root).expanduser().resolve() if args.data_root else None
+        )
         if args.all:
             job_files = [
                 job_file
@@ -102,15 +109,26 @@ def main() -> None:
                     job_file
                     for job_file in sorted(Path("jobs/archived").glob("*.py"))
                     if job_file.name != "__init__.py"
-                    
                 )
             for job_file in job_files:
                 print("\n\n---------------------\nRunning job from", job_file)
-                run_job(_module_from_path(job_file).job, Path("output"), force=args.force, data_root=data_root)
+                run_job(
+                    _module_from_path(job_file).job,
+                    Path("output"),
+                    force=args.force,
+                    data_root=data_root,
+                    reuse_deps=args.reuse_deps,
+                )
             return
         if not args.path:
             parser.error("run requires a path unless --all is set")
-        run_job(_module_from_path(Path(args.path)).job, Path("output"), force=args.force, data_root=data_root)
+        run_job(
+            _module_from_path(Path(args.path)).job,
+            Path("output"),
+            force=args.force,
+            data_root=data_root,
+            reuse_deps=args.reuse_deps,
+        )
         return
     if args.command == "inspect":
         print("Loaders:", ", ".join(sorted(_LOADER_REGISTRY)))
@@ -120,7 +138,7 @@ def main() -> None:
         return
     if args.command == "schema-wizard":
         file_path = Path(args.file)
-        
+
         # Special handling for HDF5 files with multiple datasets
         if file_path.suffix.lower() in {".h5", ".hdf5"} and h5py:
             with h5py.File(file_path, "r") as f:
@@ -128,9 +146,9 @@ def main() -> None:
                 if len(keys) > 1:
                     print(f"Multiple datasets found: {', '.join(keys)}\n")
                     for key in keys:
-                        print(f"\n{'='*60}")
+                        print(f"\n{'=' * 60}")
                         print(f"Dataset: {key}")
-                        print('='*60)
+                        print("=" * 60)
                         dataset = f[key]
                         data = dataset[()]
                         if len(data.shape) == 2:
@@ -142,7 +160,7 @@ def main() -> None:
                             continue
                         _schema_stub(df)
                     return
-        
+
         _schema_stub(load(file_path))
 
 

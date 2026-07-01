@@ -34,6 +34,8 @@ def get_git_commit() -> str:
     return commit or "nogit"
 
 
+
+
 def build_prov_record(
     job_file: str | Path,
     job_file_hash: str,
@@ -44,6 +46,7 @@ def build_prov_record(
     targets: list[str],
     node_name: str,
     figure_node_label: str | None = None,
+    includes: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     # keep backwards-compatible top-level fields for the primary dataset
     primary_path = dataset_paths[0] if dataset_paths else ""
@@ -60,6 +63,8 @@ def build_prov_record(
         "pipeline_steps": list(pipeline_steps),
         "targets_rendered": list(targets),
         "figure_node_label": figure_node_label,
+        # composite jobs: opaque upstream sub-jobs (see save_prov mermaid).
+        "includes": list(includes) if includes else [],
     }
 
 
@@ -69,21 +74,39 @@ def _short_hash(value: str, length: int = 6) -> str:
 
 
 def _mermaid_label(text: str) -> str:
-    escaped = text.replace("\n", "\\n").replace('"', "\\\"")
+    escaped = text.replace("\n", "\\n").replace('"', '\\"')
     return f'"{escaped}"'
 
 
 def save_prov(record: dict[str, object], out_dir: Path, node_name: str) -> None:
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # All provenance lives under a provenance/ subdir to keep the job output
+    # dir uncluttered (figures and .pkl artifacts stay at the top level).
+    prov_dir = out_dir / "provenance"
+    prov_dir.mkdir(parents=True, exist_ok=True)
 
-    json_path = out_dir / f"{node_name}.prov.json"
-    md_path = out_dir / f"{node_name}.prov.md"
+    json_path = prov_dir / f"{node_name}.prov.json"
+    md_path = prov_dir / f"{node_name}.prov.md"
 
-    json_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    json_path.write_text(
+        json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
+    includes = record.get("includes") or []
+    if includes:
+        md_text = _mermaid_with_includes(record, node_name, list(includes))
+    else:
+        md_text = _mermaid_with_datasets(record, node_name)
+    md_path.write_text(md_text, encoding="utf-8")
+
+
+def _mermaid_with_datasets(record: dict[str, object], node_name: str) -> str:
     # Support multiple dataset paths (primary + companions)
-    dataset_paths = record.get("dataset_paths") or ([record.get("dataset_path")] if record.get("dataset_path") else [])
-    dataset_hashes = record.get("dataset_hashes") or ([record.get("dataset_hash")] if record.get("dataset_hash") else [])
+    dataset_paths = record.get("dataset_paths") or (
+        [record.get("dataset_path")] if record.get("dataset_path") else []
+    )
+    dataset_hashes = record.get("dataset_hashes") or (
+        [record.get("dataset_hash")] if record.get("dataset_hash") else []
+    )
     # Build mermaid nodes for each dataset
     dataset_nodes = []
     for p, h in zip(dataset_paths, dataset_hashes):
@@ -118,4 +141,59 @@ def save_prov(record: dict[str, object], out_dir: Path, node_name: str) -> None:
         final_label = f"{node_name}\\ngit:{git_commit}"
     lines.append(f"  {previous_node} --> {figure_node}[{_mermaid_label(final_label)}]")
 
-    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return "\n".join(lines) + "\n"
+
+
+def _mermaid_with_includes(
+    record: dict[str, object], node_name: str, includes: list[dict[str, object]]
+) -> str:
+    """Composite graph: one opaque node per included sub-job feeding the first
+    composite step. Sub-job internals are NOT expanded here — each include node
+    carries a `click` link to that sub-job's own provenance graph."""
+    steps = [str(step) for step in record.get("pipeline_steps", [])]
+    git_commit = str(record["git_commit"])
+    figure_node_label = record.get("figure_node_label")
+
+    lines = ["graph LR"]
+    click_lines: list[str] = []
+    root_letters: list[str] = []
+    for idx, inc in enumerate(includes):
+        root_id = chr(ord("A") + idx)
+        root_letters.append(root_id)
+        alias = str(inc.get("alias", "sub"))
+        ref_node = str(inc.get("node_name", ""))
+        short = _short_hash(str(inc.get("artifact_hash", "")))
+        lines.append(
+            f"  {root_id}[{_mermaid_label(f'{alias}\\n{ref_node}\\n{short}')}]"
+        )
+        prov_ref = inc.get("subjob_prov_dir")
+        if prov_ref:
+            click_lines.append(f'  click {root_id} "{prov_ref}"')
+
+    n_roots = len(root_letters)
+    # Downstream chain: composite steps, then the figure node.
+    chain: list[tuple[str, str]] = [
+        (chr(ord("A") + n_roots + i), _mermaid_label(step))
+        for i, step in enumerate(steps)
+    ]
+    figure_node = chr(ord("A") + n_roots + len(steps))
+    if isinstance(figure_node_label, str) and figure_node_label.strip():
+        final_label = figure_node_label
+    else:
+        final_label = f"{node_name}\\ngit:{git_commit}"
+    chain.append((figure_node, _mermaid_label(final_label)))
+
+    # Every root feeds the first downstream node; the first edge declares its label.
+    first_id, first_label = chain[0]
+    for i, root_id in enumerate(root_letters):
+        if i == 0:
+            lines.append(f"  {root_id} --> {first_id}[{first_label}]")
+        else:
+            lines.append(f"  {root_id} --> {first_id}")
+    prev = first_id
+    for nid, lbl in chain[1:]:
+        lines.append(f"  {prev} --> {nid}[{lbl}]")
+        prev = nid
+
+    lines.extend(click_lines)
+    return "\n".join(lines) + "\n"
