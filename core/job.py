@@ -14,6 +14,7 @@ import pandas as pd
 
 from loaders.registry import load as load_dataframe
 from core.dataset import Dataset
+from core.paths import resolve_repo_path
 from core.types import Norm
 from plots.base import BasePlot
 from transforms.lookup_prior import check_unix_s
@@ -284,7 +285,15 @@ class Job:
         datasets/provenance resolve exactly as a standalone run); `figures=False`
         (default) turns each of its figure() sinks into a materialization.
         """
-        sub_path = Path(path)
+        # Resolve BEFORE _import_job so the import works from any CWD; the
+        # absolute path is also what _resolve_one_include re-reads for the
+        # reuse-glob source hash.
+        sub_path = resolve_repo_path(path)
+        if not sub_path.exists():
+            raise FileNotFoundError(
+                f"include not found: '{path}' resolved to '{sub_path}'. "
+                "Include paths are repo-root-relative (e.g. 'jobs/active/<job>.py')."
+            )
         sub_job = _import_job(sub_path)
         if sub_job.includes:
             raise ValueError(

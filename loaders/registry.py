@@ -21,29 +21,27 @@ def _normalize_extension(extension: str) -> str:
 
 
 def _resolve_input_path(path: Path) -> Path:
-    if path.is_absolute():
-        return path
-
-    cwd = Path.cwd()
-    candidates = [cwd / path, cwd.parent / path]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate.resolve()
-
-    return (cwd.parent / path).resolve()
+    # Jobs deliver pre-verified absolute paths (resolved once in core/runner
+    # against the dataset root); a bare relative path here is a user-typed CLI
+    # argument (schema-wizard, direct load()) and is plainly CWD-relative.
+    return path.expanduser().resolve()
 
 
 def register_loader(*extensions: str) -> Callable[[LoaderFn], LoaderFn]:
     if not extensions:
         raise ValueError("register_loader() requires at least one file extension")
 
-    normalized_extensions = tuple(_normalize_extension(extension) for extension in extensions)
+    normalized_extensions = tuple(
+        _normalize_extension(extension) for extension in extensions
+    )
 
     def decorator(fn: LoaderFn) -> LoaderFn:
         for extension in normalized_extensions:
             existing = _LOADER_REGISTRY.get(extension)
             if existing is not None and existing is not fn:
-                raise ValueError(f"Loader already registered for extension '{extension}'")
+                raise ValueError(
+                    f"Loader already registered for extension '{extension}'"
+                )
             _LOADER_REGISTRY[extension] = fn
         return fn
 
@@ -73,15 +71,15 @@ def _load_yaml(path: Path, meta: dict[str, Any]) -> pd.DataFrame:
 
 def _load_hdf(path: Path, meta: dict[str, Any]) -> pd.DataFrame:
     import h5py
-    
+
     key = meta.get("key")
-    
+
     with h5py.File(path, "r") as f:
         keys = list(f.keys())
-        
+
         if not keys:
             raise ValueError(f"HDF5 file {path} does not contain any datasets")
-        
+
         if key is None:
             if len(keys) > 1:
                 available = ", ".join(keys)
@@ -91,10 +89,10 @@ def _load_hdf(path: Path, meta: dict[str, Any]) -> pd.DataFrame:
             key = keys[0]
         elif key not in f:
             raise ValueError(f"Dataset '{key}' not found in {path}")
-        
+
         dataset = f[key]
         data = dataset[()]
-        
+
         # Convert to DataFrame
         if len(data.shape) == 1:
             df = pd.DataFrame({key: data})
@@ -108,10 +106,16 @@ def _load_hdf(path: Path, meta: dict[str, Any]) -> pd.DataFrame:
         df.attrs["hdf5"] = {
             "path": str(path),
             "key": str(key),
-            "measurement_time": str(f.attrs.get("measurement_time")) if "measurement_time" in f.attrs else None,
-            "completed_time": str(f.attrs.get("completed_time")) if "completed_time" in f.attrs else None,
+            "measurement_time": str(f.attrs.get("measurement_time"))
+            if "measurement_time" in f.attrs
+            else None,
+            "completed_time": str(f.attrs.get("completed_time"))
+            if "completed_time" in f.attrs
+            else None,
             "uuid_ns": int(f.attrs["uuid"]) if "uuid" in f.attrs else None,
-            "application": str(f.attrs.get("application")) if "application" in f.attrs else None,
+            "application": str(f.attrs.get("application"))
+            if "application" in f.attrs
+            else None,
         }
         return df
 

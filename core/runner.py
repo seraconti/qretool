@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import dataclasses
 import pickle
 import sys
 from datetime import datetime
 from pathlib import Path
 
 from core.job import Job, _FigureSink, _DAGNode, _subjob_artifact
+from core.paths import default_dataset_root, repo_root, resolve_dataset_path
 from provenance import (
     build_prov_record,
     get_git_commit,
@@ -32,27 +34,29 @@ def _job_file(job: Job) -> Path:
     return Path(module_file).resolve()
 
 
-def _project_root(job_file: Path) -> Path:
-    return job_file.parents[2]
-
-
-def _resolve_dataset_path(
-    job_file: Path, dataset_path: Path, data_root: Path | None = None
-) -> Path:
-    if dataset_path.is_absolute():
-        return dataset_path
-    # If caller provided a data_root, resolve relative to it (explicit override)
-    if data_root is not None:
-        return (Path(data_root) / dataset_path).resolve()
-    # Default: resolve relative to the project root inferred from the job file
-    return (_project_root(job_file) / dataset_path).resolve()
-
-
 def _format_step(node: _DAGNode) -> str:
     if node.kwargs:
         kwargs = ", ".join(f"{key}={value!r}" for key, value in node.kwargs.items())
         return f"{node.fn_name}({kwargs})"
     return node.fn_name
+
+
+def _fmt_dataset_path(p: Path, dataset_root: Path) -> str:
+    """Stringify a dataset path dataset_root-relative when possible, else absolute."""
+    try:
+        return str(p.relative_to(dataset_root))
+    except Exception:
+        return str(p)
+
+
+def _dataset_load_nodes(job: Job) -> dict[str, _DAGNode]:
+    """Load nodes (main + companions) that carry a Dataset kwarg, by node id."""
+    return {
+        node_id: node
+        for node_id, node in job.dag.items()
+        if node.fn.__name__ in {"_load_dataset", "_load_dataframe_raw"}
+        and node.kwargs.get("dataset") is not None
+    }
 
 
 def _toposort(job: Job, root_ids: list[str]) -> list[str]:
@@ -211,6 +215,72 @@ def _resolve_one_include(
     return obj, mode, prov_rel, artifact_hash
 
 
+def _emit_prov(
+    *,
+    job: Job,
+    root_node_id: str,
+    ordered_ids: list[str],
+    job_file: Path,
+    repo: Path,
+    dataset_root: Path,
+    resolved_datasets: dict[str, Path],
+    job_hash_full: str,
+    git_commit: str,
+    includes_prov: list[dict[str, object]],
+    hash_cache: dict[Path, str],
+    job_out_dir: Path,
+    prov_name: str,
+    targets: list[str],
+    figure_node_label: str | None = None,
+) -> None:
+    """Build and save one sink's provenance record.
+
+    Datasets reachable from `root_node_id` are looked up in `resolved_datasets`
+    (the run's single resolution point — the same paths the loader opened, so the
+    recorded hash describes the file actually loaded) and hashed at most once per
+    run_job via `hash_cache`. Shared by the figure and materialize sinks so their
+    two prov passes cannot drift apart. Only `prov_name`, `targets`, and
+    `figure_node_label` differ between them. Hash failures propagate — a
+    placeholder hash is never recorded.
+    """
+    ancestors = _ancestors(job, root_node_id)
+    dataset_paths: list[Path] = []
+    dataset_hashes: list[str] = []
+    for node_id in job.dag:
+        if node_id not in ancestors or node_id not in resolved_datasets:
+            continue
+        p = resolved_datasets[node_id]
+        dataset_paths.append(p)
+        if p not in hash_cache:
+            hash_cache[p] = f"sha256:{hash_file(p)}"
+        dataset_hashes.append(hash_cache[p])
+
+    try:
+        job_file_rendered: Path | str = job_file.relative_to(repo)
+    except ValueError:
+        job_file_rendered = job_file
+
+    record = build_prov_record(
+        job_file=job_file_rendered,
+        job_file_hash=f"sha256:{job_hash_full}",
+        dataset_paths=[_fmt_dataset_path(p, dataset_root) for p in dataset_paths],
+        dataset_hashes=dataset_hashes,
+        git_commit=git_commit,
+        pipeline_steps=[
+            _format_step(job.dag[node_id])
+            for node_id in ordered_ids
+            if node_id in ancestors
+            and job.dag[node_id].fn.__name__ != "_load_dataset"
+            and job.dag[node_id].fn is not _subjob_artifact
+        ],
+        targets=targets,
+        node_name=prov_name,
+        figure_node_label=figure_node_label,
+        includes=includes_prov,
+    )
+    save_prov(record, job_out_dir, prov_name)
+
+
 def run_job(
     job: Job,
     out_dir: Path,
@@ -221,7 +291,8 @@ def run_job(
 ) -> None:
     job_file = _job_file(job)
     job_source = job_file.read_text(encoding="utf-8")
-    project_root = _project_root(job_file)
+    repo = repo_root()
+    dataset_root = Path(data_root).resolve() if data_root else default_dataset_root()
     job_hash_full = hash_string(job_source)
     job_hash = job_hash_full[:6]
     git_commit = get_git_commit()
@@ -235,6 +306,16 @@ def run_job(
         if existing and not force:
             print(f"Skipping {job.name}: output already exists")
             return
+
+    # Single resolution point for every dataset path: this mapping feeds BOTH the
+    # execution loop (loader) and _emit_prov (hashing), so the recorded hash always
+    # describes the file actually loaded. Runs after the dedup-skip (skipped jobs
+    # never touch datasets) and before mkdir (a missing dataset raises before any
+    # output dir exists).
+    resolved_datasets: dict[str, Path] = {
+        node_id: resolve_dataset_path(node.kwargs["dataset"].path, dataset_root)
+        for node_id, node in _dataset_load_nodes(job).items()
+    }
 
     # Create timestamped folder: always unique when creating or force-rerunning
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -266,8 +347,22 @@ def run_job(
             results[node_id] = include_results[node_id]
             continue
         inputs = [results[input_handle.node_id] for input_handle in node.inputs]
-        results[node_id] = node.fn(*inputs, **node.kwargs)
+        kwargs = node.kwargs
+        if node_id in resolved_datasets:
+            # Hand the loader a COPY of the Dataset carrying the resolved absolute
+            # path; node.kwargs stays pristine so relative paths (not machine-
+            # specific absolutes) render into pipeline_steps/Mermaid labels.
+            kwargs = {
+                **kwargs,
+                "dataset": dataclasses.replace(
+                    kwargs["dataset"], path=resolved_datasets[node_id]
+                ),
+            }
+        results[node_id] = node.fn(*inputs, **kwargs)
 
+    # One hash per distinct dataset file per run: sinks share this cache, so a
+    # dataset reachable by several sinks is no longer re-hashed once per sink.
+    dataset_hash_cache: dict[Path, str] = {}
     for sink in job.sinks:
         if isinstance(sink, _FigureSink):
             result = results[sink.input.node_id]
@@ -287,100 +382,41 @@ def run_job(
                     pickle.dump(result, handle)
                 rendered_targets = []
                 fig_label = None
-            # collect all dataset load nodes reachable by this sink (main + companions)
-            ancestors = _ancestors(job, sink.input.node_id)
-            dataset_nodes = [
-                node
-                for node_id, node in job.dag.items()
-                if node_id in ancestors
-                and node.fn.__name__ in {"_load_dataset", "_load_dataframe_raw"}
-            ]
-            dataset_paths: list[Path] = []
-            dataset_hashes: list[str] = []
-            for node in dataset_nodes:
-                ds = node.kwargs.get("dataset")
-                if ds is None:
-                    continue
-                p = _resolve_dataset_path(job_file, Path(ds.path), data_root=data_root)
-                dataset_paths.append(p)
-                try:
-                    dataset_hashes.append(f"sha256:{hash_file(p)}")
-                except Exception:
-                    dataset_hashes.append("sha256:unreadable")
-
-            # Build provenance record including lists of dataset paths/hashes
-            # stringify dataset paths: prefer project-relative when possible, else absolute
-            def _fmt(p: Path) -> str:
-                try:
-                    return str(p.relative_to(project_root))
-                except Exception:
-                    return str(p)
-
-            record = build_prov_record(
-                job_file=job_file.relative_to(project_root),
-                job_file_hash=f"sha256:{job_hash_full}",
-                dataset_paths=[_fmt(p) for p in dataset_paths],
-                dataset_hashes=dataset_hashes,
+            _emit_prov(
+                job=job,
+                root_node_id=sink.input.node_id,
+                ordered_ids=ordered_ids,
+                job_file=job_file,
+                repo=repo,
+                dataset_root=dataset_root,
+                resolved_datasets=resolved_datasets,
+                job_hash_full=job_hash_full,
                 git_commit=git_commit,
-                pipeline_steps=[
-                    _format_step(job.dag[node_id])
-                    for node_id in ordered_ids
-                    if node_id in ancestors
-                    and job.dag[node_id].fn.__name__ != "_load_dataset"
-                    and job.dag[node_id].fn is not _subjob_artifact
-                ],
+                includes_prov=includes_prov,
+                hash_cache=dataset_hash_cache,
+                job_out_dir=job_out_dir,
+                prov_name=prov_name,
                 targets=rendered_targets,
-                node_name=prov_name,
                 figure_node_label=fig_label,
-                includes=includes_prov,
             )
-            save_prov(record, job_out_dir, prov_name)
             continue
 
         result = results[sink.node.node_id]
         with (job_out_dir / f"{sink.name}.pkl").open("wb") as handle:
             pickle.dump(result, handle)
-        ancestors = _ancestors(job, sink.node.node_id)
-        dataset_nodes = [
-            node
-            for node_id, node in job.dag.items()
-            if node_id in ancestors
-            and node.fn.__name__ in {"_load_dataset", "_load_dataframe_raw"}
-        ]
-        dataset_paths: list[Path] = []
-        dataset_hashes: list[str] = []
-        for node in dataset_nodes:
-            ds = node.kwargs.get("dataset")
-            if ds is None:
-                continue
-            p = _resolve_dataset_path(job_file, Path(ds.path), data_root=data_root)
-            dataset_paths.append(p)
-            try:
-                dataset_hashes.append(f"sha256:{hash_file(p)}")
-            except Exception:
-                dataset_hashes.append("sha256:unreadable")
-
-        def _fmt(p: Path) -> str:
-            try:
-                return str(p.relative_to(project_root))
-            except Exception:
-                return str(p)
-
-        record = build_prov_record(
-            job_file=job_file.relative_to(project_root),
-            job_file_hash=f"sha256:{job_hash_full}",
-            dataset_paths=[_fmt(p) for p in dataset_paths],
-            dataset_hashes=dataset_hashes,
+        _emit_prov(
+            job=job,
+            root_node_id=sink.node.node_id,
+            ordered_ids=ordered_ids,
+            job_file=job_file,
+            repo=repo,
+            dataset_root=dataset_root,
+            resolved_datasets=resolved_datasets,
+            job_hash_full=job_hash_full,
             git_commit=git_commit,
-            pipeline_steps=[
-                _format_step(job.dag[node_id])
-                for node_id in ordered_ids
-                if node_id in ancestors
-                and job.dag[node_id].fn.__name__ != "_load_dataset"
-                and job.dag[node_id].fn is not _subjob_artifact
-            ],
+            includes_prov=includes_prov,
+            hash_cache=dataset_hash_cache,
+            job_out_dir=job_out_dir,
+            prov_name=sink.name,
             targets=[],
-            node_name=sink.name,
-            includes=includes_prov,
         )
-        save_prov(record, job_out_dir, sink.name)

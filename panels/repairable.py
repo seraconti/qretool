@@ -24,6 +24,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from analyzers.mtbf import MtbfResult
+from panels._artifact_guard import StaleArtifactGuard
 from plots.base import BasePlot
 from plots.fidelity_helpers import apply_common_style
 from plots.theme import qubit_color
@@ -34,19 +35,21 @@ def _empty() -> np.ndarray:
 
 
 @dataclass
-class RepairablePanelData:
+class RepairablePanelData(StaleArtifactGuard):
     """Complete typed contract for RepairablePanel.
 
     Built by build_repairable_panel_data (panels/_repairable_compute.py), the sole
     constructor path. Directly constructing this leaves the derived fields empty and
-    the renderer shows empty views — go through the builder.
+    the renderer shows empty views — go through the builder. Unpickling a stale
+    pre-split artifact (one missing any field) raises ValueError via
+    StaleArtifactGuard.
     """
 
     # raw inputs
     intervals_s: np.ndarray
     event_times_unix_s: np.ndarray
-    stats: dict
-    meta: dict
+    stats: dict[str, object]
+    meta: dict[str, object]
 
     # derived (populated by build_repairable_panel_data)
     elapsed_days: np.ndarray = field(default_factory=_empty)

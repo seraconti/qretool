@@ -70,8 +70,8 @@ def build_repairable_panel_data(
     *,
     intervals_s: np.ndarray,
     event_times_unix_s: np.ndarray,
-    stats: dict,
-    meta: dict,
+    stats: dict[str, object],
+    meta: dict[str, object],
     bin_days: float = 14.0,
     hist_bins: int = 50,
 ) -> RepairablePanelData:

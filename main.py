@@ -18,6 +18,11 @@ try:
 except ImportError:
     h5py = None
 
+# Anchor jobs/ globs and output/ on the repo, not the CWD, so invocation works
+# from anywhere. User-typed path arguments (run <path>, inspect, schema-wizard)
+# stay CWD-relative.
+_REPO_ROOT = Path(__file__).resolve().parent
+
 
 def _module_from_path(path: Path):
     module_name = f"job_{re.sub(r'[^A-Za-z0-9_]', '_', path.stem)}_{hash_string(str(path.resolve()))[:8]}"
@@ -84,7 +89,7 @@ def main() -> None:
         "--data-root",
         type=str,
         default=None,
-        help="Base directory for resolving relative dataset paths (e.g. 'tool/datasets/...').",
+        help="Dataset root for relative dataset paths (default: the repo's parent directory); used by both loading and provenance hashing.",
     )
 
     inspect_parser = subparsers.add_parser("inspect")
@@ -101,30 +106,46 @@ def main() -> None:
         if args.all:
             job_files = [
                 job_file
-                for job_file in sorted(Path("jobs/active").glob("*.py"))
+                for job_file in sorted((_REPO_ROOT / "jobs" / "active").glob("*.py"))
                 if job_file.name != "__init__.py"
             ]
             if args.include_archived:
                 job_files.extend(
                     job_file
-                    for job_file in sorted(Path("jobs/archived").glob("*.py"))
+                    for job_file in sorted(
+                        (_REPO_ROOT / "jobs" / "archived").glob("*.py")
+                    )
                     if job_file.name != "__init__.py"
                 )
+            failures: list[tuple[Path, Exception]] = []
             for job_file in job_files:
                 print("\n\n---------------------\nRunning job from", job_file)
-                run_job(
-                    _module_from_path(job_file).job,
-                    Path("output"),
-                    force=args.force,
-                    data_root=data_root,
-                    reuse_deps=args.reuse_deps,
+                try:
+                    run_job(
+                        _module_from_path(job_file).job,
+                        _REPO_ROOT / "output",
+                        force=args.force,
+                        data_root=data_root,
+                        reuse_deps=args.reuse_deps,
+                    )
+                except Exception as exc:  # noqa: BLE001 - isolate one bad job from the batch
+                    failures.append((job_file, exc))
+                    print(
+                        f"\033[91mERROR: could not run job '{job_file}': {exc}\033[0m"
+                    )
+            if failures:
+                print(
+                    f"\n\033[91m{len(failures)}/{len(job_files)} job(s) failed:\033[0m"
                 )
+                for job_file, exc in failures:
+                    print(f"  \033[91m- {job_file}: {exc}\033[0m")
+                sys.exit(1)
             return
         if not args.path:
             parser.error("run requires a path unless --all is set")
         run_job(
             _module_from_path(Path(args.path)).job,
-            Path("output"),
+            _REPO_ROOT / "output",
             force=args.force,
             data_root=data_root,
             reuse_deps=args.reuse_deps,

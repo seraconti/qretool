@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
 
+from panels._artifact_guard import StaleArtifactGuard
 from plots.base import BasePlot
 from plots.fidelity_helpers import apply_common_style
 
@@ -40,14 +41,16 @@ _THRESHOLD_COLORS = [
 
 
 @dataclass
-class NonRepairablePanelData:
+class NonRepairablePanelData(StaleArtifactGuard):
     """Complete typed contract for NonRepairablePanel.
 
     Built by build_non_repairable_panel_data (panels/_non_repairable_compute.py),
     which is the sole constructor path: the renderer assumes the derived fields are
     populated. Directly constructing this dataclass leaves the derived fields empty
     (their defaults) and the renderer will show empty derived views — go through the
-    builder. A completeness validator is deferred (see the restructure plan).
+    builder. Unpickling a stale pre-split artifact (one missing any field) raises
+    ValueError via StaleArtifactGuard. A full completeness validator at construction
+    time is deferred (see the restructure plan).
 
     Raw input fields
     ----------------
@@ -102,7 +105,10 @@ class NonRepairablePanelData:
     binned_stats_per_trace: dict[str, tuple[np.ndarray, ...]] = field(
         default_factory=dict
     )
-    cv: float = float("nan")
+    # default_factory (not a plain class default) so the value lives in instance
+    # __dict__ like every other derived field: absence is then detectable rather
+    # than silently falling back to a class attribute.
+    cv: float = field(default_factory=lambda: float("nan"))
     threshold_in_spec_frac: dict[str, float] = field(default_factory=dict)
     threshold_summary: dict[str, dict[str, float] | None] = field(default_factory=dict)
 

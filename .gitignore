@@ -1,7 +1,12 @@
+# Ignore all dotfiles/dotdirs (session/editor/tool state, e.g. .claude/)
+# except .gitignore itself, which must stay tracked.
+.*
+!.gitignore
+
 # Ignore all Markdown files except README.md
 *.md
 !README.md
-!TIME_SEMANTICS.md
+
 
 # Python bytecode
 __pycache__/
@@ -10,4 +15,7 @@ __pycache__/
 # Generated outputs
 output/
 output_backup/
+output_backup2/
 
+# per commit tests, temp
+tests/

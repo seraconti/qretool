@@ -34,8 +34,6 @@ def get_git_commit() -> str:
     return commit or "nogit"
 
 
-
-
 def build_prov_record(
     job_file: str | Path,
     job_file_hash: str,
