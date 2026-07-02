@@ -14,10 +14,12 @@ import pandas as pd
 
 from loaders.registry import load as load_dataframe
 from core.dataset import Dataset
-from core.paths import resolve_repo_path
+from core.identity import Identity, content_hash
+from core.paths import resolve_dataset_path, resolve_repo_path
 from core.reference import ArtifactRef, LocalRef, Reference
 from core.types import Norm
 from plots.base import BasePlot
+from provenance import hash_string
 from transforms.lookup_prior import check_unix_s
 
 
@@ -254,6 +256,66 @@ class Job:
         self._node_counts: dict[str, int] = {}
         # Composite jobs: sub-jobs pulled in via include(); empty for normal jobs.
         self.includes: list[_IncludedJob] = []
+        # Set at import time (main._module_from_path / _import_job); required to
+        # compute the code hash. Memoized identity caches (compute once per Job).
+        self.job_file: Path | None = None
+        self._code_hash: str | None = None
+        self._identity: Identity | None = None
+        self._identity_root: Path | None = None
+
+    def code_hash(self) -> str:
+        """Hash of this job's source file (the identity's `code` contribution).
+
+        Memoized so a composite and its own run don't re-read/re-hash the same
+        source file."""
+        if self._code_hash is None:
+            if self.job_file is None:
+                raise ValueError("Job.code_hash() requires job_file to be set")
+            self._code_hash = hash_string(
+                Path(self.job_file).read_text(encoding="utf-8")
+            )
+        return self._code_hash
+
+    def build_identity(self, dataset_root: Path) -> Identity:
+        """This job's content identity, folding code + data + children (memoized).
+
+        `data` is the content hash of every dataset the job loads (keyed by
+        dataset-root-relative path); `children` are the identities of included
+        sub-jobs, so a composite's identity changes iff a child's does."""
+        if self._identity is not None:
+            if self._identity_root != dataset_root:
+                raise ValueError(
+                    "Job.build_identity() called with a different dataset_root than "
+                    "the memoized one; identity would be silently stale"
+                )
+            return self._identity
+
+        data: dict[str, str] = {}
+        for node in self.dag.values():
+            if node.fn.__name__ not in {"_load_dataset", "_load_dataframe_raw"}:
+                continue
+            ds = node.kwargs.get("dataset")
+            if ds is None:
+                continue
+            path = resolve_dataset_path(ds.path, dataset_root)
+            try:
+                key = str(path.relative_to(dataset_root))
+            except ValueError:
+                # dataset outside dataset_root: fall back to the absolute path.
+                # Machine-specific — flagged for the reuse-key work in a later
+                # increment; does not occur for the in-repo-parent datasets.
+                key = str(path)
+            data[key] = content_hash(path)
+        children = tuple(
+            inc.job.build_identity(dataset_root).digest for inc in self.includes
+        )
+        self._identity = Identity(
+            code=self.code_hash(),
+            data=tuple(sorted(data.items())),
+            children=children,
+        )
+        self._identity_root = dataset_root
+        return self._identity
 
     def include(
         self, path: str | Path, alias: str | None = None, figures: bool = False

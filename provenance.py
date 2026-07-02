@@ -43,6 +43,7 @@ def build_prov_record(
     pipeline_steps: list[str],
     targets: list[str],
     node_name: str,
+    identity: str | None = None,
     figure_node_label: str | None = None,
     includes: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
@@ -57,6 +58,9 @@ def build_prov_record(
         "dataset_hash": primary_hash,
         "dataset_paths": list(dataset_paths),
         "dataset_hashes": list(dataset_hashes),
+        # content identity of the run (code + data + sub-job identities); folds
+        # nothing time- or machine-specific. git_commit below is separate lineage.
+        "identity": identity,
         "git_commit": git_commit,
         "pipeline_steps": list(pipeline_steps),
         "targets_rendered": list(targets),

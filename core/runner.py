@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from core.job import Job, _FigureSink, _DAGNode
+from core.identity import content_hash
 from core.paths import default_dataset_root, repo_root, resolve_dataset_path
 from core.reference import (
     ArtifactRef,
@@ -18,7 +19,6 @@ from provenance import (
     build_prov_record,
     get_git_commit,
     hash_file,
-    hash_string,
     save_prov,
 )
 from plots.targets import RENDER_TARGETS
@@ -128,7 +128,9 @@ def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArt
     subjobs_dir = context.subjobs_dir
     job_out_dir = context.job_out_dir
 
-    sub_hash = hash_string(inc.path.read_text(encoding="utf-8"))[:6]
+    # Sub-job code hash (memoized on the job) — the composite no longer re-reads
+    # and re-hashes the sub-job source; it consumes the sub-job's own hash.
+    sub_hash = inc.job.code_hash()[:6]
     artifact_rel = f"{node_name}.pkl"
     dir_glob = f"{inc.job.name}_{sub_hash}_*"
 
@@ -234,8 +236,8 @@ def _emit_prov(
     resolved_datasets: dict[str, Path],
     job_hash_full: str,
     git_commit: str,
+    identity: str,
     includes_prov: list[dict[str, object]],
-    hash_cache: dict[Path, str],
     job_out_dir: Path,
     prov_name: str,
     targets: list[str],
@@ -245,9 +247,9 @@ def _emit_prov(
 
     Datasets reachable from `root_node_id` are looked up in `resolved_datasets`
     (the run's single resolution point — the same paths the loader opened, so the
-    recorded hash describes the file actually loaded) and hashed at most once per
-    run_job via `hash_cache`. Shared by the figure and materialize sinks so their
-    two prov passes cannot drift apart. Only `prov_name`, `targets`, and
+    recorded hash describes the file actually loaded) and hashed via `content_hash`
+    (memoized per process). Shared by the figure and materialize sinks so their two
+    prov passes cannot drift apart. Only `prov_name`, `targets`, and
     `figure_node_label` differ between them. Hash failures propagate — a
     placeholder hash is never recorded.
     """
@@ -259,9 +261,7 @@ def _emit_prov(
             continue
         p = resolved_datasets[node_id]
         dataset_paths.append(p)
-        if p not in hash_cache:
-            hash_cache[p] = f"sha256:{hash_file(p)}"
-        dataset_hashes.append(hash_cache[p])
+        dataset_hashes.append(f"sha256:{content_hash(p)}")
 
     try:
         job_file_rendered: Path | str = job_file.relative_to(repo)
@@ -274,6 +274,7 @@ def _emit_prov(
         dataset_paths=[_fmt_dataset_path(p, dataset_root) for p in dataset_paths],
         dataset_hashes=dataset_hashes,
         git_commit=git_commit,
+        identity=identity,
         pipeline_steps=[
             _format_step(job.dag[node_id])
             for node_id in ordered_ids
@@ -296,10 +297,10 @@ def run_job(
     reuse_deps: bool = False,
 ) -> None:
     job_file = _job_file(job)
-    job_source = job_file.read_text(encoding="utf-8")
+    job.job_file = job_file  # ensure set for code_hash()/build_identity()
     repo = repo_root()
     dataset_root = Path(data_root).resolve() if data_root else default_dataset_root()
-    job_hash_full = hash_string(job_source)
+    job_hash_full = job.code_hash()
     job_hash = job_hash_full[:6]
     git_commit = get_git_commit()
     is_composite = bool(job.includes)
@@ -322,6 +323,12 @@ def run_job(
         node_id: resolve_dataset_path(node.kwargs["dataset"].path, dataset_root)
         for node_id, node in _dataset_load_nodes(job).items()
     }
+
+    # Content identity (code + dataset content + sub-job identities), recorded in
+    # every prov record. Computed here — before mkdir — because build_identity is a
+    # function of static job structure only (never of results), so a missing
+    # dataset (own or a sub-job's) raises before any output dir exists.
+    identity = job.build_identity(dataset_root).digest
 
     # Create timestamped folder: always unique when creating or force-rerunning
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -368,9 +375,6 @@ def run_job(
 
     includes_prov = _collect_includes_prov(job, ordered_ids, context)
 
-    # One hash per distinct dataset file per run: sinks share this cache, so a
-    # dataset reachable by several sinks is no longer re-hashed once per sink.
-    dataset_hash_cache: dict[Path, str] = {}
     for sink in job.sinks:
         if isinstance(sink, _FigureSink):
             result = results[sink.input.node_id]
@@ -400,8 +404,8 @@ def run_job(
                 resolved_datasets=resolved_datasets,
                 job_hash_full=job_hash_full,
                 git_commit=git_commit,
+                identity=identity,
                 includes_prov=includes_prov,
-                hash_cache=dataset_hash_cache,
                 job_out_dir=job_out_dir,
                 prov_name=prov_name,
                 targets=rendered_targets,
@@ -422,8 +426,8 @@ def run_job(
             resolved_datasets=resolved_datasets,
             job_hash_full=job_hash_full,
             git_commit=git_commit,
+            identity=identity,
             includes_prov=includes_prov,
-            hash_cache=dataset_hash_cache,
             job_out_dir=job_out_dir,
             prov_name=sink.name,
             targets=[],
