@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -120,109 +121,93 @@ def save_prov(record: dict[str, object], out_dir: Path, node_name: str) -> None:
         json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
-    includes = record.get("includes") or []
-    if includes:
-        md_text = _mermaid_with_includes(record, node_name, list(includes))
-    else:
-        md_text = _mermaid_with_datasets(record, node_name)
-    md_path.write_text(md_text, encoding="utf-8")
+    md_path.write_text(_mermaid_graph(record, node_name), encoding="utf-8")
 
 
-def _mermaid_with_datasets(record: dict[str, object], node_name: str) -> str:
-    # Support multiple dataset paths (primary + companions)
+def _mermaid_id_factory():
+    """Allocate canonical, collision-safe mermaid node ids from human names
+    (replacing the old throwaway A/B/C positional letters)."""
+    used: dict[str, int] = {}
+
+    def make(base: str) -> str:
+        slug = re.sub(r"[^0-9A-Za-z]+", "_", base).strip("_").lower() or "n"
+        used[slug] = used.get(slug, 0) + 1
+        return slug if used[slug] == 1 else f"{slug}_{used[slug]}"
+
+    return make
+
+
+def _mermaid_graph(record: dict[str, object], node_name: str) -> str:
+    """One DAG renderer for every job (standalone or composite).
+
+    Source nodes — loaded datasets and/or references to included sub-jobs — feed
+    the pipeline steps, which feed the sink node. Node ids are canonical slugs of
+    the real names (not positional A/B/C letters); labels are human, with machine
+    hashes shown only as short tags. An included reference is a first-class node
+    that click-throughs to the sub-job's own provenance graph.
+    """
     dataset_paths = record.get("dataset_paths") or (
         [record.get("dataset_path")] if record.get("dataset_path") else []
     )
     dataset_hashes = record.get("dataset_hashes") or (
         [record.get("dataset_hash")] if record.get("dataset_hash") else []
     )
-    # Build mermaid nodes for each dataset
-    dataset_nodes = []
-    for p, h in zip(dataset_paths, dataset_hashes):
-        name = Path(str(p)).name
-        short = _short_hash(str(h))
-        dataset_nodes.append((name, short))
-    if not dataset_nodes:
-        dataset_nodes = [("unknown", "xxxxxx")]
-
+    includes = record.get("includes") or []
     steps = [str(step) for step in record.get("pipeline_steps", [])]
-    git_commit = str(record["git_commit"])
+    git_commit = str(record["git_commit"])  # always set by build_prov_record
     figure_node_label = record.get("figure_node_label")
 
-    lines = ["graph LR"]
-    # create dataset nodes A, B, C... then connect each to the first pipeline step
-    node_letters = []
-    for idx, (name, short) in enumerate(dataset_nodes):
-        node_id = chr(ord("A") + idx)
-        node_letters.append(node_id)
-        lines.append(f"  {node_id}[{_mermaid_label(f'{name}\\n{short}')}]")
-
-    previous_node = node_letters[0]
-    for index, step in enumerate(steps, start=1):
-        node_id = chr(ord("A") + len(dataset_nodes) - 1 + index)
-        lines.append(f"  {previous_node} --> {node_id}[{_mermaid_label(step)}]")
-        previous_node = node_id
-
-    figure_node = chr(ord("A") + len(dataset_nodes) + len(steps))
-    if isinstance(figure_node_label, str) and figure_node_label.strip():
-        final_label = figure_node_label
-    else:
-        final_label = f"{node_name}\\ngit:{git_commit}"
-    lines.append(f"  {previous_node} --> {figure_node}[{_mermaid_label(final_label)}]")
-
-    return "\n".join(lines) + "\n"
-
-
-def _mermaid_with_includes(
-    record: dict[str, object], node_name: str, includes: list[dict[str, object]]
-) -> str:
-    """Composite graph: one opaque node per included sub-job feeding the first
-    composite step. Sub-job internals are NOT expanded here — each include node
-    carries a `click` link to that sub-job's own provenance graph."""
-    steps = [str(step) for step in record.get("pipeline_steps", [])]
-    git_commit = str(record["git_commit"])
-    figure_node_label = record.get("figure_node_label")
-
+    nid = _mermaid_id_factory()
     lines = ["graph LR"]
     click_lines: list[str] = []
-    root_letters: list[str] = []
-    for idx, inc in enumerate(includes):
-        root_id = chr(ord("A") + idx)
-        root_letters.append(root_id)
+    source_ids: list[str] = []
+
+    for p, h in zip(dataset_paths, dataset_hashes, strict=True):
+        name = Path(str(p)).name
+        node_id = nid(f"ds_{name}")
+        lines.append(
+            f"  {node_id}[{_mermaid_label(f'{name}\\n{_short_hash(str(h))}')}]"
+        )
+        source_ids.append(node_id)
+
+    for inc in includes:
         alias = str(inc.get("alias", "sub"))
+        job_name = str(inc.get("job_name", ""))
         ref_node = str(inc.get("node_name", ""))
         short = _short_hash(str(inc.get("artifact_hash", "")))
-        lines.append(
-            f"  {root_id}[{_mermaid_label(f'{alias}\\n{ref_node}\\n{short}')}]"
-        )
+        node_id = nid(f"ref_{alias}_{ref_node}")
+        label = f"{alias}: {job_name}:{ref_node}\\n{short}"
+        lines.append(f"  {node_id}[{_mermaid_label(label)}]")
+        source_ids.append(node_id)
         prov_ref = inc.get("subjob_prov_dir")
         if prov_ref:
-            click_lines.append(f'  click {root_id} "{prov_ref}"')
+            # runner-generated relative path; strip any quote defensively so the
+            # click line can't be broken by the URL
+            safe_ref = str(prov_ref).replace('"', "")
+            click_lines.append(f'  click {node_id} "{safe_ref}"')
 
-    n_roots = len(root_letters)
-    # Downstream chain: composite steps, then the figure node.
-    chain: list[tuple[str, str]] = [
-        (chr(ord("A") + n_roots + i), _mermaid_label(step))
-        for i, step in enumerate(steps)
-    ]
-    figure_node = chr(ord("A") + n_roots + len(steps))
+    if not source_ids:
+        node_id = nid("source")
+        lines.append(f'  {node_id}["(no inputs)"]')
+        source_ids.append(node_id)
+
+    previous_ids = source_ids
+    for step in steps:
+        fn_name = step.split("(", 1)[0]
+        node_id = nid(f"step_{fn_name}")
+        lines.append(f"  {node_id}[{_mermaid_label(step)}]")
+        for src in previous_ids:
+            lines.append(f"  {src} --> {node_id}")
+        previous_ids = [node_id]
+
     if isinstance(figure_node_label, str) and figure_node_label.strip():
         final_label = figure_node_label
     else:
         final_label = f"{node_name}\\ngit:{git_commit}"
-    chain.append((figure_node, _mermaid_label(final_label)))
-
-    # Every root feeds the first downstream node; the first edge declares its label.
-    first_id, first_label = chain[0]
-    for i, root_id in enumerate(root_letters):
-        if i == 0:
-            lines.append(f"  {root_id} --> {first_id}[{first_label}]")
-        else:
-            lines.append(f"  {root_id} --> {first_id}")
-    prev = first_id
-    for nid, lbl in chain[1:]:
-        lines.append(f"  {prev} --> {nid}[{lbl}]")
-        prev = nid
+    sink_id = nid(f"sink_{node_name}")
+    lines.append(f"  {sink_id}[{_mermaid_label(final_label)}]")
+    for src in previous_ids:
+        lines.append(f"  {src} --> {sink_id}")
 
     lines.extend(click_lines)
     return "\n".join(lines) + "\n"
