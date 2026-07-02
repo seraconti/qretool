@@ -39,8 +39,18 @@ def _module_from_path(path: Path):
 
 
 def _print_job(job) -> None:
+    from core.reference import ArtifactRef, LocalRef
+
+    def _fmt_input(ref) -> str:
+        if isinstance(ref, LocalRef):
+            return ref.node_id
+        if isinstance(ref, ArtifactRef):
+            # a reference to another job's node: show the (job, node) it points at
+            return f"{ref.included.job.name}:{ref.node_name}"
+        return repr(ref)
+
     for node_id, node in job.dag.items():
-        inputs = ", ".join(handle.node_id for handle in node.inputs) or "-"
+        inputs = ", ".join(_fmt_input(ref) for ref in node.inputs) or "-"
         print(f"{node_id}: {node.fn.__name__} <- [{inputs}] {node.kwargs}")
 
 

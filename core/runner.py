@@ -6,8 +6,14 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from core.job import Job, _FigureSink, _DAGNode, _subjob_artifact
+from core.job import Job, _FigureSink, _DAGNode
 from core.paths import default_dataset_root, repo_root, resolve_dataset_path
+from core.reference import (
+    ArtifactRef,
+    LocalRef,
+    LocatedArtifact,
+    ResolutionContext,
+)
 from provenance import (
     build_prov_record,
     get_git_commit,
@@ -71,8 +77,10 @@ def _toposort(job: Job, root_ids: list[str]) -> list[str]:
             raise ValueError(f"Cycle detected in job DAG at node '{node_id}'")
         node = job.dag[node_id]
         visiting.add(node_id)
-        for input_handle in node.inputs:
-            visit(input_handle.node_id)
+        for input_ref in node.inputs:
+            # Only LocalRefs point at in-job nodes; ArtifactRefs are external roots.
+            if isinstance(input_ref, LocalRef):
+                visit(input_ref.node_id)
         visiting.remove(node_id)
         visited.add(node_id)
         ordered.append(node_id)
@@ -89,8 +97,9 @@ def _ancestors(job: Job, root_id: str) -> set[str]:
         if node_id in reachable:
             return
         reachable.add(node_id)
-        for input_handle in job.dag[node_id].inputs:
-            visit(input_handle.node_id)
+        for input_ref in job.dag[node_id].inputs:
+            if isinstance(input_ref, LocalRef):
+                visit(input_ref.node_id)
 
     visit(root_id)
     return reachable
@@ -104,50 +113,21 @@ def _load_node(job: Job, ordered_ids: list[str]) -> _DAGNode:
     raise ValueError("Job does not contain a load node")
 
 
-def _resolve_includes(
-    job: Job,
-    out_dir: Path,
-    job_out_dir: Path,
-    reuse_deps: bool,
-    data_root: Path | None,
-) -> tuple[dict[str, object], list[dict[str, object]]]:
-    """Resolve every `_subjob_artifact` node of a composite: fresh-run each included
-    sub-job (figures-as-materialize, nested under subjobs_output/) or read its
-    standalone cache under --reuse-deps. Returns (node_id -> result, prov entries)."""
-    subjobs_dir = job_out_dir / "subjobs_output"
-    include_results: dict[str, object] = {}
-    includes_prov: list[dict[str, object]] = []
-    for node_id, node in job.dag.items():
-        if node.fn is not _subjob_artifact:
-            continue
-        inc = node.kwargs["included"]
-        node_name = str(node.kwargs["node_name"])
-        obj, mode, prov_rel, artifact_hash = _resolve_one_include(
-            inc, node_name, out_dir, subjobs_dir, job_out_dir, reuse_deps, data_root
-        )
-        include_results[node_id] = obj
-        includes_prov.append(
-            {
-                "alias": inc.alias,
-                "job_name": inc.job.name,
-                "node_name": node_name,
-                "artifact_hash": artifact_hash,
-                "mode": mode,
-                "subjob_prov_dir": prov_rel,
-            }
-        )
-    return include_results, includes_prov
+def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArtifact:
+    """The source-hash dir-glob locator (the strategy injected on the context).
 
+    Finds the included sub-job's `{node_name}.pkl` — under --reuse-deps from a
+    prior standalone or nested run, otherwise by fresh-running the sub-job in
+    figures-as-materialize mode nested under this composite's subjobs_output/ —
+    loads it, and returns the value plus the provenance facts. A later increment
+    swaps this for an identity-keyed locator by injecting a different function.
+    """
+    inc = ref.included
+    node_name = ref.node_name
+    out_dir = context.out_dir
+    subjobs_dir = context.subjobs_dir
+    job_out_dir = context.job_out_dir
 
-def _resolve_one_include(
-    inc: object,
-    node_name: str,
-    out_dir: Path,
-    subjobs_dir: Path,
-    job_out_dir: Path,
-    reuse_deps: bool,
-    data_root: Path | None,
-) -> tuple[object, str, str, str]:
     sub_hash = hash_string(inc.path.read_text(encoding="utf-8"))[:6]
     artifact_rel = f"{node_name}.pkl"
     dir_glob = f"{inc.job.name}_{sub_hash}_*"
@@ -171,7 +151,7 @@ def _resolve_one_include(
         )
 
     cached = _cached_runs()
-    if reuse_deps and cached:
+    if context.reuse_deps and cached:
         produced_dir = cached[-1]
         mode = "cached"
     else:
@@ -185,7 +165,7 @@ def _resolve_one_include(
             inc.job,
             subjobs_dir,
             force=True,
-            data_root=data_root,
+            data_root=context.data_root,
             render_figures=inc.figures,
         )
         produced = sorted(
@@ -212,7 +192,35 @@ def _resolve_one_include(
         prov_rel = str(prov_path.relative_to(out_dir))
     except ValueError:
         prov_rel = str(prov_path)
-    return obj, mode, prov_rel, artifact_hash
+    return LocatedArtifact(
+        value=obj, artifact_hash=artifact_hash, mode=mode, prov_dir_rel=prov_rel
+    )
+
+
+def _collect_includes_prov(
+    job: Job, ordered_ids: list[str], context: ResolutionContext
+) -> list[dict[str, object]]:
+    """One prov entry per distinct ArtifactRef consumed, in first-seen toposort
+    order (deterministic, independent of resolution timing)."""
+    includes_prov: list[dict[str, object]] = []
+    seen: set[int] = set()
+    for node_id in ordered_ids:
+        for input_ref in job.dag[node_id].inputs:
+            if not isinstance(input_ref, ArtifactRef) or id(input_ref) in seen:
+                continue
+            seen.add(id(input_ref))
+            located = context.artifacts[id(input_ref)]
+            includes_prov.append(
+                {
+                    "alias": input_ref.included.alias,
+                    "job_name": input_ref.included.job.name,
+                    "node_name": input_ref.node_name,
+                    "artifact_hash": located.artifact_hash,
+                    "mode": located.mode,
+                    "subjob_prov_dir": located.prov_dir_rel,
+                }
+            )
+    return includes_prov
 
 
 def _emit_prov(
@@ -269,9 +277,7 @@ def _emit_prov(
         pipeline_steps=[
             _format_step(job.dag[node_id])
             for node_id in ordered_ids
-            if node_id in ancestors
-            and job.dag[node_id].fn.__name__ != "_load_dataset"
-            and job.dag[node_id].fn is not _subjob_artifact
+            if node_id in ancestors and job.dag[node_id].fn.__name__ != "_load_dataset"
         ],
         targets=targets,
         node_name=prov_name,
@@ -324,16 +330,6 @@ def run_job(
 
     print(f"Running {job.name} -> {job_out_dir.relative_to(out_dir)}")
 
-    # Composites: resolve each included sub-job's referenced artifact (fresh run
-    # via run_job in figures-as-materialize mode, nested under subjobs_output/, or
-    # read from the standalone cache under --reuse-deps).
-    include_results: dict[str, object] = {}
-    includes_prov: list[dict[str, object]] = []
-    if is_composite:
-        include_results, includes_prov = _resolve_includes(
-            job, out_dir, job_out_dir, reuse_deps, data_root
-        )
-
     sink_ids = [
         sink.input.node_id if isinstance(sink, _FigureSink) else sink.node.node_id
         for sink in job.sinks
@@ -341,12 +337,22 @@ def run_job(
     ordered_ids = _toposort(job, sink_ids)
     results: dict[str, object] = {}
 
+    # One context resolves every input the same way: LocalRefs read `results`,
+    # ArtifactRefs (composite → included sub-job) run/locate via the injected
+    # locator. A referenced sub-job runs lazily, at most once per ref (memoized).
+    context = ResolutionContext(
+        results=results,
+        locate=_locate_artifact,
+        out_dir=out_dir,
+        subjobs_dir=job_out_dir / "subjobs_output",
+        job_out_dir=job_out_dir,
+        reuse_deps=reuse_deps,
+        data_root=data_root,
+    )
+
     for node_id in ordered_ids:
         node = job.dag[node_id]
-        if node.fn is _subjob_artifact:
-            results[node_id] = include_results[node_id]
-            continue
-        inputs = [results[input_handle.node_id] for input_handle in node.inputs]
+        inputs = [input_ref.resolve(context) for input_ref in node.inputs]
         kwargs = node.kwargs
         if node_id in resolved_datasets:
             # Hand the loader a COPY of the Dataset carrying the resolved absolute
@@ -359,6 +365,8 @@ def run_job(
                 ),
             }
         results[node_id] = node.fn(*inputs, **kwargs)
+
+    includes_prov = _collect_includes_prov(job, ordered_ids, context)
 
     # One hash per distinct dataset file per run: sinks share this cache, so a
     # dataset reachable by several sinks is no longer re-hashed once per sink.

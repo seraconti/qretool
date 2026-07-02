@@ -39,7 +39,9 @@ def _copy_config(profile: str) -> dict[str, object]:
     config = dict(RAMSEY_CONFIG)
     config["dataset_profile"] = profile
     config["filter"] = dict(RAMSEY_CONFIG["filter"])
-    config["filter"]["frequency_window_hz"] = dict(RAMSEY_CONFIG["filter"]["frequency_window_hz"])
+    config["filter"]["frequency_window_hz"] = dict(
+        RAMSEY_CONFIG["filter"]["frequency_window_hz"]
+    )
     config["allan"] = dict(RAMSEY_CONFIG["allan"])
     config["fidelity"] = dict(RAMSEY_CONFIG["fidelity"])
     return config
@@ -54,7 +56,9 @@ def run_start_unix_s_from_hdf5(path: str | Path) -> float:
     try:
         import h5py
     except ImportError as exc:
-        raise ImportError("h5py is required to read measurement_time from HDF5") from exc
+        raise ImportError(
+            "h5py is required to read measurement_time from HDF5"
+        ) from exc
 
     file_path = Path(path)
     with h5py.File(file_path, "r") as handle:
@@ -67,14 +71,18 @@ def run_start_unix_s_from_hdf5(path: str | Path) -> float:
     return check_unix_s(float(run_start_local_dt.value / 1e9), label="run_start_unix_s")
 
 
-def _filter_step(config: Mapping[str, object]) -> Callable[[dict[str, object]], dict[str, object]]:
+def _filter_step(
+    config: Mapping[str, object],
+) -> Callable[[dict[str, object]], dict[str, object]]:
     def step(norm: dict[str, object]) -> dict[str, object]:
         return run_filter(norm, config, None)
 
     return step
 
 
-def _interpolate_step(config: Mapping[str, object]) -> Callable[[dict[str, object]], dict[str, object]]:
+def _interpolate_step(
+    config: Mapping[str, object],
+) -> Callable[[dict[str, object]], dict[str, object]]:
     def step(norm: dict[str, object]) -> dict[str, object]:
         return run_interpolate(norm, config)
 
@@ -82,13 +90,19 @@ def _interpolate_step(config: Mapping[str, object]) -> Callable[[dict[str, objec
 
 
 def _allan_step(config: Mapping[str, object]) -> Callable[[dict[str, object]], object]:
-    def step(norm: dict[str, object], fractional: bool = False, carrier_col: str = "frequency") -> object:
+    def step(
+        norm: dict[str, object],
+        fractional: bool = False,
+        carrier_col: str = "frequency",
+    ) -> object:
         return run_allan(norm, config, fractional=fractional, carrier_col=carrier_col)
 
     return step
 
 
-def _fidelity_step(config: Mapping[str, object]) -> Callable[[dict[str, object]], object]:
+def _fidelity_step(
+    config: Mapping[str, object],
+) -> Callable[[dict[str, object]], object]:
     def step(norm: dict[str, object]) -> object:
         return _run_fidelity(_fidelity_make_inputs(norm, config))
 
@@ -104,11 +118,15 @@ def _tlf_step() -> Callable[[dict[str, object]], dict[str, object]]:
         elif "delta_hz" in norm:
             values_hz = norm["delta_hz"]
         else:
-            raise KeyError("TLF analysis requires 'raw_frequency_hz' or 'delta_hz' in normalized mapping")
+            raise KeyError(
+                "TLF analysis requires 'raw_frequency_hz' or 'delta_hz' in normalized mapping"
+            )
 
         # timestamps (seconds, relative to start) required for dynamics computation
         if "t_rel_s" not in norm:
-            raise KeyError("TLF analysis requires 't_rel_s' (relative seconds) in normalized mapping for dynamics")
+            raise KeyError(
+                "TLF analysis requires 't_rel_s' (relative seconds) in normalized mapping for dynamics"
+            )
         timestamps = norm["t_rel_s"]
 
         result = run_tlf(values_hz, timestamps)
@@ -123,6 +141,7 @@ def _tlf_step() -> Callable[[dict[str, object]], dict[str, object]]:
 
 def _final_stage(bundle: object) -> dict[str, object]:
     from transforms.filter import FilterResult
+
     if isinstance(bundle, FilterResult):
         return dict(bundle.final_norm)
     # legacy dict path (unmigrated callers)
@@ -141,8 +160,9 @@ def configure_ramsey_job(
     figure_prefix: str | None = None,
 ) -> None:
     config = _copy_config(profile)
-    # dataset may be a Dataset (to load) or a pre-registered NodeHandle (already loaded/enriched)
-    if hasattr(dataset, "node_id"):
+    # dataset may be a Dataset (to load) or an already-registered Reference
+    # (LocalRef/ArtifactRef — a node whose result is loaded/enriched upstream).
+    if hasattr(dataset, "resolve"):
         raw = dataset
     else:
         raw = job.load(dataset)
@@ -161,7 +181,9 @@ def configure_ramsey_job(
         allan_fractional = False
     filtered = job.step(_filter_step(config), raw, name="filter")
     final_filtered = job.step(_final_stage, filtered, name="final_filter_stage")
-    interpolated = job.step(_interpolate_step(config), final_filtered, name="interpolate")
+    interpolated = job.step(
+        _interpolate_step(config), final_filtered, name="interpolate"
+    )
     allan = job.step(
         _allan_step(config),
         interpolated,
@@ -171,12 +193,23 @@ def configure_ramsey_job(
     )
 
     prefix = figure_prefix or job.name
-    job.figure(AllanPlot, allan, targets=["static", "academic"], title=f"{prefix} Allan")
+    job.figure(
+        AllanPlot, allan, targets=["static", "academic"], title=f"{prefix} Allan"
+    )
 
     if include_fidelity:
-        fidelity_raw = job.step(_fidelity_step(config), final_filtered, name="fidelity_raw")
-        fidelity_interp = job.step(_fidelity_step(config), interpolated, name="fidelity_interp")
-        job.figure(FidelityPlot, fidelity_interp, targets=["static", "academic"], title=f"{prefix} Fidelity")
+        fidelity_raw = job.step(
+            _fidelity_step(config), final_filtered, name="fidelity_raw"
+        )
+        fidelity_interp = job.step(
+            _fidelity_step(config), interpolated, name="fidelity_interp"
+        )
+        job.figure(
+            FidelityPlot,
+            fidelity_interp,
+            targets=["static", "academic"],
+            title=f"{prefix} Fidelity",
+        )
         job.materialize(fidelity_raw, name=f"{prefix}_fidelity_raw")
 
     if include_tlf:

@@ -15,17 +15,10 @@ import pandas as pd
 from loaders.registry import load as load_dataframe
 from core.dataset import Dataset
 from core.paths import resolve_repo_path
+from core.reference import ArtifactRef, LocalRef, Reference
 from core.types import Norm
 from plots.base import BasePlot
 from transforms.lookup_prior import check_unix_s
-
-
-@dataclass(slots=True)
-class NodeHandle:
-    node_id: str
-    job_ref: Job
-    fn_name: str
-    kwargs: dict[str, object]
 
 
 @dataclass(slots=True)
@@ -33,35 +26,22 @@ class _DAGNode:
     node_id: str
     fn: Callable[..., object]
     fn_name: str
-    inputs: list[NodeHandle]
+    inputs: list[Reference]
     kwargs: dict[str, object]
 
 
 @dataclass(slots=True)
 class _FigureSink:
     plot_class: type[BasePlot]
-    input: NodeHandle
+    input: LocalRef
     targets: list[str]
     name: str
 
 
 @dataclass(slots=True)
 class _MaterializeSink:
-    node: NodeHandle
+    node: LocalRef
     name: str
-
-
-def _subjob_artifact(*args: object, **kwargs: object) -> object:
-    """Sentinel for a composite node that yields an included sub-job's result.
-
-    Never executed directly: the runner special-cases nodes whose fn is this
-    sentinel (mirroring its `fn.__name__ == "_load_dataset"` dispatch), resolving
-    them by running the sub-job in figures-as-materialize mode (or reading its
-    cached artifact under --reuse-deps).
-    """
-    raise RuntimeError(
-        "_subjob_artifact is resolved by the runner, not called directly"
-    )
 
 
 def _import_job(path: Path) -> Job:
@@ -110,7 +90,11 @@ class _IncludedJob:
                 names.add(sink.input.node_id)
         return names
 
-    def ref(self, composite_job: Job, node_name: str) -> NodeHandle:
+    def ref(self, composite_job: Job, node_name: str) -> ArtifactRef:
+        """A reference to this sub-job's `node_name` artifact, usable directly as
+        a composite step input. It is a structured (job locator, node id) pair —
+        no node registered in the composite, no name mangling; the runner resolves
+        it via the locator on the resolution context."""
         if composite_job is not self.composite:
             raise ValueError(
                 "ref() must be called with the composite Job that created this include"
@@ -123,12 +107,7 @@ class _IncludedJob:
                 f"(Figure inputs are persisted only when figures=False; or add an explicit "
                 f"job.materialize(node, '{node_name}') in the sub-job.)"
             )
-        return composite_job._register_node(
-            fn=_subjob_artifact,
-            inputs=[],
-            kwargs={"included": self, "node_name": node_name},
-            base_name=f"{self.alias}__{node_name}",
-        )
+        return ArtifactRef(included=self, node_name=node_name)
 
 
 def _load_dataset(dataset: Dataset) -> Norm:
@@ -286,8 +265,8 @@ class Job:
         (default) turns each of its figure() sinks into a materialization.
         """
         # Resolve BEFORE _import_job so the import works from any CWD; the
-        # absolute path is also what _resolve_one_include re-reads for the
-        # reuse-glob source hash.
+        # absolute path is also what the runner's _locate_artifact re-reads for
+        # the reuse-glob source hash.
         sub_path = resolve_repo_path(path)
         if not sub_path.exists():
             raise FileNotFoundError(
@@ -324,24 +303,32 @@ class Job:
     def _register_node(
         self,
         fn: Callable[..., object],
-        inputs: list[NodeHandle],
+        inputs: list[Reference],
         kwargs: dict[str, object],
         base_name: str,
-    ) -> NodeHandle:
-        for input_handle in inputs:
-            if input_handle.job_ref is not self:
-                raise ValueError(
-                    "All inputs to a job step must belong to the same Job instance"
+    ) -> LocalRef:
+        # Same-job discipline applies to LocalRefs (a node's result belongs to one
+        # run). ArtifactRefs are cross-job by construction — that is exactly the
+        # case the old blanket `job_ref is not self` lock wrongly rejected, forcing
+        # the sentinel; they are allowed here.
+        for input_ref in inputs:
+            if isinstance(input_ref, LocalRef):
+                if input_ref.job_ref is not self:
+                    raise ValueError(
+                        "A LocalRef input must belong to the same Job instance"
+                    )
+            elif not isinstance(input_ref, ArtifactRef):
+                raise TypeError(
+                    f"step inputs must be References (LocalRef/ArtifactRef), "
+                    f"got {type(input_ref).__name__}"
                 )
         node_id = self._allocate_node_id(base_name)
         self.dag[node_id] = _DAGNode(
             node_id=node_id, fn=fn, fn_name=base_name, inputs=inputs, kwargs=kwargs
         )
-        return NodeHandle(
-            node_id=node_id, job_ref=self, fn_name=base_name, kwargs=kwargs
-        )
+        return LocalRef(node_id=node_id, job_ref=self, fn_name=base_name, kwargs=kwargs)
 
-    def load(self, dataset: Dataset) -> NodeHandle:
+    def load(self, dataset: Dataset) -> LocalRef:
         return self._register_node(
             fn=_load_dataset,
             inputs=[],
@@ -349,7 +336,7 @@ class Job:
             base_name="load",
         )
 
-    def load_df(self, dataset: Dataset) -> NodeHandle:
+    def load_df(self, dataset: Dataset) -> LocalRef:
         """Load a dataset as a raw pandas.DataFrame node (for companion/auxiliary files).
 
         This registers a node that yields a DataFrame (not the normalized mapping).
@@ -364,10 +351,10 @@ class Job:
     def step(
         self,
         fn: Callable[..., object],
-        *inputs: NodeHandle,
+        *inputs: Reference,
         name: str | None = None,
         **kwargs: object,
-    ) -> NodeHandle:
+    ) -> LocalRef:
         step_name = name or getattr(fn, "__name__", fn.__class__.__name__)
         return self._register_node(
             fn=fn, inputs=list(inputs), kwargs=dict(kwargs), base_name=step_name
@@ -376,12 +363,12 @@ class Job:
     def figure(
         self,
         PlotClass: type[BasePlot],
-        input: NodeHandle,
+        input: LocalRef,
         targets: list[str],
         title: str = "",
     ) -> None:
-        if input.job_ref is not self:
-            raise ValueError("Figure input must belong to the same Job instance")
+        if not isinstance(input, LocalRef) or input.job_ref is not self:
+            raise ValueError("Figure input must be a same-job node (LocalRef)")
         sink_name = _safe_name(title) if title else f"fig_{input.node_id}"
         self.sinks.append(
             _FigureSink(
@@ -389,7 +376,7 @@ class Job:
             )
         )
 
-    def materialize(self, node: NodeHandle, name: str) -> None:
-        if node.job_ref is not self:
-            raise ValueError("Materialized node must belong to the same Job instance")
+    def materialize(self, node: LocalRef, name: str) -> None:
+        if not isinstance(node, LocalRef) or node.job_ref is not self:
+            raise ValueError("Materialized node must be a same-job node (LocalRef)")
         self.sinks.append(_MaterializeSink(node=node, name=_safe_name(name)))
