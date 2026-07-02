@@ -4,9 +4,9 @@ A panel-data pickle written before the builder/renderer split lacks the derived
 fields: unpickling restores ``__dict__`` directly, bypassing ``__init__`` defaults,
 so a composite reusing such an artifact would crash mid-render (AttributeError on
 a factory field) or silently draw a class-level default. Loading one must instead
-fail loudly at the pickle boundary ("errors are raised, not swallowed"). Full
-completeness validation at construction time is deferred to the artifact-contract
-increment; this guard covers only the unpickle path.
+fail loudly at the pickle boundary ("errors are raised, not swallowed"). This guard
+covers the unpickle path; construction-time completeness is enforced separately by
+each panel dataclass's __post_init__ (unpickling bypasses __post_init__, hence both).
 """
 
 from __future__ import annotations

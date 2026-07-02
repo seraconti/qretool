@@ -65,6 +65,11 @@ class ResolutionContext:
     job_out_dir: Path | None = None
     reuse_deps: bool = False
     data_root: Path | None = None
+    # Resolved dataset root + this run's reuse-gate inputs (an included artifact is
+    # reusable only if its identity AND commit match and the tree is clean).
+    dataset_root: Path | None = None
+    git_commit: str = "nogit"
+    tree_clean: bool = False
 
 
 @dataclass(slots=True)

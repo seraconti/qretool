@@ -34,6 +34,28 @@ def get_git_commit() -> str:
     return commit or "nogit"
 
 
+def is_tree_clean() -> bool:
+    """True iff there are no uncommitted *tracked* changes.
+
+    Uses `--untracked-files=no` so a stray untracked scratch file does not disable
+    artifact reuse; the safety claim is only "no uncommitted tracked changes". Any
+    error (no git, etc.) is conservatively reported as dirty so reuse never fires
+    on an uncertain tree.
+    """
+    repo_root = Path(__file__).resolve().parent
+    try:
+        completed = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+    return completed.stdout.strip() == ""
+
+
 def build_prov_record(
     job_file: str | Path,
     job_file_hash: str,
@@ -44,6 +66,7 @@ def build_prov_record(
     targets: list[str],
     node_name: str,
     identity: str | None = None,
+    tree_clean: bool = True,
     figure_node_label: str | None = None,
     includes: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
@@ -62,6 +85,10 @@ def build_prov_record(
         # nothing time- or machine-specific. git_commit below is separate lineage.
         "identity": identity,
         "git_commit": git_commit,
+        # whether the working tree was clean when this artifact was produced. An
+        # artifact built on a dirty tree is never reuse-eligible: it does not
+        # correspond to any commit's code (see _reuse_eligible_dir).
+        "tree_clean": tree_clean,
         "pipeline_steps": list(pipeline_steps),
         "targets_rendered": list(targets),
         "figure_node_label": figure_node_label,

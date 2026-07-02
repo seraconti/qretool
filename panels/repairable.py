@@ -39,10 +39,11 @@ class RepairablePanelData(StaleArtifactGuard):
     """Complete typed contract for RepairablePanel.
 
     Built by build_repairable_panel_data (panels/_repairable_compute.py), the sole
-    constructor path. Directly constructing this leaves the derived fields empty and
-    the renderer shows empty views — go through the builder. Unpickling a stale
-    pre-split artifact (one missing any field) raises ValueError via
-    StaleArtifactGuard.
+    constructor path. `__post_init__` enforces completeness: constructing with
+    derived arrays whose lengths are inconsistent with the raw inputs raises
+    ValueError, so an incomplete artifact never materializes — go through the
+    builder. Unpickling a stale pre-split artifact (one missing any field) raises
+    ValueError via StaleArtifactGuard (that path bypasses __post_init__).
     """
 
     # raw inputs
@@ -59,6 +60,37 @@ class RepairablePanelData(StaleArtifactGuard):
     )
     histogram_counts: np.ndarray = field(default_factory=_empty)
     histogram_edges: np.ndarray = field(default_factory=_empty)
+
+    def __post_init__(self) -> None:
+        # Completeness contract: the builder's derived arrays are length-consistent
+        # with the raw inputs; direct construction (empty defaults) alongside
+        # non-empty raw inputs is incomplete and must not materialize.
+        # (__setstate__ handles the unpickle path and bypasses __post_init__.)
+        if len(self.elapsed_days) != len(self.event_times_unix_s):
+            raise ValueError(
+                "incomplete RepairablePanelData: elapsed_days length "
+                f"{len(self.elapsed_days)} != event_times_unix_s length "
+                f"{len(self.event_times_unix_s)} — construct via "
+                "build_repairable_panel_data()"
+            )
+        if len(self.intervals_h) != len(self.intervals_s):
+            raise ValueError(
+                "incomplete RepairablePanelData: intervals_h length "
+                f"{len(self.intervals_h)} != intervals_s length "
+                f"{len(self.intervals_s)} — construct via build_repairable_panel_data()"
+            )
+        if len(self.binned_interval_stats) != 5:
+            raise ValueError(
+                "incomplete RepairablePanelData: binned_interval_stats must be a "
+                "5-tuple (centers, median, q1, q3, p90)"
+            )
+        if len(self.histogram_counts) and (
+            len(self.histogram_edges) != len(self.histogram_counts) + 1
+        ):
+            raise ValueError(
+                "incomplete RepairablePanelData: histogram_edges must have one more "
+                "entry than histogram_counts"
+            )
 
 
 def make_mtbf_panel_data(result: MtbfResult) -> RepairablePanelData:

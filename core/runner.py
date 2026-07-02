@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import pickle
 import sys
 from datetime import datetime
@@ -19,6 +20,7 @@ from provenance import (
     build_prov_record,
     get_git_commit,
     hash_file,
+    is_tree_clean,
     save_prov,
 )
 from plots.targets import RENDER_TARGETS
@@ -113,14 +115,57 @@ def _load_node(job: Job, ordered_ids: list[str]) -> _DAGNode:
     raise ValueError("Job does not contain a load node")
 
 
+def _read_prov_reuse_fields(
+    run_dir: Path,
+) -> tuple[str | None, str | None, bool]:
+    """Read (identity, git_commit, tree_clean_at_build) from any prov record in
+    `run_dir` (all sinks of a run share them), or (None, None, False) if
+    unreadable. Missing tree_clean (older records) reads as False → not reusable."""
+    prov_files = sorted((run_dir / "provenance").glob("*.prov.json"))
+    if not prov_files:
+        return None, None, False
+    try:
+        record = json.loads(prov_files[0].read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, None, False
+    return (
+        record.get("identity"),
+        record.get("git_commit"),
+        bool(record.get("tree_clean", False)),
+    )
+
+
+def _reuse_eligible_dir(
+    candidates: list[Path], identity: str, git_commit: str, tree_clean: bool
+) -> Path | None:
+    """The newest candidate run reusable under the gate, else None (→ re-run fresh).
+
+    Reuse requires ALL of: matching content identity, matching git commit, the
+    consumer's tree clean NOW, and the artifact PRODUCED on a clean tree. Commit +
+    clean-tree (both ends) stand in for a dependency hash on imported/shared code
+    (which the identity's code component does not capture): they guarantee the
+    artifact was built from — and is being reused under — exactly the committed
+    code. Any mismatch re-runs — commit-safe, not content-safe against code edits.
+    `candidates` is sorted oldest→newest.
+    """
+    if not tree_clean:
+        return None
+    for run_dir in reversed(candidates):
+        rec_identity, rec_commit, rec_tree_clean = _read_prov_reuse_fields(run_dir)
+        if rec_identity == identity and rec_commit == git_commit and rec_tree_clean:
+            return run_dir
+    return None
+
+
 def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArtifact:
-    """The source-hash dir-glob locator (the strategy injected on the context).
+    """The identity-keyed dir-glob locator (the strategy injected on the context).
 
     Finds the included sub-job's `{node_name}.pkl` — under --reuse-deps from a
-    prior standalone or nested run, otherwise by fresh-running the sub-job in
-    figures-as-materialize mode nested under this composite's subjobs_output/ —
-    loads it, and returns the value plus the provenance facts. A later increment
-    swaps this for an identity-keyed locator by injecting a different function.
+    prior standalone or nested run whose identity AND commit match and whose tree
+    is clean, otherwise by fresh-running the sub-job in figures-as-materialize mode
+    nested under this composite's subjobs_output/ — loads it, and returns the value
+    plus provenance facts. The strategy is injected on the context, so it can be
+    swapped without changing ArtifactRef.
     """
     inc = ref.included
     node_name = ref.node_name
@@ -128,11 +173,12 @@ def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArt
     subjobs_dir = context.subjobs_dir
     job_out_dir = context.job_out_dir
 
-    # Sub-job code hash (memoized on the job) — the composite no longer re-reads
-    # and re-hashes the sub-job source; it consumes the sub-job's own hash.
-    sub_hash = inc.job.code_hash()[:6]
+    # Identity-keyed: the sub-job's content identity (memoized on the job) names its
+    # output dir, so reuse keys on what the run IS, not merely its source.
+    sub_identity = inc.job.build_identity(context.dataset_root).digest
+    identity_short = sub_identity[:6]
     artifact_rel = f"{node_name}.pkl"
-    dir_glob = f"{inc.job.name}_{sub_hash}_*"
+    dir_glob = f"{inc.job.name}_{identity_short}_*"
 
     def _cached_runs() -> list[Path]:
         # A reusable run is one whose dir holds {node_name}.pkl. That artifact only
@@ -153,14 +199,28 @@ def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArt
         )
 
     cached = _cached_runs()
-    if context.reuse_deps and cached:
-        produced_dir = cached[-1]
+    eligible = (
+        _reuse_eligible_dir(
+            cached, sub_identity, context.git_commit, context.tree_clean
+        )
+        if context.reuse_deps
+        else None
+    )
+    if eligible is not None:
+        produced_dir = eligible
         mode = "cached"
     else:
-        if cached:
+        if cached and context.reuse_deps:
+            print(
+                f"[NOTE] '{inc.job.name}' has a cached '{node_name}' but it is not "
+                f"reuse-eligible (identity/commit/clean-tree); re-running.",
+                flush=True,
+            )
+        elif cached:
             print(
                 f"[NOTE] composite is re-running sub-job '{inc.job.name}' which has a "
-                f"cached '{node_name}'; pass --reuse-deps to reuse it.",
+                f"cached '{node_name}'; pass --reuse-deps to reuse a cache that "
+                f"matches the current identity + commit on a clean tree.",
                 flush=True,
             )
         run_job(
@@ -237,6 +297,7 @@ def _emit_prov(
     job_hash_full: str,
     git_commit: str,
     identity: str,
+    tree_clean: bool,
     includes_prov: list[dict[str, object]],
     job_out_dir: Path,
     prov_name: str,
@@ -275,6 +336,7 @@ def _emit_prov(
         dataset_hashes=dataset_hashes,
         git_commit=git_commit,
         identity=identity,
+        tree_clean=tree_clean,
         pipeline_steps=[
             _format_step(job.dag[node_id])
             for node_id in ordered_ids
@@ -300,39 +362,42 @@ def run_job(
     job.job_file = job_file  # ensure set for code_hash()/build_identity()
     repo = repo_root()
     dataset_root = Path(data_root).resolve() if data_root else default_dataset_root()
-    job_hash_full = job.code_hash()
-    job_hash = job_hash_full[:6]
+    job_hash_full = job.code_hash()  # recorded as job_file_hash in prov
     git_commit = get_git_commit()
+    tree_clean = is_tree_clean()
     is_composite = bool(job.includes)
 
-    # Dedup-skip for standalone jobs only. Composites ALWAYS run fresh (that's the
-    # point of fresh-by-default), so they never serve a stale sub-job result.
-    if not is_composite:
-        pattern = f"{job.name}_{job_hash}_*"
-        existing = list(out_dir.glob(pattern))
-        if existing and not force:
-            print(f"Skipping {job.name}: output already exists")
-            return
-
-    # Single resolution point for every dataset path: this mapping feeds BOTH the
-    # execution loop (loader) and _emit_prov (hashing), so the recorded hash always
-    # describes the file actually loaded. Runs after the dedup-skip (skipped jobs
-    # never touch datasets) and before mkdir (a missing dataset raises before any
-    # output dir exists).
+    # Resolve every dataset path once (fail-fast on a missing file, before any
+    # output dir exists) — this mapping feeds BOTH the execution loop (loader) and
+    # _emit_prov (hashing), so the recorded hash describes the file actually loaded.
     resolved_datasets: dict[str, Path] = {
         node_id: resolve_dataset_path(node.kwargs["dataset"].path, dataset_root)
         for node_id, node in _dataset_load_nodes(job).items()
     }
 
-    # Content identity (code + dataset content + sub-job identities), recorded in
-    # every prov record. Computed here — before mkdir — because build_identity is a
-    # function of static job structure only (never of results), so a missing
-    # dataset (own or a sub-job's) raises before any output dir exists.
+    # Content identity (code + dataset content + sub-job identities): names the
+    # output dir and keys reuse. build_identity is a function of static job
+    # structure only, so a missing dataset raises here, before mkdir.
     identity = job.build_identity(dataset_root).digest
+    identity_short = identity[:6]
+
+    # Reuse gate (standalone jobs; composites always run fresh). Skip only when a
+    # prior run has the SAME identity AND the SAME commit AND the tree is clean —
+    # any mismatch (edited shared code → commit differs; dirty tree) re-runs fresh.
+    if not is_composite and not force:
+        candidates = sorted(
+            out_dir.glob(f"{job.name}_{identity_short}_*"), key=lambda d: d.name
+        )
+        if _reuse_eligible_dir(candidates, identity, git_commit, tree_clean):
+            print(
+                f"Skipping {job.name}: reusable output exists "
+                f"(identity + commit match, clean tree)"
+            )
+            return
 
     # Create timestamped folder: always unique when creating or force-rerunning
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    job_out_dir = out_dir / f"{job.name}_{job_hash}_{timestamp}"
+    job_out_dir = out_dir / f"{job.name}_{identity_short}_{timestamp}"
     job_out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Running {job.name} -> {job_out_dir.relative_to(out_dir)}")
@@ -355,6 +420,9 @@ def run_job(
         job_out_dir=job_out_dir,
         reuse_deps=reuse_deps,
         data_root=data_root,
+        dataset_root=dataset_root,
+        git_commit=git_commit,
+        tree_clean=tree_clean,
     )
 
     for node_id in ordered_ids:
@@ -405,6 +473,7 @@ def run_job(
                 job_hash_full=job_hash_full,
                 git_commit=git_commit,
                 identity=identity,
+                tree_clean=tree_clean,
                 includes_prov=includes_prov,
                 job_out_dir=job_out_dir,
                 prov_name=prov_name,
@@ -427,6 +496,7 @@ def run_job(
             job_hash_full=job_hash_full,
             git_commit=git_commit,
             identity=identity,
+            tree_clean=tree_clean,
             includes_prov=includes_prov,
             job_out_dir=job_out_dir,
             prov_name=sink.name,
