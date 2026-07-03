@@ -7,7 +7,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from core.job import Job, _FigureSink, _DAGNode
+from core.job import Job, _FigureSink, _DAGNode, _LOAD_NODE_FN_NAMES
 from core.identity import content_hash
 from core.paths import default_dataset_root, repo_root, resolve_dataset_path
 from core.reference import (
@@ -62,7 +62,7 @@ def _dataset_load_nodes(job: Job) -> dict[str, _DAGNode]:
     return {
         node_id: node
         for node_id, node in job.dag.items()
-        if node.fn.__name__ in {"_load_dataset", "_load_dataframe_raw"}
+        if node.fn.__name__ in _LOAD_NODE_FN_NAMES
         and node.kwargs.get("dataset") is not None
     }
 
@@ -107,12 +107,25 @@ def _ancestors(job: Job, root_id: str) -> set[str]:
     return reachable
 
 
-def _load_node(job: Job, ordered_ids: list[str]) -> _DAGNode:
-    for node_id in ordered_ids:
-        node = job.dag[node_id]
-        if node.fn.__name__ == "_load_dataset":
-            return node
-    raise ValueError("Job does not contain a load node")
+def _check_sink_artifact_names(job: Job) -> None:
+    """A sink persists its result to `{basename}.pkl`; a composite later reuses a
+    persisted pkl by that name. Two sinks writing the SAME basename from DIFFERENT
+    source nodes would silently clobber one another and let a composite reuse a
+    wrong-but-plausible artifact — so reject that collision at run start (before any
+    output dir exists). Duplicates that resolve to the same node are harmless."""
+    basename_source: dict[str, str] = {}
+    for sink in job.sinks:
+        if isinstance(sink, _FigureSink):
+            basename, source_id = sink.input.node_id, sink.input.node_id
+        else:
+            basename, source_id = sink.name, sink.node.node_id
+        existing = basename_source.get(basename)
+        if existing is not None and existing != source_id:
+            raise ValueError(
+                f"sink artifact name collision: '{basename}.pkl' would be written for "
+                f"two different nodes ('{existing}' and '{source_id}'). Rename one sink."
+            )
+        basename_source[basename] = source_id
 
 
 def _read_prov_reuse_fields(
@@ -237,7 +250,7 @@ def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArt
         if not produced:
             raise FileNotFoundError(
                 f"sub-job '{inc.job.name}' did not persist '{artifact_rel}' under {subjobs_dir}. "
-                f"Reference a figure-input node (with figures off) or an explicit materialize sink."
+                f"Reference a figure-input node or an explicit materialize sink."
             )
         produced_dir = produced[-1]
         mode = "fresh"
@@ -367,6 +380,8 @@ def run_job(
     tree_clean = is_tree_clean()
     is_composite = bool(job.includes)
 
+    _check_sink_artifact_names(job)  # fail-fast before any output dir exists
+
     # Resolve every dataset path once (fail-fast on a missing file, before any
     # output dir exists) — this mapping feeds BOTH the execution loop (loader) and
     # _emit_prov (hashing), so the recorded hash describes the file actually loaded.
@@ -451,6 +466,10 @@ def run_job(
                 for target_name in sink.targets:
                     target = RENDER_TARGETS[target_name]
                     target(plot, result, job_out_dir)
+                # Persist the figure's input too, so a standalone job's figure
+                # output is reusable by a composite (not only figures-as-materialize runs).
+                with (job_out_dir / f"{sink.input.node_id}.pkl").open("wb") as handle:
+                    pickle.dump(result, handle)
                 prov_name = sink.name
                 rendered_targets = sink.targets
                 fig_label = f"{sink.plot_class.__name__}\\ngit:{git_commit}"

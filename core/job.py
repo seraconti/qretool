@@ -71,9 +71,10 @@ def _import_job(path: Path) -> Job:
 class _IncludedJob:
     """A sub-job pulled into a composite via Job.include.
 
-    `figures=False` (default) → the composite runs it with figures-as-materialize
-    (each figure() persists its input node as a .pkl, ref-able by node id);
-    `figures=True` → the sub-job's figures are rendered too.
+    Every figure()/materialize() sink always persists its input node as a .pkl
+    (ref-able by node id), regardless of `figures`. `figures` only controls whether
+    a fresh nested run ALSO renders the figure sinks' PDFs (`figures=True`) or not
+    (`figures=False`, the default).
     """
 
     alias: str
@@ -88,7 +89,7 @@ class _IncludedJob:
         for sink in self.job.sinks:
             if isinstance(sink, _MaterializeSink):
                 names.add(sink.name)
-            elif isinstance(sink, _FigureSink) and not self.figures:
+            elif isinstance(sink, _FigureSink):
                 names.add(sink.input.node_id)
         return names
 
@@ -106,10 +107,15 @@ class _IncludedJob:
             raise ValueError(
                 f"Sub-job '{self.job.name}' (alias '{self.alias}') does not persist a node "
                 f"'{node_name}'. Referenceable outputs: {sorted(available) or '<none>'}. "
-                f"(Figure inputs are persisted only when figures=False; or add an explicit "
-                f"job.materialize(node, '{node_name}') in the sub-job.)"
+                f"(Figure inputs are always persisted under their node id; for other "
+                f"nodes, add an explicit job.materialize(node, '{node_name}') in the sub-job.)"
             )
         return ArtifactRef(included=self, node_name=node_name)
+
+
+# The runner and Job.build_identity classify DAG nodes by fn.__name__; these
+# internal loader names are therefore reserved (Job.step rejects them).
+_LOAD_NODE_FN_NAMES = frozenset({"_load_dataset", "_load_dataframe_raw"})
 
 
 def _load_dataset(dataset: Dataset) -> Norm:
@@ -292,7 +298,7 @@ class Job:
 
         data: dict[str, str] = {}
         for node in self.dag.values():
-            if node.fn.__name__ not in {"_load_dataset", "_load_dataframe_raw"}:
+            if node.fn.__name__ not in _LOAD_NODE_FN_NAMES:
                 continue
             ds = node.kwargs.get("dataset")
             if ds is None:
@@ -323,8 +329,9 @@ class Job:
         """Pull another job in as a dependency, to `ref` one of its outputs.
 
         The composite runs the included job through the normal run_job (so its
-        datasets/provenance resolve exactly as a standalone run); `figures=False`
-        (default) turns each of its figure() sinks into a materialization.
+        datasets/provenance resolve exactly as a standalone run); every figure()
+        sink's input is always persisted for `ref`, and `figures` only controls
+        whether a fresh nested run also renders the figure sinks' PDFs.
         """
         # Resolve BEFORE _import_job so the import works from any CWD; the
         # absolute path is also what the runner's _locate_artifact re-reads for
@@ -417,6 +424,13 @@ class Job:
         name: str | None = None,
         **kwargs: object,
     ) -> LocalRef:
+        if getattr(fn, "__name__", None) in _LOAD_NODE_FN_NAMES:
+            raise ValueError(
+                f"Step function name '{fn.__name__}' is reserved for internal "
+                f"dataset-load nodes: the runner and build_identity classify DAG "
+                f"nodes by fn.__name__, so a user step with this name would be "
+                f"silently misclassified. Rename the function."
+            )
         step_name = name or getattr(fn, "__name__", fn.__class__.__name__)
         return self._register_node(
             fn=fn, inputs=list(inputs), kwargs=dict(kwargs), base_name=step_name
