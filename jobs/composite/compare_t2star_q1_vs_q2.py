@@ -48,8 +48,8 @@ q2 = job.include("jobs/active/ramsey_q2_210423.py", alias="q2")  # qubit 2, 2104
 
 _cmp = job.step(
     _compare_t2star,
-    q1.ref(job, "t2star_panel_data"),
-    q2.ref(job, "t2star_panel_data"),
+    q1.ref("t2star_panel_data"),
+    q2.ref("t2star_panel_data"),
     name="t2star_compare",
 )
 job.figure(

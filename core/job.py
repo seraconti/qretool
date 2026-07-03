@@ -15,7 +15,7 @@ import pandas as pd
 from loaders.registry import load as load_dataframe
 from core.dataset import Dataset
 from core.identity import Identity, content_hash
-from core.paths import resolve_dataset_path, resolve_repo_path
+from core.paths import repo_root, resolve_dataset_path, resolve_repo_path
 from core.reference import ArtifactRef, LocalRef, Reference
 from core.types import Norm
 from plots.base import BasePlot
@@ -46,25 +46,48 @@ class _MaterializeSink:
     name: str
 
 
+# In-progress include chain (resolved absolute paths). Re-entering a path means a
+# cycle: composites include each other at module-import time, so a cycle would
+# otherwise recurse into exec_module forever and die with a useless RecursionError.
+_IMPORT_STACK: list[Path] = []
+
+
+def _rel_to_repo(p: Path) -> str:
+    try:
+        return str(p.relative_to(repo_root()))
+    except ValueError:
+        return str(p)
+
+
 def _import_job(path: Path) -> Job:
     """Import a job module by file path and return its top-level `job` (with
-    `job_file` attached), mirroring main._module_from_path. Used by Job.include."""
+    `job_file` attached), mirroring main._module_from_path. Used by Job.include.
+
+    Detects include cycles (A→B→A) and self-includes at import time: re-entering a
+    path already on the in-progress stack raises with the full chain."""
     resolved = path.resolve()
-    module_name = (
-        f"subjob_{re.sub(r'[^A-Za-z0-9_]', '_', resolved.stem)}_"
-        f"{hashlib.sha256(str(resolved).encode('utf-8')).hexdigest()[:8]}"
-    )
-    spec = importlib.util.spec_from_file_location(module_name, resolved)
-    if spec is None or spec.loader is None:
-        raise ValueError(f"Cannot import job module from {resolved}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    job = getattr(module, "job", None)
-    if job is None:
-        raise ValueError(f"Job module {resolved} has no top-level 'job'")
-    job.job_file = resolved
-    return job
+    if resolved in _IMPORT_STACK:
+        chain = " -> ".join(_rel_to_repo(p) for p in [*_IMPORT_STACK, resolved])
+        raise ValueError(f"include cycle: {chain}")
+    _IMPORT_STACK.append(resolved)
+    try:
+        module_name = (
+            f"subjob_{re.sub(r'[^A-Za-z0-9_]', '_', resolved.stem)}_"
+            f"{hashlib.sha256(str(resolved).encode('utf-8')).hexdigest()[:8]}"
+        )
+        spec = importlib.util.spec_from_file_location(module_name, resolved)
+        if spec is None or spec.loader is None:
+            raise ValueError(f"Cannot import job module from {resolved}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        job = getattr(module, "job", None)
+        if job is None:
+            raise ValueError(f"Job module {resolved} has no top-level 'job'")
+        job.job_file = resolved
+        return job
+    finally:
+        _IMPORT_STACK.pop()
 
 
 @dataclass(slots=True)
@@ -93,15 +116,13 @@ class _IncludedJob:
                 names.add(sink.input.node_id)
         return names
 
-    def ref(self, composite_job: Job, node_name: str) -> ArtifactRef:
+    def ref(self, node_name: str) -> ArtifactRef:
         """A reference to this sub-job's `node_name` artifact, usable directly as
         a composite step input. It is a structured (job locator, node id) pair —
         no node registered in the composite, no name mangling; the runner resolves
-        it via the locator on the resolution context."""
-        if composite_job is not self.composite:
-            raise ValueError(
-                "ref() must be called with the composite Job that created this include"
-            )
+        it via the locator on the resolution context. Ownership (that this ref is
+        used only in the composite that created the include) is checked at step()
+        time, where a foreign ref would actually leak in."""
         available = self._referenceable()
         if node_name not in available:
             raise ValueError(
@@ -333,21 +354,16 @@ class Job:
         sink's input is always persisted for `ref`, and `figures` only controls
         whether a fresh nested run also renders the figure sinks' PDFs.
         """
-        # Resolve BEFORE _import_job so the import works from any CWD; the
-        # absolute path is also what the runner's _locate_artifact re-reads for
-        # the reuse-glob source hash.
+        # Resolve BEFORE _import_job so the import works from any CWD, and store the
+        # absolute path on the _IncludedJob (the runner's locator resolves reuse by
+        # the sub-job's identity, not by re-reading this path).
         sub_path = resolve_repo_path(path)
         if not sub_path.exists():
             raise FileNotFoundError(
                 f"include not found: '{path}' resolved to '{sub_path}'. "
                 "Include paths are repo-root-relative (e.g. 'jobs/active/<job>.py')."
             )
-        sub_job = _import_job(sub_path)
-        if sub_job.includes:
-            raise ValueError(
-                f"Cannot include '{sub_job.name}' ({sub_path}): it is itself a composite job. "
-                f"Nested composites are not supported."
-            )
+        sub_job = _import_job(sub_path)  # raises on an include cycle / self-include
         included = _IncludedJob(
             alias=alias or sub_job.name,
             path=sub_path,
@@ -386,7 +402,14 @@ class Job:
                     raise ValueError(
                         "A LocalRef input must belong to the same Job instance"
                     )
-            elif not isinstance(input_ref, ArtifactRef):
+            elif isinstance(input_ref, ArtifactRef):
+                # An ArtifactRef may only be consumed by the composite that created
+                # its include — this is where a foreign ref would actually leak in.
+                if input_ref.included.composite is not self:
+                    raise ValueError(
+                        "ArtifactRef belongs to a different composite than this job"
+                    )
+            else:
                 raise TypeError(
                     f"step inputs must be References (LocalRef/ArtifactRef), "
                     f"got {type(input_ref).__name__}"

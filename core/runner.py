@@ -182,9 +182,9 @@ def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArt
     """
     inc = ref.included
     node_name = ref.node_name
-    out_dir = context.out_dir
     subjobs_dir = context.subjobs_dir
     job_out_dir = context.job_out_dir
+    pool_root = context.pool_root
 
     # Identity-keyed: the sub-job's content identity (memoized on the job) names its
     # output dir, so reuse keys on what the run IS, not merely its source.
@@ -194,14 +194,21 @@ def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArt
     dir_glob = f"{inc.job.name}_{identity_short}_*"
 
     def _cached_runs() -> list[Path]:
-        # A reusable run is one whose dir holds {node_name}.pkl. That artifact only
-        # exists where the node was materialized: a standalone run that materialized
-        # it, OR a prior composite's nested subjobs_output/. Search both; the dir
-        # basename ends with the run timestamp, so sorting by name => newest last.
-        # Exclude this composite's own in-progress dir so a second include of the
-        # same sub-job can't self-read the first include's fresh write this run.
-        candidates = list(out_dir.glob(dir_glob))
-        candidates += list(out_dir.glob(f"*/subjobs_output/{dir_glob}"))
+        # A reusable run is one whose dir holds {node_name}.pkl — a standalone run
+        # that materialized it, or ANY composite's nested subjobs_output at any
+        # depth. Search the whole pool recursively (`**/` matches every depth,
+        # including direct children of the pool root); the dir basename ends with
+        # the run timestamp, so sorting by name => newest last.
+        #
+        # `job_out_dir not in d.parents` excludes THIS run's own in-progress
+        # subtree so a second include of the same sub-job can't self-read the first
+        # include's fresh write. Under nesting `job_out_dir` is the *innermost*
+        # run's dir, so this is a per-nested-run guarantee: a sibling branch's
+        # already-FINISHED artifact (written earlier in the same top invocation,
+        # under an ancestor composite) is a valid candidate — resolution is
+        # sequential (no partial-write race) and the identity+commit+clean-tree
+        # gate still applies, so that is content-correct diamond dedup, not a leak.
+        candidates = pool_root.glob(f"**/{dir_glob}")
         return sorted(
             (
                 d
@@ -242,6 +249,8 @@ def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArt
             force=True,
             data_root=context.data_root,
             render_figures=inc.figures,
+            reuse_deps=context.reuse_deps,  # so a nested locator can reuse too
+            pool_root=pool_root,  # every depth searches the same pool
         )
         produced = sorted(
             (d for d in subjobs_dir.glob(dir_glob) if (d / artifact_rel).exists()),
@@ -259,12 +268,12 @@ def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArt
     with artifact_path.open("rb") as handle:
         obj = pickle.load(handle)
     artifact_hash = f"sha256:{hash_file(artifact_path)}"
-    # Record the sub-job's provenance dir relative to the output/ root: stable and
-    # copy-pasteable for both fresh (nested) and reuse (prior composite) cases,
-    # never a machine-specific absolute path.
+    # Record the sub-job's provenance dir relative to the top output/ pool root:
+    # stable and copy-pasteable at every nesting depth (consistent with how depth-1
+    # already renders it), never a machine-specific absolute path.
     prov_path = produced_dir / "provenance"
     try:
-        prov_rel = str(prov_path.relative_to(out_dir))
+        prov_rel = str(prov_path.relative_to(pool_root))
     except ValueError:
         prov_rel = str(prov_path)
     return LocatedArtifact(
@@ -370,7 +379,11 @@ def run_job(
     data_root: Path | None = None,
     render_figures: bool = True,
     reuse_deps: bool = False,
+    pool_root: Path | None = None,
 ) -> None:
+    # The reuse pool root: `out_dir` at the top level (== output/), threaded
+    # unchanged into nested runs so every depth searches one shared pool.
+    pool_root = out_dir if pool_root is None else pool_root
     job_file = _job_file(job)
     job.job_file = job_file  # ensure set for code_hash()/build_identity()
     repo = repo_root()
@@ -430,9 +443,9 @@ def run_job(
     context = ResolutionContext(
         results=results,
         locate=_locate_artifact,
-        out_dir=out_dir,
         subjobs_dir=job_out_dir / "subjobs_output",
         job_out_dir=job_out_dir,
+        pool_root=pool_root,
         reuse_deps=reuse_deps,
         data_root=data_root,
         dataset_root=dataset_root,

@@ -11,9 +11,8 @@ via `resolve(context)`. Two kinds share that one contract:
 This is the self-similarity the composite layer is built on: a composite consumes
 a sub-job exactly the way a step consumes an upstream result — both are References
 in the same input list, resolved through the same call. The locator is injected on
-the `ResolutionContext` (not baked into `ArtifactRef`) so a later increment can
-swap the current source-hash dir-glob strategy for an identity-keyed one without
-touching this module.
+the `ResolutionContext` (not baked into `ArtifactRef`), so the identity-keyed
+dir-glob strategy can be swapped for another without touching this module.
 """
 
 from __future__ import annotations
@@ -60,9 +59,11 @@ class ResolutionContext:
     results: dict[str, object]
     locate: ArtifactLocator | None = None
     artifacts: dict[int, LocatedArtifact] = field(default_factory=dict)
-    out_dir: Path | None = None
     subjobs_dir: Path | None = None
     job_out_dir: Path | None = None
+    # The single top-level output pool, threaded UNCHANGED through nested runs so a
+    # locator at any depth searches (and reuses from) the same pool.
+    pool_root: Path | None = None
     reuse_deps: bool = False
     data_root: Path | None = None
     # Resolved dataset root + this run's reuse-gate inputs (an included artifact is
