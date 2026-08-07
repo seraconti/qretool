@@ -9,11 +9,18 @@ Last updated: R1 (2026-05-26).
 
 `NonRepairablePanel` is a **generic** rendering component. It knows nothing
 about fidelity, Allan deviation, or any other specific metric. All
-domain-specific knowledge lives in adapter functions (e.g.
-`plots/fidelity_plot.py::make_fidelity_panel_data`) that convert a typed
-result into `NonRepairablePanelData`.
+domain-specific knowledge lives in adapter functions beside their analyzer
+(`analyzers/t2star.py::make_panel_data`, `analyzers/fidelity.py::make_panel_data`)
+that convert a typed result into `NonRepairablePanelData`.
 
-The panel does **not** import from `analyzers.*`. Adapters do.
+Those adapters are called by a job STEP, never at draw time. `FidelityPlot` and
+`T2StarPlot` used to build panel data inside `build_matplotlib`, where no DAG node
+could supply the window tables; both are gone and jobs use `NonRepairablePanel`
+directly off a panel-data step.
+
+The panel does **not** import from `analyzers.*` for domain logic. It does import
+`analyzers.windows` constants for the birth/death vocabulary, which is shared, not
+domain-specific.
 
 ---
 
@@ -46,6 +53,16 @@ class NonRepairablePanelData:
     include_cumulative_damage: bool  # render cumulative damage subplot (default True)
     include_mttr: bool               # include first-crossing times in summary text (default True)
 
+    # P2 additions (from the window/read tables)
+    primary_sigma: np.ndarray | None
+        # per-read 1-sigma on primary_series, same units. Drawn as error bars under
+        # the trace; snapshotted y-limits keep it from driving autoscale.
+    gap_spans_h: list[tuple[float, float]]
+        # (t_before, t_after) per read gap. The trace is BROKEN across these — a line
+        # through unobserved time is an interpolation the data does not support.
+    timeline_segments_per_threshold: dict[str, list[tuple[float, float, str]]]
+        # (t_start_h, t_end_h, state) runs. Required per threshold by __post_init__.
+
     # big_values_good is per-threshold (third element of each threshold tuple):
     #   False: above threshold = out-of-spec (lower is better, e.g. infidelity)
     #   True:  below threshold = out-of-spec (higher is better, e.g. T2*)
@@ -55,16 +72,22 @@ class NonRepairablePanelData:
 
 ## Panel-internal computations
 
-The following are computed entirely inside `NonRepairablePanel` from
-`(t_h, primary_series, thresholds, direction, damage_fn)`. They are NOT
-separate metric modules. No analyzer module should reimplement them.
+The following are computed by `build_non_repairable_panel_data` from
+`(t_h, primary_series, thresholds, direction, damage_fn)` plus the window and read
+tables. They are NOT separate metric modules. No analyzer module should reimplement
+them.
+
+**Window carving is not one of them.** It lives in `analyzers/windows.py` and reaches
+the builder as two required DataFrames, so the gap policy, censoring and per-read state
+are the same facts in the artifact, the figure and any downstream analysis. The builder
+raises rather than carving a second time.
 
 | Computation | Method | Integration rule | Notes |
 |---|---|---|---|
-| Threshold compliance timeline | `_draw_threshold_timeline` | — | Gantt-style bar chart |
-| Window survival | `_draw_survival` | — | Empirical survival function |
+| Threshold compliance timeline | `_timeline_segments` | — | Gantt bars over per-read `state`; 2 or 4 states depending on `use_uncertainty` |
+| Window survival | `_window_survival` | — | Empirical survival, **censored windows dropped** |
 | CV, initial value, range | `_draw_summary` | — | Summary text |
-| Per-threshold window stats | `_draw_summary` | — | Above/below counts, mean, p90 |
+| Per-threshold window stats | `_analyze_threshold_windows` + `_carve_counts` | — | Above/below counts, mean, p90, plus `n_windows`, `n_censored`, `n_endurance_bags`, `n_gaps` |
 | **Cumulative time out of spec** | `_cumulative_time_out_of_spec` | Left-Riemann | Step-function indicator; result in hours |
 | **Cumulative damage** | `_cumulative_damage` | Trapezoidal | Continuous damage_rate; result in primary_unit · h |
 | **MTTR (first crossing time)** | `_mttr` | — | Scalar per threshold; shown in summary text |
@@ -111,6 +134,25 @@ and axis turned off. The panel never crashes on empty thresholds.
 
 ---
 
+## Window statistics: two definitions on one panel
+
+The summary block's above/below stats (`_analyze_threshold_windows`) and the survival
+curve (the window table) answer different questions and do not have to agree:
+
+- **above/below** is direction-agnostic run-length bookkeeping on the raw series. It has
+  no gap policy and no censoring; a run spanning a read gap is one run.
+- **the window table** applies the gap policy, labels births and deaths, and marks
+  censored windows. The survival curve uses only uncensored windows.
+
+Both are correct for what they measure. Do not read the summary `count` as the number of
+windows in the window table.
+
+`window_survival_per_threshold` is an empirical survival function over **uncensored**
+window lengths only: `S(x) = #{w >= x} / n`. Kaplan-Meier, which would use the censored
+windows rather than discard them, is deferred.
+
+---
+
 ## Color scheme (D4)
 
 Threshold colors come from `plots/theme.py::threshold_color`, which samples
@@ -125,6 +167,13 @@ four locations, so colors correspond visually.
 Sampling across `len(thresholds)` replaced a fixed 8-entry list indexed
 `i % 8`, which gave two thresholds the same color on any ladder longer than
 8 — the shipped T2* ladder has 10.
+
+Timeline bars are colored by per-read spec state through `plots/theme.py::state_color`,
+not by the threshold color: `in_spec`, `out_of_spec`, and — when the carve ran with
+`use_uncertainty=True` — `in_spec_uncertain` / `out_of_spec_uncertain`, which are the
+crisp colors washed toward white. A read is uncertain when
+`abs(value - threshold) < k * sigma`. Uncertainty is an annotation only: it never moves
+a window boundary.
 
 ---
 

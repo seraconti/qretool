@@ -110,3 +110,27 @@ rule governs rendered figures and this document.
 
 The crossing is observed at the first out-of-spec read, so a complete duration is the
 upper end of an interval of width equal to the read spacing.
+
+---
+
+## The vocabulary now has code behind it
+
+Four of the locked terms stopped being conventions and became columns in
+`analyzers/windows.py`. Use them to mean exactly what the carve means:
+
+| term | definition in code |
+|---|---|
+| window | one row of the window table: an in-spec run with a birth, a death and a duration |
+| read | one row of the read table: a single observation, with its state and margin |
+| gap | an inter-read interval greater than `gap_mult` times the median positive spacing |
+| band | reserved; `BAND_STYLE` in `plots/theme.py` carries its fill and edge alphas |
+
+Two consequences for figures:
+
+- A window that did not die of an observed crossing is **censored**, and a figure that
+  counts it as a completed lifetime is wrong. Say which windows were excluded.
+- Nothing is drawn across a gap. The trace breaks; the timeline does not bridge it.
+
+A read whose error bar overlaps the threshold is **uncertain**, drawn in the washed tone
+of its crisp state. Uncertain is a statement about resolution, not about compliance -
+the window boundaries are identical with and without it.
