@@ -133,6 +133,9 @@ T2STAR_DEFAULT_LADDER: list[tuple[str, float, bool]] = [
 
 def make_panel_data(
     result: T2StarResult,
+    windows: pd.DataFrame,
+    reads: pd.DataFrame,
+    gap_spans_s: list[tuple[float, float]] | None = None,
     thresholds: list[tuple[str, float, bool]] | None = None,
     primary_label: str | None = None,
 ) -> NonRepairablePanelData:
@@ -150,6 +153,14 @@ def make_panel_data(
     resolved = thresholds if thresholds is not None else T2STAR_DEFAULT_LADDER
     # Convert threshold values from SI seconds to µs to match primary_series units.
     panel_thresholds = [(lbl, val * 1e6, bvg) for lbl, val, bvg in resolved]
+    # The carve ran in SI seconds on the SI ladder; the panel plots µs. Scaling both
+    # sides by the same constant cannot move a window boundary, so the tables are
+    # valid here unchanged — only durations, which are times, need no conversion.
+    sigma_us = (
+        frame["t2star_error_s"].to_numpy(dtype=float) * 1e6
+        if "t2star_error_s" in frame.columns
+        else None
+    )
 
     label = primary_label if primary_label is not None else "T2* (µs)"
     meta: dict[str, object] = {"dataset": str(result.meta.get("dataset_id", ""))}
@@ -164,5 +175,9 @@ def make_panel_data(
         primary_label=label,
         thresholds=panel_thresholds,
         meta=meta,
+        windows=windows,
+        reads=reads,
+        gap_spans_s=gap_spans_s,
+        primary_sigma=sigma_us,
         use_log_scale=False,
     )

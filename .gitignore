@@ -21,3 +21,9 @@ output_backup2/
 
 # per commit tests, temp
 tests/
+
+# Reference monoliths: large read-only implementations ported FROM, not shipped.
+monoliths/
+
+# Local analysis scripts and their generated output (same choice as tests/).
+scripts/

@@ -187,6 +187,33 @@ def threshold_color(i: int, n: int) -> str:
     return mcolors.to_hex(plt.get_cmap(THRESHOLD_CMAP)(position))
 
 
+# How far an "uncertain" state is washed toward white. Enough to read as a distinct,
+# weaker claim next to its crisp sibling without losing which sibling it is.
+_UNCERTAIN_MIX = 0.45
+
+
+def state_color(state: str) -> str:
+    """Colour for a per-read spec state, including the two uncertain tones.
+
+    `in_spec_uncertain` / `out_of_spec_uncertain` are their crisp siblings washed toward
+    white, so a 4-state timeline still reads as green/red at a glance while marking
+    which reads the error bars cannot separate from the threshold.
+
+    `unresolved` is a different thing and keeps its own hue: it means the read cannot be
+    classified at all (no usable sigma), not that it sits near the threshold.
+    """
+    if state in STATE_COLORS:
+        return STATE_COLORS[state]
+    if state.endswith("_uncertain"):
+        base = state.removesuffix("_uncertain")
+        if base in STATE_COLORS:
+            return mcolors.to_hex(mix_with_white(STATE_COLORS[base], _UNCERTAIN_MIX))
+    raise ValueError(
+        f"Unknown spec state: {state!r}. Known: "
+        f"{sorted(STATE_COLORS)} plus their _uncertain variants."
+    )
+
+
 def apply_rcparams(target: str) -> None:
     """Apply this render target's rcParams to the live matplotlib state.
 

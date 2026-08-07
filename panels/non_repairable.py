@@ -1,5 +1,13 @@
 """Generic non-repairable panel: degradation view with optional cumulative metrics.
 
+NonRepairablePanelData (the contract) lives in _non_repairable_data and is re-exported
+here, which stays the public import surface. Pure view arithmetic lives in
+_non_repairable_render.
+
+That re-export is load-bearing and must not be removed: artifacts materialized before
+the split name `panels.non_repairable.NonRepairablePanelData` in their pickle stream,
+and output/ is append-only, so dropping it would silently break reloading them.
+
 Two halves:
   - NonRepairablePanelData is the COMPLETE typed artifact — raw inputs plus every
     data-derived quantity (cumulative time/damage, MTTF, window stats, survival,
@@ -10,18 +18,17 @@ Two halves:
     colors) live here.
 
 Accepts any monotonic or time-varying metric. No fidelity-specific logic lives here —
-fidelity adaptation is in plots/fidelity_plot.py.
+fidelity adaptation is in analyzers/fidelity.py::make_panel_data.
 """
 
 from __future__ import annotations
-
-from dataclasses import dataclass, field
 
 import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
 
-from panels._artifact_guard import StaleArtifactGuard
+from panels import _non_repairable_render as render
+from panels._non_repairable_data import NonRepairablePanelData
 from plots import theme
 from plots.base import BasePlot
 from plots.fidelity_helpers import apply_common_style
@@ -31,107 +38,6 @@ from plots.fidelity_helpers import apply_common_style
 # dashed lines, cumulative subplots, and survival curves so all three can be visually
 # correlated. Sampling a colormap across len(thresholds) replaces a fixed 8-entry list
 # that wrapped modulo its length - a 10-entry ladder drew 1 us and 9 us in one blue.
-
-
-@dataclass
-class NonRepairablePanelData(StaleArtifactGuard):
-    """Complete typed contract for NonRepairablePanel.
-
-    Built by build_non_repairable_panel_data (panels/_non_repairable_compute.py),
-    the sole constructor path. `__post_init__` enforces completeness: constructing
-    with thresholds present but the per-threshold derived maps unpopulated raises
-    ValueError, so an incomplete artifact never materializes — go through the
-    builder. Unpickling a stale pre-split artifact (one missing any field) raises
-    ValueError via StaleArtifactGuard (that path bypasses __post_init__).
-
-    Raw input fields
-    ----------------
-    t_h              : time array in hours (x-axis for all subplots)
-    primary_series   : metric values (same units as threshold values)
-    primary_label    : y-axis label, e.g. "Infidelity" or "T2* (µs)"
-    thresholds       : list of (label, value, big_values_good) triples.
-                       big_values_good=False: above threshold = out-of-spec
-                         (lower is better, e.g. infidelity)
-                       big_values_good=True: below threshold = out-of-spec
-                         (higher is better, e.g. T2*)
-    meta             : arbitrary dict shown in summary text (≤4 items displayed)
-    traces           : optional extra labeled series for zoom/binned subplots;
-                       None → panel uses primary_series as the sole trace
-    use_log_scale    : semilogy on the primary panel (default False)
-    color            : matplotlib color for primary trace; "C0" if None
-    include_cumulative_time   : render cumulative time-out-of-spec subplot
-    include_cumulative_damage : render cumulative damage subplot
-    include_mttf     : include first-crossing times in summary/timeline text
-
-    Note: damage is no longer a field here. The damage function is a builder
-    parameter only (# EXTENSION: future DamageModel) — a callable cannot be hashed
-    deterministically for identity nor labeled stably, so it never enters the
-    materialized artifact; only the resulting damage curve does.
-
-    Derived fields (populated by the builder)
-    -----------------------------------------
-    Keyed by threshold label unless noted. See _non_repairable_compute for the math.
-    """
-
-    # raw inputs
-    t_h: np.ndarray
-    primary_series: np.ndarray
-    primary_label: str
-    thresholds: list[tuple[str, float, bool]]
-    meta: dict[str, object]
-    traces: list[tuple[str, np.ndarray]] | None = None
-    use_log_scale: bool = False
-    color: object = None
-    include_cumulative_time: bool = True
-    include_cumulative_damage: bool = True
-    include_mttf: bool = True
-
-    # derived (populated by build_non_repairable_panel_data)
-    cumulative_time_per_threshold: dict[str, np.ndarray] = field(default_factory=dict)
-    cumulative_damage_per_threshold: dict[str, np.ndarray] = field(default_factory=dict)
-    mttf_per_threshold: dict[str, float | None] = field(default_factory=dict)
-    threshold_window_stats: dict[str, dict[str, object]] = field(default_factory=dict)
-    window_survival_per_threshold: dict[str, list[tuple[float, float]]] = field(
-        default_factory=dict
-    )
-    binned_stats_per_trace: dict[str, tuple[np.ndarray, ...]] = field(
-        default_factory=dict
-    )
-    # default_factory (not a plain class default) so the value lives in instance
-    # __dict__ like every other derived field: absence is then detectable rather
-    # than silently falling back to a class attribute.
-    cv: float = field(default_factory=lambda: float("nan"))
-    threshold_in_spec_frac: dict[str, float] = field(default_factory=dict)
-    threshold_summary: dict[str, dict[str, float] | None] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        # Completeness contract: the builder populates one entry per threshold in
-        # every per-threshold derived map; direct construction (empty defaults)
-        # with thresholds present is incomplete and must not materialize.
-        # (__setstate__ handles the unpickle path and bypasses __init__/__post_init__.)
-        labels = [label for label, _, _ in self.thresholds]
-        per_threshold = {
-            "cumulative_time_per_threshold": self.cumulative_time_per_threshold,
-            "cumulative_damage_per_threshold": self.cumulative_damage_per_threshold,
-            "mttf_per_threshold": self.mttf_per_threshold,
-            "threshold_window_stats": self.threshold_window_stats,
-            "window_survival_per_threshold": self.window_survival_per_threshold,
-            "threshold_in_spec_frac": self.threshold_in_spec_frac,
-            "threshold_summary": self.threshold_summary,
-        }
-        for field_name, mapping in per_threshold.items():
-            missing = [label for label in labels if label not in mapping]
-            if missing:
-                raise ValueError(
-                    f"incomplete NonRepairablePanelData: {field_name} is missing "
-                    f"threshold(s) {missing} — construct via "
-                    f"build_non_repairable_panel_data()"
-                )
-
-
-# ---------------------------------------------------------------------------
-# Panel class (pure renderer)
-# ---------------------------------------------------------------------------
 
 
 class NonRepairablePanel(BasePlot):
@@ -176,13 +82,28 @@ class NonRepairablePanel(BasePlot):
                     5, 2, height_ratios=[1.8, thr_row_h, 3.2, 2.0, 1.2]
                 )
 
-            ax_primary = fig.add_subplot(gs[0, :])
+            # Top row: the long series, its own distribution rotated to share the y
+            # axis, and a squarer histogram of the per-read fit error.
+            gs_top = gs[0, :].subgridspec(
+                1, 3, width_ratios=[7.0, 1.2, 1.8], wspace=0.06
+            )
+            ax_primary = fig.add_subplot(gs_top[0, 0])
+            ax_primary_hist = fig.add_subplot(gs_top[0, 1], sharey=ax_primary)
+            ax_sigma_hist = fig.add_subplot(gs_top[0, 2])
             ax_thr = fig.add_subplot(gs[1, :])
             ax_zoom = fig.add_subplot(gs[2, 0])
             ax_roll = fig.add_subplot(gs[2, 1])
             ax_surv = fig.add_subplot(gs[3, :])
 
-            for ax in (ax_primary, ax_thr, ax_zoom, ax_roll, ax_surv):
+            for ax in (
+                ax_primary,
+                ax_primary_hist,
+                ax_sigma_hist,
+                ax_thr,
+                ax_zoom,
+                ax_roll,
+                ax_surv,
+            ):
                 apply_common_style(ax)
 
             if has_extra_row:
@@ -208,7 +129,9 @@ class NonRepairablePanel(BasePlot):
                 else [(pd_.primary_label, pd_.primary_series)]
             )
 
-            self._draw_primary(ax_primary, pd_, color)
+            self._draw_primary(ax_primary, pd_, color, legend_ax=ax_sigma_hist)
+            self._draw_primary_hist(ax_primary_hist, pd_, color)
+            self._draw_sigma_hist(ax_sigma_hist, pd_, color)
             self._draw_threshold_timeline(ax_thr, pd_)
             self._draw_traces(ax_zoom, pd_, traces, color, title="Detail view")
             self._draw_binned_30m(ax_roll, pd_, traces, color)
@@ -229,47 +152,46 @@ class NonRepairablePanel(BasePlot):
 
     # --- axis/theme helpers (render-local; functions of axes/theme, not of data) ---
 
-    @staticmethod
-    def _draw_decade_guides(ax: plt.Axes, values: np.ndarray) -> None:
-        clipped = np.clip(np.asarray(values, dtype=float), 1e-16, None)
-        lo, hi = float(np.min(clipped)), float(np.max(clipped))
-        if not (np.isfinite(lo) and np.isfinite(hi) and lo > 0.0 and hi > 0.0):
-            return
-        for power in range(int(np.floor(np.log10(lo))), int(np.ceil(np.log10(hi))) + 1):
-            ax.axhline(
-                10.0**power,
-                color="gray",
-                linestyle="--",
-                linewidth=0.7,
-                alpha=0.3,
-                zorder=0,
-            )
-
-    @staticmethod
-    def _adaptive_ylim(series_list: list[np.ndarray]) -> tuple[float, float]:
-        all_values = np.concatenate(
-            [np.asarray(s, dtype=float) for s in series_list if len(s) > 0]
-        )
-        finite = all_values[np.isfinite(all_values)]
-        if len(finite) == 0:
-            return 0.0, 1.0
-        q_lo = float(np.quantile(finite, 0.05))
-        q_hi = float(np.quantile(finite, 0.95))
-        if q_hi <= q_lo:
-            q_lo, q_hi = float(np.min(finite)), float(np.max(finite))
-        span = max(1e-9, q_hi - q_lo)
-        pad = 0.15 * span
-        return q_lo - pad, q_hi + pad
-
     # --- private drawing methods (read precomputed fields; no data arithmetic) ---
 
     def _draw_primary(
-        self, ax: plt.Axes, pd_: NonRepairablePanelData, color: object
+        self,
+        ax: plt.Axes,
+        pd_: NonRepairablePanelData,
+        color: object,
+        legend_ax: plt.Axes | None = None,
     ) -> None:
         plot_fn = ax.semilogy if pd_.use_log_scale else ax.plot
-        plot_fn(pd_.t_h, pd_.primary_series, color=color, linewidth=1.2, zorder=2)
+        # One call per observed stretch, split at the gaps the carve found, so no
+        # segment is drawn across unobserved time.
+        for lo, hi in render.observed_slices(pd_):
+            plot_fn(
+                pd_.t_h[lo:hi],
+                pd_.primary_series[lo:hi],
+                color=color,
+                linewidth=1.2,
+                zorder=2,
+            )
+        if pd_.primary_sigma is not None:
+            # Error bars are drawn UNDER the trace and the threshold lines — the point
+            # of showing them is to see which reads they overlap a threshold with.
+            # The y-limits are snapshotted from the series and restored afterwards:
+            # per-read sigma can be many times the signal range, and letting it drive
+            # autoscale would squash the whole ladder into a few pixels.
+            y_limits = ax.get_ylim()
+            ax.errorbar(
+                pd_.t_h,
+                pd_.primary_series,
+                yerr=pd_.primary_sigma,
+                fmt="none",
+                ecolor=color,
+                elinewidth=0.5,
+                alpha=0.25,
+                zorder=0,
+            )
+            ax.set_ylim(y_limits)
         if pd_.use_log_scale:
-            self._draw_decade_guides(ax, pd_.primary_series)
+            render.draw_decade_guides(ax, pd_.primary_series)
         for i, (label, thr_val, _) in enumerate(pd_.thresholds):
             thr_color = theme.threshold_color(i, len(pd_.thresholds))
             ax.axhline(
@@ -282,13 +204,13 @@ class NonRepairablePanel(BasePlot):
                 zorder=1,
             )
         if pd_.thresholds:
-            # Outside the right spine: full-width axis, so this lands in the
-            # figure margin and is captured by bbox_inches="tight" without
-            # overflowing onto the data or x-axis ticks (constrained_layout
-            # won't shrink the short primary axis to fit a tall legend).
-            ax.legend(
+            # Anchored outside the RIGHT-MOST axis of the row, not this one: the
+            # primary axis no longer spans the full width, so its own right spine is
+            # now interior. This keeps the legend in the figure margin (captured by
+            # bbox_inches="tight") instead of on top of the data.
+            (legend_ax or ax).legend(
+                *ax.get_legend_handles_labels(),
                 frameon=False,
-                fontsize=7,
                 loc="upper left",
                 bbox_to_anchor=(1.01, 1.0),
                 borderaxespad=0.0,
@@ -297,6 +219,97 @@ class NonRepairablePanel(BasePlot):
         ax.set_xlabel("Elapsed time (h)")
         ax.set_title(pd_.primary_label)
         ax.grid(True, which="both", color="lightgray", alpha=0.4)
+
+    def _draw_primary_hist(
+        self, ax: plt.Axes, pd_: NonRepairablePanelData, color: object
+    ) -> None:
+        """The series' own distribution, rotated to share the primary y axis."""
+        if len(pd_.primary_hist_counts) == 0:
+            ax.text(
+                0.5,
+                0.5,
+                "no spread",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
+            ax.axis("off")
+            return
+        centers, widths = render.bin_centers_and_widths(pd_.primary_hist_edges)
+        ax.barh(
+            centers,
+            pd_.primary_hist_counts,
+            height=widths,
+            color=color,
+            alpha=0.6,
+            edgecolor="none",
+        )
+        ax.set_xlabel("Count")
+        ax.tick_params(axis="y", labelleft=False)
+        ax.set_title("Distribution")
+        ax.grid(True, axis="x", color="lightgray", alpha=0.4)
+
+    def _draw_sigma_hist(
+        self, ax: plt.Axes, pd_: NonRepairablePanelData, color: object
+    ) -> None:
+        """Spread of the per-read fit error itself, with its mean and median marked."""
+        if len(pd_.sigma_hist_counts) == 0:
+            ax.text(
+                0.5,
+                0.5,
+                "no per-read error",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
+            ax.axis("off")
+            return
+        centers, widths = render.bin_centers_and_widths(pd_.sigma_hist_edges)
+        ax.bar(
+            centers,
+            pd_.sigma_hist_counts,
+            width=widths,
+            color=color,
+            alpha=0.6,
+            edgecolor="none",
+        )
+        # Annotated in-axis rather than via ax.legend(): this axis already carries the
+        # primary axis's threshold legend in its right margin, and a second ax.legend()
+        # call would replace it.
+        notes: list[str] = []
+        for value, style, name in (
+            (pd_.sigma_mean, "-", "mean"),
+            (pd_.sigma_median, "--", "median"),
+        ):
+            if np.isfinite(value):
+                ax.axvline(value, color="gray", linestyle=style, linewidth=1.0)
+                notes.append(f"{name} {value:.3g}")
+        if notes:
+            ax.text(
+                0.97,
+                0.97,
+                "\n".join(notes),
+                ha="right",
+                va="top",
+                transform=ax.transAxes,
+                color="gray",
+            )
+        # A handful of failed fits carry errors orders of magnitude above the bulk and
+        # would flatten the distribution against the left edge. Clip the VIEW, never
+        # the data, and say how many reads fall outside it.
+        if np.isfinite(pd_.sigma_hist_view_x_max):
+            ax.set_xlim(float(pd_.sigma_hist_edges[0]), pd_.sigma_hist_view_x_max)
+        n_outside = pd_.sigma_hist_n_above_view
+        ax.set_xlabel(f"Fit error ({pd_.primary_label})")
+        ax.set_ylabel("Count")
+        # The clipped count goes in the title: this axis is too short to carry a second
+        # annotation, and a panel that narrows its view has to say by how much.
+        ax.set_title(
+            "Per-read fit error"
+            if not n_outside
+            else f"Per-read fit error ({n_outside} above view)"
+        )
+        ax.grid(True, axis="y", color="lightgray", alpha=0.4)
 
     def _draw_threshold_timeline(
         self, ax: plt.Axes, pd_: NonRepairablePanelData
@@ -337,36 +350,21 @@ class NonRepairablePanel(BasePlot):
         n_plot = len(plotted)
         y_positions = np.arange(n_plot)[::-1]
 
-        for y_pos, (label, thr_val, big_values_good) in zip(y_positions, plotted):
-            # big_values_good=True: above threshold = green (good), below = red (out-of-spec)
-            # big_values_good=False: above threshold = red (out-of-spec), below = green (good)
-            color_if_above = "green" if big_values_good else "red"
-            color_if_below = "red" if big_values_good else "green"
-            above = pd_.primary_series >= thr_val
-            state = bool(above[0]) if len(above) > 0 else False
-            start = float(pd_.t_h[0])
-            for idx in range(1, len(pd_.t_h)):
-                if bool(above[idx]) != state:
-                    end = float(pd_.t_h[idx])
-                    ax.barh(
-                        y_pos,
-                        end - start,
-                        left=start,
-                        height=0.75,
-                        color=color_if_above if state else color_if_below,
-                        alpha=0.7,
-                        edgecolor="none",
-                    )
-                    start, state = end, bool(above[idx])
-            ax.barh(
-                y_pos,
-                float(pd_.t_h[-1]) - start,
-                left=start,
-                height=0.75,
-                color=color_if_above if state else color_if_below,
-                alpha=0.7,
-                edgecolor="none",
-            )
+        for y_pos, (label, _thr_val, _big_values_good) in zip(y_positions, plotted):
+            # Segments and their states are computed by the builder from the read table
+            # (direction and uncertainty already applied). Draw only.
+            for t_start_h, t_end_h, state in pd_.timeline_segments_per_threshold.get(
+                label, []
+            ):
+                ax.barh(
+                    y_pos,
+                    t_end_h - t_start_h,
+                    left=t_start_h,
+                    height=0.75,
+                    color=theme.state_color(state),
+                    alpha=0.85,
+                    edgecolor="none",
+                )
 
             if pd_.include_mttf:
                 mttf = mttf_map.get(label)
@@ -414,7 +412,7 @@ class NonRepairablePanel(BasePlot):
                 label=label,
             )
         if not pd_.use_log_scale:
-            lo, hi = self._adaptive_ylim([s for _, s in traces])
+            lo, hi = render.adaptive_ylim([s for _, s in traces])
             ax.set_ylim(lo, hi)
         ax.set_ylabel(pd_.primary_label)
         ax.set_xlabel("Elapsed time (h)")
@@ -452,7 +450,7 @@ class NonRepairablePanel(BasePlot):
             ax.fill_between(xb, q1, q3, color=color, alpha=0.2, zorder=1)
             ax.plot(xb, p90, "--", linewidth=0.7, color=color, alpha=0.5, zorder=1)
         if not pd_.use_log_scale:
-            lo, hi = self._adaptive_ylim([s for _, s in traces])
+            lo, hi = render.adaptive_ylim([s for _, s in traces])
             ax.set_ylim(lo, hi)
         ax.set_xlabel("Elapsed time (h)")
         ax.set_ylabel(pd_.primary_label)
@@ -687,3 +685,6 @@ class NonRepairablePanel(BasePlot):
                 "boxstyle": "round,pad=0.5",
             },
         )
+
+
+__all__ = ["NonRepairablePanel", "NonRepairablePanelData"]

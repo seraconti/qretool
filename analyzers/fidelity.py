@@ -165,3 +165,93 @@ def run(inputs: FidelityInputs) -> FidelityResult:
         meta={"profile": inputs.profile, "rabi_base_hz": rabi_base_hz},
         diagnostics=diag,
     )
+
+
+# ---------------------------------------------------------------------------
+# Panel-data factory
+#
+# Lifted out of plots/fidelity_plot.py, which built panel data inside
+# build_matplotlib — at draw time, where no DAG node could supply the window and
+# read tables. The adapter belongs beside its analyzer, as t2star's does.
+# ---------------------------------------------------------------------------
+
+
+def panel_thresholds(infidelity: np.ndarray) -> list[tuple[str, float, bool]]:
+    """Nines thresholds (infidelity units, big_values_good=False) that the data crosses.
+
+    Data-derived, so the windows step and the panel-data step must both call this on the
+    SAME series to carve and to render the same ladder. It is pure, so they agree.
+    """
+    inf = np.asarray(infidelity, dtype=float)
+    inf_finite = inf[np.isfinite(inf) & (inf > 0)]
+    if len(inf_finite) == 0:
+        return []
+    inf_min, inf_max = float(np.min(inf_finite)), float(np.max(inf_finite))
+    thresholds: list[tuple[str, float, bool]] = []
+    for n in range(0, 8):
+        # n=0 → infidelity<0.01 = 99% fidelity; n=1 → infidelity<0.001 = 99.9%; ...
+        inf_thr = 10.0 ** (-(n + 2))
+        label = "99" + ("." + "9" * n if n > 0 else "") + "%"
+        if inf_min < inf_thr < inf_max:
+            # big_values_good=False: above this infidelity threshold = out-of-spec
+            thresholds.append((label, inf_thr, False))
+    return thresholds
+
+
+def panel_series(result: FidelityResult) -> np.ndarray:
+    """The infidelity series the panel and the carve both use (clipped identically)."""
+    return np.clip(result.frame["infidelity"].to_numpy(dtype=float), 1e-16, None)
+
+
+def make_panel_data(
+    result: FidelityResult,
+    windows: pd.DataFrame,
+    reads: pd.DataFrame,
+    gap_spans_s: list[tuple[float, float]] | None = None,
+    dataset_id: str = "",
+):
+    """Convert FidelityResult + the window tables to NonRepairablePanelData."""
+    from panels._non_repairable_compute import build_non_repairable_panel_data
+    from plots.theme import qubit_color
+
+    frame = result.frame
+    t_h = frame["t_rel_s"].to_numpy(dtype=float) / 3600.0
+    infidelity = panel_series(result)
+
+    traces: list[tuple[str, np.ndarray]] | None = None
+    if "infidelity_f0" in frame.columns:
+        traces = [
+            ("f−fₘₑₐₙ", infidelity),
+            (
+                "f−f₀",
+                np.clip(frame["infidelity_f0"].to_numpy(dtype=float), 1e-16, None),
+            ),
+        ]
+
+    meta: dict[str, object] = {"dataset": dataset_id}
+    rabi_base_hz = result.meta.get("rabi_base_hz")
+    if rabi_base_hz is not None:
+        meta["rabi_base_hz"] = f"{rabi_base_hz:.4g} Hz"
+    profile = result.meta.get("profile")
+    if profile:
+        meta["profile"] = str(profile)
+
+    if rabi_base_hz is not None:
+        rabi_mhz = float(rabi_base_hz) / 1e6
+        primary_label = f"Infidelity  ({rabi_mhz:.4g} MHz Rabi)"
+    else:
+        primary_label = "Infidelity"
+
+    return build_non_repairable_panel_data(
+        t_h=t_h,
+        primary_series=infidelity,
+        primary_label=primary_label,
+        thresholds=panel_thresholds(infidelity),
+        meta=meta,
+        windows=windows,
+        reads=reads,
+        gap_spans_s=gap_spans_s,
+        traces=traces,
+        use_log_scale=True,
+        color=qubit_color(dataset_id=dataset_id),
+    )
