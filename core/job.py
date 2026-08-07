@@ -193,7 +193,7 @@ def _load_dataset(dataset: Dataset) -> Norm:
             "n_points": int(len(t_rel_s)),
         }
     )
-    # Determine run_start_unix_s via three resolution levels (see TIME_SEMANTICS.md):
+    # Determine run_start_unix_s via three resolution levels (see docs/TIME_SEMANTICS.md):
     #   1. Explicit: Dataset.extra['run_start_unix_s'] already in meta — validate and use.
     #   2. date_only_midnight: DDMMYY_ filename prefix — midnight of that date (local naive).
     #   3. No valid source → raise; do NOT fall back to t_raw[0] (yields ~1970 epoch).

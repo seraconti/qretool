@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from core.dataset import Dataset
@@ -16,7 +15,7 @@ class CalibrationLogSchema:
     ``events["calibration"]`` list contains one CalibrationEvent per row.
     The ``date`` column (naive datetime64[ns]) is converted to Unix seconds
     via the naive-as-UTC convention (ts.value / 1e9), consistent with
-    TIME_SEMANTICS.md for the calibration log dataset family.
+    docs/TIME_SEMANTICS.md for the calibration log dataset family.
 
     This schema provides ``to_norm`` rather than ``validate`` so that
     ``_load_dataset`` bypasses the standard timestamp/frequency normalization.

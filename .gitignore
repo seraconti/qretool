@@ -3,9 +3,11 @@
 .*
 !.gitignore
 
-# Ignore all Markdown files except README.md
+# Ignore all Markdown files except README.md and docs/, which is normative
+# (CLAUDE.md points at it) and must stay tracked and reviewable.
 *.md
 !README.md
+!docs/**
 
 
 # Python bytecode

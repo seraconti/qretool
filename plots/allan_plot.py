@@ -6,16 +6,14 @@ import plotly.graph_objects as go
 
 from analyzers.allan import AllanResult
 from plots.base import BasePlot
-from plots.theme import mix_with_white, qubit_color
+from plots.theme import mix_with_white, qubit_color, style_context
 
 
 class AllanPlot(BasePlot):
-    def build_matplotlib(self, result: AllanResult, style: str = "default") -> plt.Figure:
-        if style not in {"default", "paper"}:
-            raise ValueError(f"Unknown Allan style '{style}'")
-
-        plt_style = "default" if style == "default" else "classic"
-        with plt.style.context(plt_style):
+    def build_matplotlib(
+        self, result: AllanResult, style: str = "default"
+    ) -> plt.Figure:
+        with style_context(style):
             mode_names = list(result.modes.keys())
             if len(mode_names) == 0:
                 raise ValueError("AllanResult contains no modes to plot")
@@ -80,7 +78,12 @@ class AllanPlot(BasePlot):
 
             if first_mode is not None:
                 tau_s, adev = first_mode
-                tau_mask = np.isfinite(tau_s) & np.isfinite(adev) & (tau_s > 0.0) & (adev > 0.0)
+                tau_mask = (
+                    np.isfinite(tau_s)
+                    & np.isfinite(adev)
+                    & (tau_s > 0.0)
+                    & (adev > 0.0)
+                )
                 tau = tau_s[tau_mask]
                 y = adev[tau_mask]
                 if len(tau) > 0:
@@ -88,14 +91,28 @@ class AllanPlot(BasePlot):
                     y0 = float(y[0])
                     for alpha in [0.5, 1.0, -0.5, -1.0]:
                         guide = y0 * (tau / tau0) ** alpha
-                        ax_main.loglog(tau, guide, "--", color="gray", linewidth=0.8, alpha=0.3, zorder=0)
+                        ax_main.loglog(
+                            tau,
+                            guide,
+                            "--",
+                            color="gray",
+                            linewidth=0.8,
+                            alpha=0.3,
+                            zorder=0,
+                        )
 
                     max_tau = float(np.max(tau))
                     ax_main.axvline(max_tau, color="0.35", linestyle=":", linewidth=0.9)
-                    ax_slope.axvline(max_tau, color="0.35", linestyle=":", linewidth=0.9)
+                    ax_slope.axvline(
+                        max_tau, color="0.35", linestyle=":", linewidth=0.9
+                    )
 
                     y_min, y_max = ax_main.get_ylim()
-                    label_y = y_min * (y_max / y_min) ** 0.96 if y_min > 0 and y_max > y_min else y_max
+                    label_y = (
+                        y_min * (y_max / y_min) ** 0.96
+                        if y_min > 0 and y_max > y_min
+                        else y_max
+                    )
                     ax_main.text(
                         max_tau,
                         label_y,
@@ -118,13 +135,20 @@ class AllanPlot(BasePlot):
                     if len(tau) > 1:
                         tau_mid = np.sqrt(tau[:-1] * tau[1:])
                         slope = np.diff(np.log(y)) / np.diff(np.log(tau))
-                        ax_slope.semilogx(tau_mid, slope, "-", linewidth=1.3, color=base_color)
+                        ax_slope.semilogx(
+                            tau_mid, slope, "-", linewidth=1.3, color=base_color
+                        )
 
                     if has_fractional and ax_frac is not None:
                         n = min(len(tau_s), len(frac))
                         tau_f = np.asarray(tau_s[:n], dtype=float)
                         frac_f = np.asarray(frac[:n], dtype=float)
-                        frac_mask = np.isfinite(tau_f) & np.isfinite(frac_f) & (tau_f > 0.0) & (frac_f > 0.0)
+                        frac_mask = (
+                            np.isfinite(tau_f)
+                            & np.isfinite(frac_f)
+                            & (tau_f > 0.0)
+                            & (frac_f > 0.0)
+                        )
                         if np.any(frac_mask):
                             ax_frac.loglog(
                                 tau_f[frac_mask],
@@ -140,7 +164,7 @@ class AllanPlot(BasePlot):
                             carrier = getattr(result, "carrier_hz", None)
                             if carrier is not None and np.isfinite(float(carrier)):
                                 ax_frac.annotate(
-                                    f"normalization: ADEV / {carrier/1e9:.5f} GHz",
+                                    f"normalization: ADEV / {carrier / 1e9:.5f} GHz",
                                     xy=(0.98, 0.98),
                                     xycoords="axes fraction",
                                     ha="right",
@@ -150,7 +174,9 @@ class AllanPlot(BasePlot):
                                 )
                             ax_frac.set_title("Fractional Allan")
                             ax_frac.set_ylabel("Fractional ADEV")
-                            ax_frac.grid(True, which="major", color="lightgray", alpha=0.4)
+                            ax_frac.grid(
+                                True, which="major", color="lightgray", alpha=0.4
+                            )
                             ax_frac.legend(frameon=False)
 
                 fs_hz = meta.get("acquisition_frequency_hz")
@@ -173,11 +199,15 @@ class AllanPlot(BasePlot):
 
             ax_slope.set_xlabel("Tau (s)")
             ax_slope.set_ylabel("Local slope")
-            ax_slope.set_title("Local slope from consecutive log-log finite differences")
+            ax_slope.set_title(
+                "Local slope from consecutive log-log finite differences"
+            )
             ax_slope.axhline(0.0, color="gray", alpha=0.4, linewidth=0.8)
             ax_slope.grid(True, which="major", color="lightgray", alpha=0.4)
             if has_fractional:
-                fig.subplots_adjust(left=0.10, right=0.98, top=0.94, bottom=0.08, hspace=0.30)
+                fig.subplots_adjust(
+                    left=0.10, right=0.98, top=0.94, bottom=0.08, hspace=0.30
+                )
             else:
                 fig.tight_layout()
             return fig

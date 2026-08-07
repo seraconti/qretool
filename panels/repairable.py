@@ -27,7 +27,7 @@ from analyzers.mtbf import MtbfResult
 from panels._artifact_guard import StaleArtifactGuard
 from plots.base import BasePlot
 from plots.fidelity_helpers import apply_common_style
-from plots.theme import qubit_color
+from plots.theme import qubit_color, style_context
 
 
 def _empty() -> np.ndarray:
@@ -127,8 +127,7 @@ class RepairablePanel(BasePlot):
         pd_ = result
         color = qubit_color(meta=pd_.meta)
 
-        plt_style = "default" if style == "default" else "classic"
-        with plt.style.context(plt_style):
+        with style_context(style):
             fig = plt.figure(
                 figsize=(14, 13), constrained_layout=True, facecolor="white"
             )

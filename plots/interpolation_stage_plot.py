@@ -7,7 +7,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from plots.base import BasePlot
-from plots.theme import mix_with_white, qubit_color
+from plots.theme import mix_with_white, qubit_color, style_context
 
 
 @dataclass(slots=True)
@@ -22,22 +22,29 @@ def _scale_to_khz(values_hz: np.ndarray) -> np.ndarray:
 
 
 class InterpolationStagePlot(BasePlot):
-    def build_matplotlib(self, result: InterpolationStageResult, style: str = "default") -> plt.Figure:
-        if style not in {"default", "paper"}:
-            raise ValueError(f"Unknown InterpolationStage style '{style}'")
-
-        plt_style = "default" if style == "default" else "classic"
-        with plt.style.context(plt_style):
+    def build_matplotlib(
+        self, result: InterpolationStageResult, style: str = "default"
+    ) -> plt.Figure:
+        with style_context(style):
             filter_bundle = result.filter_bundle
             interp_bundle = result.interp_bundle
             stage_order = list(filter_bundle.get("stage_order", []))
             by_stage = dict(interp_bundle.get("by_stage", {}))
             available_stages = [stage for stage in stage_order if stage in by_stage]
             if len(available_stages) == 0:
-                raise ValueError("InterpolationStageResult contains no overlapping stages to plot")
+                raise ValueError(
+                    "InterpolationStageResult contains no overlapping stages to plot"
+                )
 
-            dataset_id = str(result.meta.get("dataset_id", filter_bundle.get("meta", {}).get("dataset_id", self.name)))
-            base_color = qubit_color(dataset_id=dataset_id, meta=filter_bundle.get("meta", {}))
+            dataset_id = str(
+                result.meta.get(
+                    "dataset_id",
+                    filter_bundle.get("meta", {}).get("dataset_id", self.name),
+                )
+            )
+            base_color = qubit_color(
+                dataset_id=dataset_id, meta=filter_bundle.get("meta", {})
+            )
             interp_color = mix_with_white(base_color, amount=0.3)
 
             n_rows = len(available_stages)
@@ -57,7 +64,9 @@ class InterpolationStagePlot(BasePlot):
                 interp_meta = dict(interp_stage.get("meta", {}))
 
                 if "t_rel_s" not in raw_stage or "t_rel_s" not in interp_stage:
-                    raise KeyError("InterpolationStagePlot requires 't_rel_s' in both raw and interpolated stages")
+                    raise KeyError(
+                        "InterpolationStagePlot requires 't_rel_s' in both raw and interpolated stages"
+                    )
                 raw_time = raw_stage["t_rel_s"]
                 interp_time = interp_stage["t_rel_s"]
                 t_raw_h = np.asarray(raw_time, dtype=float) / 3600.0
@@ -65,7 +74,11 @@ class InterpolationStagePlot(BasePlot):
                 raw_khz = _scale_to_khz(raw_stage["delta_hz"])
                 interp_khz = _scale_to_khz(interp_stage["delta_hz"])
 
-                y_all = np.concatenate([raw_khz, interp_khz]) if len(raw_khz) and len(interp_khz) else (raw_khz if len(raw_khz) else interp_khz)
+                y_all = (
+                    np.concatenate([raw_khz, interp_khz])
+                    if len(raw_khz) and len(interp_khz)
+                    else (raw_khz if len(raw_khz) else interp_khz)
+                )
                 if len(y_all) == 0:
                     y_all = np.array([0.0], dtype=float)
                 y_min = float(np.min(y_all))
@@ -85,21 +98,32 @@ class InterpolationStagePlot(BasePlot):
                 ax_interp = axes[row][2]
                 ax_interp_hist = axes[row][3]
 
-                ax_raw.plot(t_raw_h, raw_khz, ".", markersize=2.5, alpha=0.85, color=base_color)
+                ax_raw.plot(
+                    t_raw_h, raw_khz, ".", markersize=2.5, alpha=0.85, color=base_color
+                )
                 ax_raw.set_title(f"{stage}: input (n={len(raw_khz)})")
                 ax_raw.set_ylabel("Delta frequency (kHz)" if row == 0 else "")
                 ax_raw.set_xlabel("Elapsed time (h)")
                 ax_raw.set_ylim(*y_lims)
                 ax_raw.grid(True, alpha=0.25)
 
-                ax_raw_hist.hist(raw_khz, bins=bins, orientation="horizontal", alpha=0.65, color=base_color, edgecolor="none")
+                ax_raw_hist.hist(
+                    raw_khz,
+                    bins=bins,
+                    orientation="horizontal",
+                    alpha=0.65,
+                    color=base_color,
+                    edgecolor="none",
+                )
                 ax_raw_hist.set_title("Raw dist")
                 ax_raw_hist.set_xlabel("Count")
                 ax_raw_hist.set_ylim(*y_lims)
                 ax_raw_hist.tick_params(axis="y", labelleft=False)
                 ax_raw_hist.grid(True, axis="x", alpha=0.25)
 
-                ax_interp.plot(t_interp_h, interp_khz, "-", linewidth=1.0, color=interp_color)
+                ax_interp.plot(
+                    t_interp_h, interp_khz, "-", linewidth=1.0, color=interp_color
+                )
                 ax_interp.set_title(f"{stage}: interpolated (n={len(interp_khz)})")
                 ax_interp.set_xlabel("Elapsed time (h)")
                 ax_interp.set_ylim(*y_lims)
@@ -118,14 +142,23 @@ class InterpolationStagePlot(BasePlot):
                         bbox={"facecolor": "white", "alpha": 0.7, "edgecolor": "none"},
                     )
 
-                ax_interp_hist.hist(interp_khz, bins=bins, orientation="horizontal", alpha=0.65, color=interp_color, edgecolor="none")
+                ax_interp_hist.hist(
+                    interp_khz,
+                    bins=bins,
+                    orientation="horizontal",
+                    alpha=0.65,
+                    color=interp_color,
+                    edgecolor="none",
+                )
                 ax_interp_hist.set_title("Interp dist")
                 ax_interp_hist.set_xlabel("Count")
                 ax_interp_hist.set_ylim(*y_lims)
                 ax_interp_hist.tick_params(axis="y", labelleft=False)
                 ax_interp_hist.grid(True, axis="x", alpha=0.25)
 
-            fig.suptitle(f"Interpolation by Filter Stage - {dataset_id}", fontsize=13, y=1.01)
+            fig.suptitle(
+                f"Interpolation by Filter Stage - {dataset_id}", fontsize=13, y=1.01
+            )
             return fig
 
     def build_plotly(self, result: InterpolationStageResult) -> go.Figure:

@@ -6,11 +6,15 @@ from typing import Callable, Protocol
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 
+from plots import theme
+
 
 class _RenderablePlot(Protocol):
     name: str
 
-    def build_matplotlib(self, result: object, style: str = "default") -> plt.Figure: ...
+    def build_matplotlib(
+        self, result: object, style: str = "default"
+    ) -> plt.Figure: ...
 
     def build_plotly(self, result: object) -> go.Figure: ...
 
@@ -38,16 +42,27 @@ def register_target(name: str) -> Callable[[RenderFn], RenderFn]:
 @register_target("static")
 def render_static(plot: _RenderablePlot, result: object, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    figure = plot.build_matplotlib(result, style="default")
-    figure.savefig(out_dir / f"{plot.name}.pdf", dpi=300, bbox_inches="tight")
+    # savefig is inside the style context too: a few rcParams (mathtext.fontset, the
+    # font.serif fallback order) resolve at DRAW time, not when the artist is created,
+    # so saving outside the context would silently drop them.
+    with theme.style_context("default"):
+        figure = plot.build_matplotlib(result, style="default")
+        # Per-target filename: static and academic used to write the same {name}.pdf,
+        # so academic clobbered static while the prov record listed both targets.
+        figure.savefig(
+            out_dir / f"{plot.name}_static.pdf", dpi=300, bbox_inches="tight"
+        )
     plt.close(figure)
 
 
 @register_target("academic")
 def render_academic(plot: _RenderablePlot, result: object, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    figure = plot.build_matplotlib(result, style="paper")
-    figure.savefig(out_dir / f"{plot.name}.pdf", dpi=600, bbox_inches="tight")
+    with theme.style_context("paper"):
+        figure = plot.build_matplotlib(result, style="paper")
+        figure.savefig(
+            out_dir / f"{plot.name}_academic.pdf", dpi=600, bbox_inches="tight"
+        )
     plt.close(figure)
 
 

@@ -16,7 +16,7 @@ import plotly.graph_objects as go
 
 from plots.base import BasePlot
 from plots.fidelity_helpers import apply_common_style
-from plots.theme import qubit_color
+from plots.theme import qubit_color, style_context
 
 
 @dataclass
@@ -46,8 +46,7 @@ class CompareNonRepairablePanel(BasePlot):
             raise TypeError(
                 "CompareNonRepairablePanel expects CompareNonRepairableData"
             )
-        plt_style = "default" if style == "default" else "classic"
-        with plt.style.context(plt_style):
+        with style_context(style):
             fig = plt.figure(
                 figsize=(14, 6), constrained_layout=True, facecolor="white"
             )

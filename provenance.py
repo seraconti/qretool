@@ -98,13 +98,22 @@ def build_prov_record(
     }
 
 
+# Semantics colour for analyst-declared inputs, matching the paper figures. Kept here
+# rather than imported from plots.theme: theme is the render layer, provenance is not.
+_DECLARED_INPUT_FILL = "#FDF3D2"
+_DECLARED_INPUT_STROKE = "#B8912A"
+
+
 def _short_hash(value: str, length: int = 6) -> str:
     stripped = value.removeprefix("sha256:")
     return stripped[:length]
 
 
 def _mermaid_label(text: str) -> str:
-    escaped = text.replace("\n", "\\n").replace('"', '\\"')
+    # Mermaid has no backslash escape; a literal quote inside a quoted label is written
+    # as the entity #quot;. Labels come from repr() of step kwargs, which switches to
+    # double quotes as soon as a value contains an apostrophe - so this is reachable.
+    escaped = text.replace("\n", "\\n").replace('"', "#quot;")
     return f'"{escaped}"'
 
 
@@ -145,6 +154,14 @@ def _mermaid_graph(record: dict[str, object], node_name: str) -> str:
     the real names (not positional A/B/C letters); labels are human, with machine
     hashes shown only as short tags. An included reference is a first-class node
     that click-throughs to the sub-job's own provenance graph.
+
+    Node SHAPE carries meaning (the grammar the paper figures already use):
+    `[/data/]`, `[process]`, `{decision}`, `[[analyst-declared input]]`,
+    `[(sub-job reference)]`, and `-.->` for an optional edge. Only the categories
+    that map to real record fields are emitted; decision and declared-input shapes
+    are reserved, and appear in the legend so a reader can decode the whole grammar
+    from one file. Step kwargs stay on the step's own label: they are part of that
+    step's identity, not a separate input, and no node for them exists in job.dag.
     """
     dataset_paths = record.get("dataset_paths") or (
         [record.get("dataset_path")] if record.get("dataset_path") else []
@@ -166,7 +183,7 @@ def _mermaid_graph(record: dict[str, object], node_name: str) -> str:
         name = Path(str(p)).name
         node_id = nid(f"ds_{name}")
         lines.append(
-            f"  {node_id}[{_mermaid_label(f'{name}\\n{_short_hash(str(h))}')}]"
+            f"  {node_id}[/{_mermaid_label(f'{name}\\n{_short_hash(str(h))}')}/]"
         )
         source_ids.append(node_id)
 
@@ -177,7 +194,7 @@ def _mermaid_graph(record: dict[str, object], node_name: str) -> str:
         short = _short_hash(str(inc.get("artifact_hash", "")))
         node_id = nid(f"ref_{alias}_{ref_node}")
         label = f"{alias}: {job_name}:{ref_node}\\n{short}"
-        lines.append(f"  {node_id}[{_mermaid_label(label)}]")
+        lines.append(f"  {node_id}[({_mermaid_label(label)})]")
         source_ids.append(node_id)
         prov_ref = inc.get("subjob_prov_dir")
         if prov_ref:
@@ -187,8 +204,9 @@ def _mermaid_graph(record: dict[str, object], node_name: str) -> str:
             click_lines.append(f'  click {node_id} "{safe_ref}"')
 
     if not source_ids:
+        # Absent data is still data: same shape, so the grammar has no exception.
         node_id = nid("source")
-        lines.append(f'  {node_id}["(no inputs)"]')
+        lines.append(f"  {node_id}[/{_mermaid_label('(no inputs)')}/]")
         source_ids.append(node_id)
 
     previous_ids = source_ids
@@ -210,4 +228,28 @@ def _mermaid_graph(record: dict[str, object], node_name: str) -> str:
         lines.append(f"  {src} --> {sink_id}")
 
     lines.extend(click_lines)
+    lines.extend(_mermaid_legend())
     return "\n".join(lines) + "\n"
+
+
+def _mermaid_legend() -> list[str]:
+    """The grammar key, appended to every graph so one file decodes itself.
+
+    Every legend node declared at the start of a line also appears on the left of a
+    solid edge: the graph must stay fully wired, and tests/test_provenance_graph.py
+    asserts exactly that over all declared nodes. Mermaid places a disconnected
+    subgraph wherever its layout engine likes, so this is "at the end of the file",
+    not "at the bottom of the picture".
+    """
+    return [
+        f"  classDef declared fill:{_DECLARED_INPUT_FILL},stroke:{_DECLARED_INPUT_STROKE}",
+        '  subgraph legend["grammar"]',
+        "    direction LR",
+        '    lg_data[/"data"/] --> lg_step["process"]',
+        '    lg_step --> lg_decision{"decision"}',
+        '    lg_declared[["analyst-declared input"]] --> lg_step',
+        '    lg_ref[("sub-job reference")] --> lg_step',
+        '    lg_decision -.-> lg_optional["optional edge"]',
+        "  end",
+        "  class lg_declared declared",
+    ]

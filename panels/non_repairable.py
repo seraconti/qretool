@@ -22,22 +22,15 @@ import numpy as np
 import plotly.graph_objects as go
 
 from panels._artifact_guard import StaleArtifactGuard
+from plots import theme
 from plots.base import BasePlot
 from plots.fidelity_helpers import apply_common_style
 
 
-# Per-threshold color palette: used on primary-axis dashed lines, cumulative
-# subplots, and survival curves so all three can be visually correlated.
-_THRESHOLD_COLORS = [
-    "#1f77b4",  # blue
-    "#ff7f0e",  # orange
-    "#2ca02c",  # green
-    "#d62728",  # red
-    "#9467bd",  # purple
-    "#8c564b",  # brown
-    "#e377c2",  # pink
-    "#7f7f7f",  # grey
-]
+# Per-threshold colours come from plots.theme.threshold_color: used on primary-axis
+# dashed lines, cumulative subplots, and survival curves so all three can be visually
+# correlated. Sampling a colormap across len(thresholds) replaces a fixed 8-entry list
+# that wrapped modulo its length - a 10-entry ladder drew 1 us and 9 us in one blue.
 
 
 @dataclass
@@ -165,8 +158,7 @@ class NonRepairablePanel(BasePlot):
         has_cum_dmg = pd_.include_cumulative_damage
         has_extra_row = has_cum_time or has_cum_dmg
 
-        plt_style = "default" if style == "default" else "classic"
-        with plt.style.context(plt_style):
+        with theme.style_context(style):
             n_thr = len(pd_.thresholds)
             # Scale the compliance-timeline row so labels don't overlap for wide ladders.
             thr_row_h = max(0.9, 0.22 * n_thr)
@@ -279,7 +271,7 @@ class NonRepairablePanel(BasePlot):
         if pd_.use_log_scale:
             self._draw_decade_guides(ax, pd_.primary_series)
         for i, (label, thr_val, _) in enumerate(pd_.thresholds):
-            thr_color = _THRESHOLD_COLORS[i % len(_THRESHOLD_COLORS)]
+            thr_color = theme.threshold_color(i, len(pd_.thresholds))
             ax.axhline(
                 thr_val,
                 color=thr_color,
@@ -409,9 +401,7 @@ class NonRepairablePanel(BasePlot):
         base_color: object,
         title: str = "",
     ) -> None:
-        from plots.theme import mix_with_white
-
-        colors = [base_color, mix_with_white(base_color, amount=0.3)]
+        colors = [base_color, theme.mix_with_white(base_color, amount=0.3)]
         styles = ["-", "--"]
         for i, (label, series) in enumerate(traces):
             ax.plot(
@@ -440,9 +430,7 @@ class NonRepairablePanel(BasePlot):
         traces: list[tuple[str, np.ndarray]],
         base_color: object,
     ) -> None:
-        from plots.theme import mix_with_white
-
-        colors = [base_color, mix_with_white(base_color, amount=0.3)]
+        colors = [base_color, theme.mix_with_white(base_color, amount=0.3)]
         for i, (label, _series) in enumerate(traces):
             stats = pd_.binned_stats_per_trace.get(label)
             if stats is None:
@@ -492,7 +480,7 @@ class NonRepairablePanel(BasePlot):
             if not survival:
                 continue
             surv_x, surv_y = zip(*survival)
-            color = _THRESHOLD_COLORS[i % len(_THRESHOLD_COLORS)]
+            color = theme.threshold_color(i, len(pd_.thresholds))
             ax.semilogy(
                 surv_x,
                 surv_y,
@@ -553,7 +541,7 @@ class NonRepairablePanel(BasePlot):
             ax.plot(
                 t,
                 arr,
-                color=_THRESHOLD_COLORS[i % len(_THRESHOLD_COLORS)],
+                color=theme.threshold_color(i, len(pd_.thresholds)),
                 linewidth=1.2,
                 label=label,
             )
@@ -605,7 +593,7 @@ class NonRepairablePanel(BasePlot):
             ax.plot(
                 t,
                 arr,
-                color=_THRESHOLD_COLORS[i % len(_THRESHOLD_COLORS)],
+                color=theme.threshold_color(i, len(pd_.thresholds)),
                 linewidth=1.2,
                 label=label,
             )
