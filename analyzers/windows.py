@@ -7,9 +7,11 @@ differences from that reference:
   FIRST OUT-OF-SPEC read, so the interval spanning the crossing is inside the lifetime.
   `v13_shape` measured to the last in-spec read instead. Censored windows have no
   out-of-spec read to point at, so they die at their last in-spec read.
-- **`min_reads` is not ported.** `v13_shape` drops windows with fewer than 5 reads before
-  any statistic; this repo has never had that filter, so omitting it is what preserves
-  parity with the pre-existing carve.
+- **`min_reads` is not ported HERE.** `v13_shape` drops windows with fewer than 5 reads
+  before any statistic; carving without that filter is what preserves parity with the
+  pre-existing carve. The filter does exist downstream: `analyzers/distinguish_band.py`
+  applies `shape_min_reads` (default 5) to decide which windows enter the excursion
+  shape statistics, and nothing else. It never touches a boundary, duration or count.
 
 Everything else - the gap threshold, the strict `>` test, the positive-only median, the
 birth/death taxonomy, gap-wins-ties - is the monolith's, verbatim.
@@ -49,6 +51,11 @@ STATE_IN_SPEC = "in_spec"
 STATE_OUT_OF_SPEC = "out_of_spec"
 STATE_IN_SPEC_UNCERTAIN = "in_spec_uncertain"
 STATE_OUT_OF_SPEC_UNCERTAIN = "out_of_spec_uncertain"
+# Not a state of the system - a state of the RECORD. A timeline that simply breaks at a
+# gap is ambiguous (missing? in spec? a layout artefact?); an explicit grey band says
+# "the instrument was not reporting here" and keeps the axis continuous so two timelines
+# stay comparable read for read.
+STATE_UNOBSERVED = "unobserved"
 
 WINDOW_COLUMNS = [
     "dataset_id",
@@ -188,6 +195,50 @@ def carve(
     return windows
 
 
+def mark_gaps_in_segments(
+    segments: list[tuple[float, float, str]],
+    gap_spans_h: list[tuple[float, float]],
+) -> list[tuple[float, float, str]]:
+    """Replace the part of any timeline segment inside a read gap with STATE_UNOBSERVED.
+
+    A compliance bar drawn across a gap asserts a state through hours the instrument
+    was not reporting - the same claim the carve refuses to make when it terminates a
+    window with `gap_start`. But a bar that simply STOPS is just as bad: a blank reads
+    as "in spec" or as a rendering artefact. The gap gets its own colour instead, so the
+    timeline stays continuous and unobserved time is stated rather than implied.
+
+    Preconditions, held by the only producer (`run` emits one span per consecutive read
+    pair): `gap_spans_h` are disjoint, and `segments` tile one contiguous stretch.
+    Overlapping spans would double-count the overlap.
+    """
+    if not gap_spans_h:
+        return sorted(segments)
+    out: list[tuple[float, float, str]] = []
+    for start, end, state in segments:
+        pieces = [(start, end)]
+        for lo, hi in gap_spans_h:
+            nxt: list[tuple[float, float]] = []
+            for a, b in pieces:
+                if b <= lo or a >= hi:
+                    nxt.append((a, b))
+                    continue
+                if a < lo:
+                    nxt.append((a, lo))
+                if b > hi:
+                    nxt.append((hi, b))
+            pieces = nxt
+        out.extend((a, b, state) for a, b in pieces if b > a)
+    # the gap itself, once per span, clipped to the timeline's own extent
+    if segments:
+        lo_edge = min(a for a, _, _ in segments)
+        hi_edge = max(b for _, b, _ in segments)
+        for lo, hi in gap_spans_h:
+            a, b = max(lo, lo_edge), min(hi, hi_edge)
+            if b > a:
+                out.append((a, b, STATE_UNOBSERVED))
+    return sorted(out)
+
+
 def in_spec_mask(
     values: np.ndarray, threshold_value: float, big_values_good: bool
 ) -> np.ndarray:
@@ -199,7 +250,7 @@ def in_spec_mask(
     `big_values_good=False`, this calls `value == threshold` OUT of spec, while
     `panels/_non_repairable_compute._out_of_spec_mask` (`value > threshold`) calls it
     IN spec. Both predate this module and both are load-bearing - one drives the
-    windows, the other drives cumulative time, MTTF and in-spec fraction. Reconciling
+    windows, the other drives cumulative time, TTF and in-spec fraction. Reconciling
     them changes published numbers, so it is a decision to take deliberately rather
     than a typo to fix in passing. Measure-zero in float; fidelity (`big_values_good=False`)
     is the direction where it is reachable at all.

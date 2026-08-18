@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from analyzers.mtbf import log_interval_histogram
 from panels.repairable import RepairablePanelData
 
 
@@ -54,16 +55,13 @@ def _interval_histogram(
 
     Matches the pre-split ax.hist(valid, bins=logspace(...)) exactly (ax.hist counts
     identically to np.histogram). Empty (counts, edges) when no positive intervals.
+
+    Delegates to `analyzers.mtbf.log_interval_histogram`, which is the single definition:
+    the standalone mean-time-between-calibrations figure bins the same intervals, and two
+    copies of a binning rule are two chances for the panel and the figure to disagree
+    about what a bar means.
     """
-    ivs = np.asarray(intervals_s, dtype=float)
-    valid = ivs[ivs > 0]
-    if len(valid) == 0:
-        return np.array([]), np.array([])
-    log_bins = np.logspace(
-        np.log10(float(np.min(valid))), np.log10(float(np.max(valid))), n_bins
-    )
-    counts, edges = np.histogram(valid, bins=log_bins)
-    return counts, edges
+    return log_interval_histogram(intervals_s, n_bins=n_bins)
 
 
 def build_repairable_panel_data(

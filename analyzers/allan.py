@@ -25,11 +25,15 @@ def infer_sample_period_s(timestamps: np.ndarray) -> float:
     return float(np.median(dt_s))
 
 
-def _allan_deviation_overlapping(values: np.ndarray, dt_s: float, min_points: int, taus_mode: object) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def _allan_deviation_overlapping(
+    values: np.ndarray, dt_s: float, min_points: int, taus_mode: object
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     signal = np.asarray(values, dtype=float)
     signal = signal[np.isfinite(signal)]
     if len(signal) < min_points:
-        raise ValueError(f"Not enough points for Allan deviation: got {len(signal)}, need at least {min_points}.")
+        raise ValueError(
+            f"Not enough points for Allan deviation: got {len(signal)}, need at least {min_points}."
+        )
 
     fs_hz = 1.0 / float(dt_s)
     tau_s, adev, adev_err, n_pairs = allantools.oadev(
@@ -60,7 +64,12 @@ def _transform_signal(freq_hz: np.ndarray, mode: str) -> tuple[np.ndarray, float
     raise ValueError(f"Unknown Allan mode '{mode}'.")
 
 
-def run(norm: Mapping[str, object], config: Mapping[str, object], fractional: bool = False, carrier_col: str = "qubit_frequency_hz") -> AllanResult:
+def run(
+    norm: Mapping[str, object],
+    config: Mapping[str, object],
+    fractional: bool = False,
+    carrier_col: str = "qubit_frequency_hz",
+) -> AllanResult:
     """Compute Allan deviation for a normalized Ramsey dataset.
 
     Inputs are expected to use seconds for time and hertz for frequency.
@@ -69,12 +78,16 @@ def run(norm: Mapping[str, object], config: Mapping[str, object], fractional: bo
         raise TypeError("allan.run expects normalized dataset mapping input.")
 
     if "t_rel_s" not in norm:
-        raise KeyError("allan.run requires 't_rel_s' (relative seconds) in normalized mapping")
+        raise KeyError(
+            "allan.run requires 't_rel_s' (relative seconds) in normalized mapping"
+        )
     t_rel_s = np.asarray(norm["t_rel_s"], dtype=float)
     delta_hz = np.asarray(norm["delta_hz"], dtype=float)
     dt_s = infer_sample_period_s(t_rel_s)
     fs_hz = 1.0 / float(dt_s)
-    meta_in = dict(norm.get("meta", {})) if isinstance(norm.get("meta", {}), Mapping) else {}
+    meta_in = (
+        dict(norm.get("meta", {})) if isinstance(norm.get("meta", {}), Mapping) else {}
+    )
 
     allan_cfg = config.get("allan", {})
     if not isinstance(allan_cfg, Mapping):
@@ -88,7 +101,9 @@ def run(norm: Mapping[str, object], config: Mapping[str, object], fractional: bo
     summary: dict[str, pd.DataFrame] = {}
     for mode in modes:
         signal, f0_hz = _transform_signal(delta_hz, mode=str(mode))
-        tau_s, adev, adev_err, n_pairs = _allan_deviation_overlapping(signal, dt_s, min_points, taus_mode)
+        tau_s, adev, adev_err, n_pairs = _allan_deviation_overlapping(
+            signal, dt_s, min_points, taus_mode
+        )
         summary[str(mode)] = pd.DataFrame(
             {
                 "tau_s": tau_s,
@@ -99,7 +114,10 @@ def run(norm: Mapping[str, object], config: Mapping[str, object], fractional: bo
                 "f0_hz": np.full_like(tau_s, f0_hz, dtype=float),
             }
         )
-        print(f"[allan] mode={mode} tau_points={len(tau_s)} avg_f_acq={fs_hz:.6g}Hz", flush=True)
+        print(
+            f"[allan] mode={mode} tau_points={len(tau_s)} avg_f_acq={fs_hz:.6g}Hz",
+            flush=True,
+        )
 
     fractional_adev: np.ndarray | None = None
     carrier_hz: float | None = None

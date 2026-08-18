@@ -29,20 +29,33 @@ def default_dataset_root() -> Path:
 
 
 def resolve_dataset_path(path: str | Path, dataset_root: Path) -> Path:
-    """Resolve a Dataset.path against dataset_root; the file must exist.
+    """Resolve a Dataset.path against dataset_root, then the repo root; must exist.
 
     Absolute paths pass through (but are existence-checked too — a typo must fail
     up front, before any output dir is created, not later at hash time).
+
+    The repo-root fallback exists for tracked in-repo tables that are genuine data inputs
+    rather than code — `bench/results/size_table.csv` is the case that forced it. Anchoring
+    those on the dataset root would look for them one directory ABOVE the repo, and writing
+    'qre_tool/bench/results/…' instead would break the moment --data-root moved. The dataset
+    root is still tried first, so an external dataset can never be shadowed by a same-named
+    file inside the repo.
     """
     raw = Path(path)
-    resolved = (raw if raw.is_absolute() else dataset_root / raw).resolve()
-    if not resolved.exists():
-        raise FileNotFoundError(
-            f"dataset not found: '{raw}' resolved to '{resolved}' "
-            f"(dataset root: '{dataset_root}'). Relative dataset paths anchor on "
-            "the dataset root — pass --data-root to override it."
-        )
-    return resolved
+    if raw.is_absolute():
+        candidates = [raw.resolve()]
+    else:
+        candidates = [(dataset_root / raw).resolve(), (repo_root() / raw).resolve()]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    tried = " or ".join(f"'{c}'" for c in candidates)
+    raise FileNotFoundError(
+        f"dataset not found: '{raw}' resolved to {tried} "
+        f"(dataset root: '{dataset_root}', repo root: '{repo_root()}'). Relative dataset "
+        "paths anchor on the dataset root, falling back to the repo root for tracked "
+        "in-repo tables — pass --data-root to override the former."
+    )
 
 
 def resolve_repo_path(path: str | Path) -> Path:

@@ -136,6 +136,10 @@ def make_panel_data(
     windows: pd.DataFrame,
     reads: pd.DataFrame,
     gap_spans_s: list[tuple[float, float]] | None = None,
+    shape_min_reads: int = 5,
+    xi_seed: int = 0,
+    k: float = 1.0,
+    use_uncertainty: bool = False,
     thresholds: list[tuple[str, float, bool]] | None = None,
     primary_label: str | None = None,
 ) -> NonRepairablePanelData:
@@ -178,6 +182,10 @@ def make_panel_data(
         windows=windows,
         reads=reads,
         gap_spans_s=gap_spans_s,
+        shape_min_reads=shape_min_reads,
+        xi_seed=xi_seed,
+        k=k,
+        use_uncertainty=use_uncertainty,
         primary_sigma=sigma_us,
         use_log_scale=False,
     )

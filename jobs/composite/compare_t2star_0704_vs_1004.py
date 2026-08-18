@@ -27,7 +27,11 @@ from panels.non_repairable import NonRepairablePanelData
 
 
 def _compare_t2star(*panels: NonRepairablePanelData) -> CompareNonRepairableData:
-    """Overlay each sub-job's T2* panel data as a labeled (t_h, primary_series)."""
+    """Overlay each sub-job's T2* panel data as a labeled (t_h, values) series.
+
+    Reads the SIGNAL band: after the band split the raw series belongs to band 1, and
+    the composite is the adapter that knows how to pull it out.
+    """
     series: list[tuple[str, np.ndarray, np.ndarray]] = []
     for pd_ in panels:
         label = (
@@ -38,8 +42,8 @@ def _compare_t2star(*panels: NonRepairablePanelData) -> CompareNonRepairableData
         series.append(
             (
                 label,
-                np.asarray(pd_.t_h, dtype=float),
-                np.asarray(pd_.primary_series, dtype=float),
+                np.asarray(pd_.signal.t_h, dtype=float),
+                np.asarray(pd_.signal.values, dtype=float),
             )
         )
     return CompareNonRepairableData(

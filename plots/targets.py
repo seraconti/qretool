@@ -66,6 +66,26 @@ def render_academic(plot: _RenderablePlot, result: object, out_dir: Path) -> Non
     plt.close(figure)
 
 
+@register_target("poster")
+def render_poster(plot: _RenderablePlot, result: object, out_dir: Path) -> None:
+    """One figure, printed large: PNG at 600 dpi on the poster typography.
+
+    PNG rather than PDF because this target exists for figures that go into a poster
+    layout tool or a slide, which want a raster they can place. 600 dpi keeps a 10-inch
+    figure legible at A0. `static` and `academic` stay PDF and are unaffected.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with theme.style_context("poster"):
+        figure = plot.build_matplotlib(result, style="poster")
+        figure.savefig(
+            out_dir / f"{plot.name}_poster.png",
+            dpi=600,
+            bbox_inches="tight",
+            facecolor="white",
+        )
+    plt.close(figure)
+
+
 @register_target("interactive")
 def render_interactive(plot: _RenderablePlot, result: object, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)

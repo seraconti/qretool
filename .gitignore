@@ -27,3 +27,14 @@ monoliths/
 
 # Local analysis scripts and their generated output (same choice as tests/).
 scripts/
+
+# checks/ and bench/ were untracked while they were an experiment. They are now part of
+# the tool - a check is a pipeline step (analyzers/checks/) and the bench's tables are a
+# declared dataset input to a figure job - so both are tracked. Untracked they would have
+# meant every check-derived figure recording `tree_clean: true` while the code that
+# computed its numbers was invisible to git.
+#
+# bench/results/*.md needs its own exception: the `*.md` rule above would otherwise keep
+# promotion_report.md out of git while its own input tables went in, which is the wrong way
+# round - the report is what the ledger's pass rule cites.
+!bench/results/*.md

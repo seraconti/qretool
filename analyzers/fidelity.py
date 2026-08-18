@@ -24,10 +24,14 @@ class FidelityInputs:
     use_angular_frequency: bool = False
 
 
-def make_inputs_from_norm(norm: Mapping[str, object], config: Mapping[str, object]) -> FidelityInputs:
+def make_inputs_from_norm(
+    norm: Mapping[str, object], config: Mapping[str, object]
+) -> FidelityInputs:
     """Extract FidelityInputs from a normalized mapping and config dict."""
     if "t_rel_s" not in norm:
-        raise KeyError("Fidelity requires 't_rel_s' (relative seconds) in the normalized mapping.")
+        raise KeyError(
+            "Fidelity requires 't_rel_s' (relative seconds) in the normalized mapping."
+        )
     if "rabi_hz" not in norm:
         raise KeyError(
             "Fidelity requires 'rabi_hz' in the normalized mapping. "
@@ -39,7 +43,11 @@ def make_inputs_from_norm(norm: Mapping[str, object], config: Mapping[str, objec
         raise TypeError("config['fidelity'] must be a mapping")
     meta = norm.get("meta", {}) if isinstance(norm.get("meta", {}), Mapping) else {}
     profile = str(meta.get("profile", config.get("dataset_profile", "")))
-    raw_frequency_hz = np.asarray(norm["raw_frequency_hz"], dtype=float) if "raw_frequency_hz" in norm else None
+    raw_frequency_hz = (
+        np.asarray(norm["raw_frequency_hz"], dtype=float)
+        if "raw_frequency_hz" in norm
+        else None
+    )
     return FidelityInputs(
         t_rel_s=np.asarray(norm["t_rel_s"], dtype=float),
         delta_hz=np.asarray(norm["delta_hz"], dtype=float),
@@ -50,7 +58,9 @@ def make_inputs_from_norm(norm: Mapping[str, object], config: Mapping[str, objec
     )
 
 
-def _to_angular_frequency(freq_hz: np.ndarray, use_angular_frequency: bool) -> np.ndarray:
+def _to_angular_frequency(
+    freq_hz: np.ndarray, use_angular_frequency: bool
+) -> np.ndarray:
     frequency_hz = np.asarray(freq_hz, dtype=float)
     if use_angular_frequency:
         return 2.0 * np.pi * frequency_hz
@@ -85,15 +95,21 @@ def run(inputs: FidelityInputs) -> FidelityResult:
 
     if inputs.profile == "longrun":
         if inputs.raw_frequency_hz is None:
-            raise KeyError("Longrun fidelity requires 'raw_frequency_hz' in FidelityInputs.")
+            raise KeyError(
+                "Longrun fidelity requires 'raw_frequency_hz' in FidelityInputs."
+            )
         raw_frequency_hz = inputs.raw_frequency_hz
         if len(raw_frequency_hz) != len(t_rel_s):
-            raise ValueError("raw_frequency_hz length must match t_rel_s for longrun fidelity.")
+            raise ValueError(
+                "raw_frequency_hz length must match t_rel_s for longrun fidelity."
+            )
 
         delta_f0_hz = raw_frequency_hz - float(raw_frequency_hz[0])
         delta_fmean_hz = raw_frequency_hz - float(np.mean(raw_frequency_hz))
         delta_f0 = _to_angular_frequency(delta_f0_hz, inputs.use_angular_frequency)
-        delta_fmean = _to_angular_frequency(delta_fmean_hz, inputs.use_angular_frequency)
+        delta_fmean = _to_angular_frequency(
+            delta_fmean_hz, inputs.use_angular_frequency
+        )
 
         fidelity_f0 = gate_fidelity(delta_f0, rabi_drive)
         fidelity_fmean = gate_fidelity(delta_fmean, rabi_drive)
@@ -208,6 +224,10 @@ def make_panel_data(
     windows: pd.DataFrame,
     reads: pd.DataFrame,
     gap_spans_s: list[tuple[float, float]] | None = None,
+    shape_min_reads: int = 5,
+    xi_seed: int = 0,
+    k: float = 1.0,
+    use_uncertainty: bool = False,
     dataset_id: str = "",
 ):
     """Convert FidelityResult + the window tables to NonRepairablePanelData."""
@@ -251,6 +271,10 @@ def make_panel_data(
         windows=windows,
         reads=reads,
         gap_spans_s=gap_spans_s,
+        shape_min_reads=shape_min_reads,
+        xi_seed=xi_seed,
+        k=k,
+        use_uncertainty=use_uncertainty,
         traces=traces,
         use_log_scale=True,
         color=qubit_color(dataset_id=dataset_id),

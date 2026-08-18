@@ -17,7 +17,7 @@ from analyzers.t2star import T2StarResult
 from analyzers.windows import WindowsResult
 from core.dataset import Dataset
 from core.job import Job
-from jobs.common import RAMSEY_CONFIG, _filter_step, _final_stage
+from jobs.common import RAMSEY_CONFIG, XI_SEED, _filter_step, _final_stage
 from panels.non_repairable import NonRepairablePanel, NonRepairablePanelData
 from schemas.track912 import track912Schema
 
@@ -72,7 +72,11 @@ def _windows_run(
 
 
 def _t2star_panel_data(
-    result: T2StarResult, window_result: WindowsResult
+    result: T2StarResult,
+    window_result: WindowsResult,
+    shape_min_reads: int,
+    use_uncertainty: bool,
+    xi_seed: int,
 ) -> NonRepairablePanelData:
     return t2star.make_panel_data(
         result,
@@ -80,6 +84,9 @@ def _t2star_panel_data(
         reads=window_result.reads,
         gap_spans_s=window_result.diagnostics.get("gap_spans_s"),
         thresholds=_T2STAR_THRESHOLDS,
+        shape_min_reads=shape_min_reads,
+        use_uncertainty=use_uncertainty,
+        xi_seed=xi_seed,
     )
 
 
@@ -95,7 +102,19 @@ _windows = job.step(
     k=1.0,
     use_uncertainty=True,
 )
-_panel = job.step(_t2star_panel_data, _result, _windows, name="t2star_panel_data")
+_panel = job.step(
+    _t2star_panel_data,
+    _result,
+    _windows,
+    name="t2star_panel_data",
+    # Declared here, not defaulted in the builder, so both reach the provenance label.
+    shape_min_reads=5,
+    use_uncertainty=True,
+    # The xi permutation null is only reproducible if its seed is an input, and it only
+    # reaches the Mermaid label if it is declared HERE: runner.py builds that label from
+    # node.kwargs, so an argument left to its default is invisible to provenance.
+    xi_seed=XI_SEED,
+)
 
 job.materialize(_windows, name=f"{PREFIX}_windows")
 job.figure(

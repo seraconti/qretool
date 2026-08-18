@@ -23,7 +23,6 @@ from transforms.filter import run as run_filter
 from transforms.interpolate import run as run_interpolate
 from transforms.lookup_prior import check_unix_s
 
-
 RAMSEY_CONFIG: dict[str, object] = {
     "filter": {
         "apply_chi_squared": True,
@@ -170,15 +169,32 @@ def _fidelity_windows(result: FidelityResult, gap_mult: float) -> WindowsResult:
     )
 
 
+# ONE definition, imported by the jobs. The literal was in three files after the seed fix,
+# which is a drift risk of exactly the kind this repo's provenance rules exist to prevent:
+# two jobs quoting different seeds while both labels claim to be reproducible.
+#
+# NOTE, carried as open work: one seed serves every window. `paired_permutation_test` keys
+# `default_rng(seed)` on the seed alone, so two windows of equal n draw an IDENTICAL
+# permutation sequence and their Monte Carlo error does not average down when
+# `for_windows` takes the median. Per-window seeds are the fix; it is a design change, not
+# a rename, and it is Increment C work.
+XI_SEED = 20260813
+
+
 def _fidelity_panel_data(
-    result: FidelityResult, window_result: WindowsResult
+    result: FidelityResult, window_result: WindowsResult, xi_seed: int
 ) -> NonRepairablePanelData:
     return fidelity.make_panel_data(
         result,
         windows=window_result.windows,
         reads=window_result.reads,
         gap_spans_s=window_result.diagnostics.get("gap_spans_s"),
+        # `windows.run` always records this, so a missing key is a broken artifact rather
+        # than an old one; defaulting it to False would silently redraw the panel in the
+        # other mode. This repo raises instead of falling back.
+        use_uncertainty=bool(window_result.meta["use_uncertainty"]),
         dataset_id=str(result.meta.get("dataset_id", "")),
+        xi_seed=xi_seed,
     )
 
 
@@ -191,6 +207,7 @@ def configure_ramsey_job(
     include_tlf: bool = False,
     allan_fractional: bool = False,
     allan_carrier_col: str = "qubit_frequency_hz",
+    xi_seed: int = XI_SEED,
     figure_prefix: str | None = None,
 ) -> None:
     config = _copy_config(profile)
@@ -255,6 +272,8 @@ def configure_ramsey_job(
             fidelity_raw,
             fidelity_windows,
             name="fidelity_panel_data",
+            # Declared, not defaulted: see the note in jobs/active/t2star_q1_070423.py.
+            xi_seed=xi_seed,
         )
         job.figure(
             NonRepairablePanel,

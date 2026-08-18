@@ -1,7 +1,7 @@
 """Output-builder for NonRepairablePanel: computes the COMPLETE typed panel data.
 
 This is the compute half of the panel. It owns every data-derived quantity —
-cumulative time out of spec, cumulative damage, MTTF, per-threshold window stats,
+cumulative time out of spec, cumulative damage, TTF, per-threshold window stats,
 in-spec window survival, 30-min binned stats, CV, and in-spec fractions — so that
 the materialized NonRepairablePanelData artifact is complete and the renderer
 (panels/non_repairable.py) is a pure function of it (no data arithmetic at draw
@@ -18,7 +18,7 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 
-from analyzers.windows import BIRTH_UP_CROSSING, DEATH_GAP_START
+from analyzers import distinguish_band, reliability_band, signal_band
 from panels._non_repairable_data import NonRepairablePanelData
 
 # ---------------------------------------------------------------------------
@@ -56,47 +56,6 @@ def _compute_cv(series: np.ndarray) -> float:
     if mean == 0.0:
         return np.nan
     return float(np.std(s) / abs(mean))
-
-
-def _binned_stats(
-    t_h: np.ndarray, values: np.ndarray, bin_h: float = 0.5
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    t = np.asarray(t_h, dtype=float)
-    v = np.asarray(values, dtype=float)
-    mask = np.isfinite(t) & np.isfinite(v)
-    t, v = t[mask], v[mask]
-    if len(t) == 0:
-        return (np.array([]),) * 5
-    t0, t1 = float(np.min(t)), float(np.max(t))
-    if t1 <= t0:
-        return (
-            np.array([t0]),
-            np.array([float(np.median(v))]),
-            np.array([float(np.percentile(v, 25))]),
-            np.array([float(np.percentile(v, 75))]),
-            np.array([float(np.percentile(v, 90))]),
-        )
-    edges = np.arange(t0, t1 + bin_h, bin_h)
-    if len(edges) < 2:
-        edges = np.array([t0, t1 + bin_h])
-    idx = np.digitize(t, edges) - 1
-    centers, medians, q1s, q3s, p90s = [], [], [], [], []
-    for i in range(len(edges) - 1):
-        yy = v[idx == i]
-        if len(yy) == 0:
-            continue
-        centers.append(0.5 * (edges[i] + edges[i + 1]))
-        medians.append(float(np.median(yy)))
-        q1s.append(float(np.percentile(yy, 25)))
-        q3s.append(float(np.percentile(yy, 75)))
-        p90s.append(float(np.percentile(yy, 90)))
-    return (
-        np.asarray(centers),
-        np.asarray(medians),
-        np.asarray(q1s),
-        np.asarray(q3s),
-        np.asarray(p90s),
-    )
 
 
 def _analyze_threshold_windows(
@@ -224,71 +183,43 @@ def _window_survival(windows_min: list[float]) -> list[tuple[float, float]]:
 # ---------------------------------------------------------------------------
 
 
-def _uncensored_durations_min(windows: pd.DataFrame, label: str) -> list[float]:
-    """In-spec window lengths in minutes, censored windows dropped.
-
-    A censored window's observed length is a lower bound on its lifetime, so feeding it
-    to the empirical survival estimator as if it were complete biases the curve down.
-    Dropping it is the crude fix; Kaplan-Meier is the real one and is a later pass.
-    """
-    sub = windows[(windows["threshold_label"] == label) & (~windows["censored"])]
-    return (sub["duration_s"].to_numpy(dtype=float) / 60.0).tolist()
-
-
-def _carve_counts(windows: pd.DataFrame, label: str) -> dict[str, object]:
-    """Per-threshold carve facts, reported alongside the above/below stats.
-
-    n_censored and n_endurance_bags OVERLAP — a window born at scan_start and dying at
-    scan_end is both — so they must never be summed.
-    """
-    sub = windows[windows["threshold_label"] == label]
-    return {
-        "n_windows": int(len(sub)),
-        "n_censored": int(sub["censored"].sum()),
-        "n_endurance_bags": int((sub["birth_type"] != BIRTH_UP_CROSSING).sum()),
-        # windows terminated BY a gap, not the record's total gap count
-        "n_gaps": int((sub["death_type"] == DEATH_GAP_START).sum()),
-        "n_dropped_censored": int(sub["censored"].sum()),
-    }
-
-
-def _timeline_segments(
-    reads: pd.DataFrame, label: str
-) -> list[tuple[float, float, str]]:
-    """Contiguous (t_start_h, t_end_h, state) runs for one threshold's timeline.
-
-    Replaces the renderer's draw-time walk over primary_series: state is a fact of the
-    read table, so a 4-state timeline is a lookup rather than a recomputation. A run
-    ends at the timestamp of the first read of the NEXT run, so the bars are contiguous.
-    """
-    sub = reads[reads["threshold_label"] == label]
-    if len(sub) == 0:
-        return []
-    t_h = sub["t_read_s"].to_numpy(dtype=float) / 3600.0
-    states = sub["state"].to_numpy(dtype=object)
-    segments: list[tuple[float, float, str]] = []
-    start = float(t_h[0])
-    state = str(states[0])
-    for idx in range(1, len(t_h)):
-        if str(states[idx]) != state:
-            end = float(t_h[idx])
-            segments.append((start, end, state))
-            start, state = end, str(states[idx])
-    segments.append((start, float(t_h[-1]), state))
-    return segments
-
-
 # ---------------------------------------------------------------------------
 # Per-threshold derived series/scalars
 # ---------------------------------------------------------------------------
+
+
+def _observed_dt_h(
+    t_f: np.ndarray, gap_spans_h: list[tuple[float, float]]
+) -> np.ndarray:
+    """Inter-read intervals with GAP intervals zeroed out.
+
+    An interval that spans a read gap was not observed: the instrument was not
+    reporting. Counting it credits unobserved hours to whichever state happened to
+    hold at the left edge, which for a 30-minute gap opening on an in-spec read means
+    30 in-spec minutes the record never contains. The figure already refuses to draw
+    across a gap; this makes the numbers agree with it.
+    """
+    dt_h = np.diff(t_f)
+    if not gap_spans_h or len(dt_h) == 0:
+        return dt_h
+    observed = dt_h.copy()
+    for lo_h, hi_h in gap_spans_h:
+        # Zero by OVERLAP, not by index identity. Matching the gap's left edge against
+        # a read timestamp failed two ways: the boundary read may have been dropped by
+        # the finite mask (a failed fit is exactly what tends to precede an instrument
+        # gap), and np.isclose's relative tolerance is ~12 minutes at this project's
+        # time base (t ~ 21000 h), which could zero the wrong interval entirely.
+        observed[(t_f[:-1] < hi_h) & (t_f[1:] > lo_h)] = 0.0
+    return observed
 
 
 def _cumulative_time_out_of_spec(
     t_h: np.ndarray,
     primary_series: np.ndarray,
     thresholds: list[tuple[str, float, bool]],
+    gap_spans_h: list[tuple[float, float]] | None = None,
 ) -> dict[str, np.ndarray]:
-    """Left-Riemann cumulative time out of spec per threshold (hours)."""
+    """Left-Riemann cumulative time out of spec per threshold (OBSERVED hours)."""
     t = np.asarray(t_h, dtype=float)
     s = np.asarray(primary_series, dtype=float)
     mask = np.isfinite(t) & np.isfinite(s)
@@ -300,7 +231,7 @@ def _cumulative_time_out_of_spec(
             result[label] = np.zeros(len(t_f))
             continue
         oos = _out_of_spec_mask(s_f, thr_val, big_values_good)
-        dt_h = np.diff(t_f)
+        dt_h = _observed_dt_h(t_f, gap_spans_h or [])
         increments = oos[:-1].astype(float) * dt_h
         cum = np.zeros(len(t_f))
         cum[1:] = np.cumsum(increments)
@@ -313,6 +244,7 @@ def _cumulative_damage(
     primary_series: np.ndarray,
     thresholds: list[tuple[str, float, bool]],
     damage_fn: Callable[[np.ndarray], np.ndarray] | None,
+    gap_spans_h: list[tuple[float, float]] | None = None,
 ) -> dict[str, np.ndarray]:
     """Trapezoidal cumulative damage per threshold (primary_unit · h).
 
@@ -342,7 +274,9 @@ def _cumulative_damage(
             continue
         excess = _excess(s_f, thr_val, big_values_good)
         damage_rate = apply_damage(excess)
-        dt_h = np.diff(t_f)
+        # Gap intervals are zeroed here too: trapezoidal integration would otherwise
+        # accrue damage across hours the instrument was not reporting.
+        dt_h = _observed_dt_h(t_f, gap_spans_h or [])
         trap_steps = 0.5 * (damage_rate[:-1] + damage_rate[1:]) * dt_h
         cum = np.zeros(len(t_f))
         cum[1:] = np.cumsum(trap_steps)
@@ -350,12 +284,16 @@ def _cumulative_damage(
     return result
 
 
-def _mttf(
+def _ttf(
     t_h: np.ndarray,
     primary_series: np.ndarray,
     thresholds: list[tuple[str, float, bool]],
 ) -> dict[str, float | None]:
-    """First threshold-crossing time (elapsed hours from t[0]) per threshold."""
+    """Time to FIRST threshold crossing (elapsed hours from t[0]), per threshold.
+
+    TTF, not MTTF: this is one crossing of one trace, not a mean over a population.
+    Calling it a mean overclaimed a statistic that was never computed.
+    """
     t = np.asarray(t_h, dtype=float)
     s = np.asarray(primary_series, dtype=float)
     mask = np.isfinite(t) & np.isfinite(s)
@@ -376,27 +314,32 @@ def _threshold_in_spec_frac(
     t_h: np.ndarray,
     primary_series: np.ndarray,
     thresholds: list[tuple[str, float, bool]],
+    gap_spans_h: list[tuple[float, float]] | None = None,
 ) -> dict[str, float]:
-    """In-spec time fraction per threshold (timeline definition).
+    """Occupancy: fraction of OBSERVED time in spec, per threshold.
 
-    The renderer applies the ≥5% cull to decide which thresholds appear in the
-    compliance timeline (decision documented: keep the cull, preserving figures).
+    Denominator is observed time, not wall clock — see _observed_dt_h. This is the
+    single occupancy definition in the repo; the reliability band exposes it as
+    `occupancy` and the renderer's >=5% timeline cull reads the same number.
     """
     t = np.asarray(t_h, dtype=float)
     s = np.asarray(primary_series, dtype=float)
     mask = np.isfinite(t) & np.isfinite(s)
     t_f, s_f = t[mask], s[mask]
-    total_h = float(t_f[-1] - t_f[0]) if len(t_f) > 1 else 0.0
 
     result: dict[str, float] = {}
     for label, thr_val, big_values_good in thresholds:
-        if len(t_f) < 2 or total_h == 0.0:
+        if len(t_f) < 2:
+            result[label] = 0.0
+            continue
+        dt = _observed_dt_h(t_f, gap_spans_h or [])
+        observed_h = float(np.sum(dt))
+        if observed_h == 0.0:
             result[label] = 0.0
             continue
         oos = _out_of_spec_mask(s_f, thr_val, big_values_good)
-        dt = np.diff(t_f)
         oos_h = float(np.sum(dt[oos[:-1]]))
-        result[label] = 1.0 - oos_h / total_h
+        result[label] = 1.0 - oos_h / observed_h
     return result
 
 
@@ -404,6 +347,7 @@ def _threshold_summary(
     t_h: np.ndarray,
     primary_series: np.ndarray,
     thresholds: list[tuple[str, float, bool]],
+    gap_spans_h: list[tuple[float, float]] | None = None,
 ) -> dict[str, dict[str, float] | None]:
     """Per-threshold out-of-spec summary (time_oos_h, frac_oos_pct).
 
@@ -421,8 +365,10 @@ def _threshold_summary(
             result[label] = None
             continue
         oos = _out_of_spec_mask(s_f, thr_val, big_values_good)
-        dt = np.diff(t_f)
-        total_h = float(t_f[-1] - t_f[0])
+        # Same observed-time denominator as _threshold_in_spec_frac: these two land
+        # on the same band and a reader compares them, so they must not disagree.
+        dt = _observed_dt_h(t_f, gap_spans_h or [])
+        total_h = float(np.sum(dt))
         time_oos_h = float(np.sum(dt[oos[:-1]])) if len(dt) > 0 else 0.0
         frac_oos = 100.0 * time_oos_h / total_h if total_h > 0 else 0.0
         result[label] = {"time_oos_h": time_oos_h, "frac_oos_pct": frac_oos}
@@ -451,8 +397,11 @@ def build_non_repairable_panel_data(
     damage_fn: Callable[[np.ndarray], np.ndarray] | None = None,
     include_cumulative_time: bool = True,
     include_cumulative_damage: bool = True,
-    include_mttf: bool = True,
-    bin_h: float = 0.5,
+    include_ttf: bool = True,
+    shape_min_reads: int = 5,
+    xi_seed: int = 0,
+    k: float = 1.0,
+    use_uncertainty: bool = False,
 ) -> NonRepairablePanelData:
     """Compute every data-derived quantity and return a COMPLETE NonRepairablePanelData.
 
@@ -472,7 +421,6 @@ def build_non_repairable_panel_data(
     """
     t_arr = np.asarray(t_h, dtype=float)
     s_arr = np.asarray(primary_series, dtype=float)
-    resolved_traces = traces if traces is not None else [(primary_label, s_arr)]
     sigma_arr = (
         np.asarray(primary_sigma, dtype=float) if primary_sigma is not None else None
     )
@@ -494,60 +442,51 @@ def build_non_repairable_panel_data(
                 f"must use the same threshold labels."
             )
 
-    primary_hist = _value_histogram(s_arr)
-    sigma_hist = _value_histogram(sigma_arr)
-    sigma_view = _hist_view_limit(*sigma_hist)
-
+    signal = signal_band.run(
+        signal_band.make_inputs_from_windows(
+            t_h=t_arr,
+            values=s_arr,
+            sigma=sigma_arr,
+            reads=reads,
+            gap_spans_s=gap_spans_s or [],
+        )
+    )
+    distinguish = distinguish_band.run(
+        distinguish_band.make_inputs_from_windows(
+            reads=reads,
+            windows=windows,
+            thresholds=list(thresholds),
+            median_read_spacing_s=signal.median_read_spacing_s,
+            gap_spans_h=signal.gap_spans_h,
+            sigma_display=sigma_arr,
+            shape_min_reads=shape_min_reads,
+            xi_seed=xi_seed,
+            k=k,
+            use_uncertainty=use_uncertainty,
+        )
+    )
+    reliability = reliability_band.run(
+        reliability_band.make_inputs_from_windows(
+            t_h=t_arr,
+            values=s_arr,
+            reads=reads,
+            windows=windows,
+            thresholds=list(thresholds),
+            gap_spans_h=signal.gap_spans_h,
+            damage_fn=damage_fn,
+        )
+    )
     return NonRepairablePanelData(
-        t_h=t_arr,
-        primary_series=s_arr,
-        primary_label=primary_label,
-        thresholds=list(thresholds),
+        signal=signal,
+        distinguish=distinguish,
+        reliability=reliability,
         meta=meta,
+        thresholds=list(thresholds),
+        primary_label=primary_label,
         traces=traces,
         use_log_scale=use_log_scale,
         color=color,
         include_cumulative_time=include_cumulative_time,
         include_cumulative_damage=include_cumulative_damage,
-        include_mttf=include_mttf,
-        cumulative_time_per_threshold=_cumulative_time_out_of_spec(
-            t_arr, s_arr, thresholds
-        ),
-        cumulative_damage_per_threshold=_cumulative_damage(
-            t_arr, s_arr, thresholds, damage_fn
-        ),
-        mttf_per_threshold=_mttf(t_arr, s_arr, thresholds),
-        # Carve counts sit BESIDE "above"/"below", never inside them: the renderer
-        # bare-indexes w["above"]/w["below"] and hard-indexes their mean/p90/count.
-        threshold_window_stats={
-            label: {
-                **_analyze_threshold_windows(t_arr, s_arr, thr_val),
-                **_carve_counts(windows, label),
-            }
-            for label, thr_val, _ in thresholds
-        },
-        window_survival_per_threshold={
-            label: _window_survival(_uncensored_durations_min(windows, label))
-            for label, _thr_val, _bvg in thresholds
-        },
-        timeline_segments_per_threshold={
-            label: _timeline_segments(reads, label) for label, _, _ in thresholds
-        },
-        primary_sigma=sigma_arr,
-        primary_hist_counts=primary_hist[0],
-        primary_hist_edges=primary_hist[1],
-        sigma_hist_counts=sigma_hist[0],
-        sigma_hist_edges=sigma_hist[1],
-        sigma_hist_view_x_max=sigma_view[0],
-        sigma_hist_n_above_view=sigma_view[1],
-        sigma_mean=_finite_stat(sigma_arr, np.mean),
-        sigma_median=_finite_stat(sigma_arr, np.median),
-        gap_spans_h=[(lo / 3600.0, hi / 3600.0) for lo, hi in (gap_spans_s or [])],
-        binned_stats_per_trace={
-            label: _binned_stats(t_arr, series, bin_h=bin_h)
-            for label, series in resolved_traces
-        },
-        cv=_compute_cv(s_arr),
-        threshold_in_spec_frac=_threshold_in_spec_frac(t_arr, s_arr, thresholds),
-        threshold_summary=_threshold_summary(t_arr, s_arr, thresholds),
+        include_ttf=include_ttf,
     )

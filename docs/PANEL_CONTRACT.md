@@ -24,6 +24,56 @@ domain-specific.
 
 ---
 
+## Three bands
+
+`NonRepairablePanelData` is composed of one contract per band, each produced by its own
+step, each complete on its own, each replaceable without touching the others:
+
+| band | step | question it answers |
+|---|---|---|
+| `signal` | `analyzers/signal_band.py` | what was measured, before any threshold |
+| `distinguish` | `analyzers/distinguish_band.py` | can a reader tell in from out at all |
+| `reliability` | `analyzers/reliability_band.py` | what follows from the 2-state carve |
+
+The outer class owns only what all three share — the ladder, `primary_label`, `traces`,
+the render flags — plus `meta`.
+
+**Two guard requirements, both silent if forgotten.** `StaleArtifactGuard` derives its
+key set from `dataclasses.fields(cls)`, so the outer class alone would validate nothing
+but the four band names: **every band inherits the guard**, and no band uses
+`slots=True` (the guard's non-dict branch fires on the slots tuple even for a valid
+load). And because the per-threshold maps moved off the class that owns `thresholds`,
+each band exposes `check_thresholds(labels)` which the outer `__post_init__` calls —
+without it the construction-time completeness contract silently drops to nothing.
+
+**Both compliance timelines are drawn, never merged.** Band 2 renders the 4-state view
+(uncertainty included), band 3 the 2-state view the carve actually used, on a shared
+x-axis and vertically aligned. If they look the same, resolvability costs nothing. If
+they differ, that difference is the finding.
+
+**`estimator` is a field.** The reliability band declares which estimator produced its
+survival curve and the axis label is derived from it, so the label cannot go stale.
+`cumulative_hazard`, `band_lower` and `band_upper` are reserved and are `None` until
+Kaplan-Meier lands; when it does, only that band changes.
+
+**Occupancy is fraction of OBSERVED time**, gap intervals excluded. There is one
+definition: `reliability.occupancy` and the renderer's >=5% timeline cull read the same
+number, and `_cumulative_time_out_of_spec` uses the same denominator. Counting gap time
+credited unobserved hours to whichever state held at the left edge.
+
+**Dropped in P3**: the detail/zoom view and the 30-minute median/IQR/p90 view, with
+`binned_stats_per_trace` and `adaptive_ylim`. Extra `traces` are now overlaid on the
+signal axis rather than in a subplot of their own.
+
+**Shape statistics are reported only where they have support.** Complete windows only
+(`up_crossing` birth, uncensored), then `shape_min_reads`; a threshold with fewer surviving
+windows than `SHAPE_SUPPORT_FLOOR` is named as unsupported rather than drawn. On the
+shipped T2* ladder that is one threshold. Every median ships with its defined-count, and
+`rho2` is never rendered without Chatterjee's xi and the falling-limb rho beside it —
+a symmetric excursion drives Spearman to zero by construction.
+
+---
+
 ## NonRepairablePanelData — full field reference
 
 ```python
@@ -112,12 +162,12 @@ different polarities.
 For `big_values_good=False` (e.g. infidelity — lower is better):
   - `out_of_spec[i] = primary_series[i] > threshold_value`
   - `excess[i] = max(primary_series[i] - threshold_value, 0)`
-  - MTTF: first `i` where `primary_series[i] > threshold_value`
+  - TTF: first `i` where `primary_series[i] > threshold_value`
 
 For `big_values_good=True` (e.g. T2* — higher is better):
   - `out_of_spec[i] = primary_series[i] < threshold_value`
   - `excess[i] = max(threshold_value - primary_series[i], 0)`
-  - MTTF: first `i` where `primary_series[i] < threshold_value`
+  - TTF: first `i` where `primary_series[i] < threshold_value`
 
 ### Default damage_fn
 

@@ -41,7 +41,9 @@ def run(values: np.ndarray, timestamps: np.ndarray) -> TLFResult:
     normalized mapping) and are used to compute dwell/run-length dynamics.
     """
     if timestamps is None:
-        raise ValueError("timestamps must be provided to TLF.run for dynamics computation")
+        raise ValueError(
+            "timestamps must be provided to TLF.run for dynamics computation"
+        )
 
     vals = np.asarray(values).reshape(-1, 1).astype(float)
     if vals.size == 0:
@@ -98,7 +100,11 @@ def run(values: np.ndarray, timestamps: np.ndarray) -> TLFResult:
     if within_spread_ppm is None or within_spread_ppm == 0.0:
         lobe_snr = None
     else:
-        lobe_snr = float(lobe_sep_ppm / within_spread_ppm) if lobe_sep_ppm is not None else None
+        lobe_snr = (
+            float(lobe_sep_ppm / within_spread_ppm)
+            if lobe_sep_ppm is not None
+            else None
+        )
 
     # Prepare default Group 2 (dynamics) outputs; will be filled if timestamps provided.
     n_transitions = None
@@ -146,7 +152,11 @@ def run(values: np.ndarray, timestamps: np.ndarray) -> TLFResult:
 
         # total duration in hours
         total_duration_hours = float((ts[-1] - ts[0]) / 3600.0)
-        switching_rate_per_hour = float(n_transitions / total_duration_hours) if total_duration_hours > 0 else None
+        switching_rate_per_hour = (
+            float(n_transitions / total_duration_hours)
+            if total_duration_hours > 0
+            else None
+        )
 
         # exclude first and last run from dwell statistics
         if len(runs_lengths) <= 2:
