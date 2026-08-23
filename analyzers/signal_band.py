@@ -1,4 +1,4 @@
-"""Band 1 of the composed non-repairable panel: the signal and its distributions.
+"""Band 1 of the composed within-calibration panel: the signal and its distributions.
 
 What was measured, before any threshold is applied. The raw series against the scan
 clock, the marginal distribution of the metric, the distribution of the per-read fit
@@ -122,7 +122,7 @@ def make_inputs_from_windows(
 
 
 def run(inputs: SignalBandInputs) -> SignalBand:
-    from panels._non_repairable_compute import (
+    from panels._within_calibration_compute import (
         _compute_cv,
         _finite_stat,
         _hist_view_limit,

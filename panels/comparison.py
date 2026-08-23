@@ -1,7 +1,7 @@
 """Generic N-series comparison panel.
 
-Overlays an arbitrary number of labeled ``(x_h, y)`` series on one axis — for
-comparing a non-repairable metric (e.g. T2*) across datasets/qubits. Deliberately
+Overlays an arbitrary number of labeled ``(x_h, y)`` series on one axis - for
+comparing a metric series (e.g. T2*) across datasets/qubits. Deliberately
 minimal (overlay + legend only); richer comparison panels can come later. The
 ``series`` list is arbitrary length, so all-qubit comparisons need no API change.
 """
@@ -20,10 +20,10 @@ from plots.theme import qubit_color, style_context
 
 
 @dataclass
-class CompareNonRepairableData:
-    """Input contract for CompareNonRepairablePanel.
+class CompareSeriesData:
+    """Input contract for CompareSeriesPanel.
 
-    series  : list of (label, x_h, y) — one per dataset/qubit, arbitrary length.
+    series  : list of (label, x_h, y) - one per dataset/qubit, arbitrary length.
               x_h is elapsed time in hours; y is the metric (same unit across series).
     x_label : x-axis label (default "Elapsed time (h)").
     y_label : y-axis label (metric + unit).
@@ -36,16 +36,14 @@ class CompareNonRepairableData:
     title: str = ""
 
 
-class CompareNonRepairablePanel(BasePlot):
-    """Overlay comparison of a non-repairable metric across N datasets/qubits."""
+class CompareSeriesPanel(BasePlot):
+    """Overlay comparison of a metric series across N datasets/qubits."""
 
     def build_matplotlib(
-        self, result: CompareNonRepairableData, style: str = "default"
+        self, result: CompareSeriesData, style: str = "default"
     ) -> plt.Figure:
-        if not isinstance(result, CompareNonRepairableData):
-            raise TypeError(
-                "CompareNonRepairablePanel expects CompareNonRepairableData"
-            )
+        if not isinstance(result, CompareSeriesData):
+            raise TypeError("CompareSeriesPanel expects CompareSeriesData")
         with style_context(style):
             fig = plt.figure(
                 figsize=(14, 6), constrained_layout=True, facecolor="white"

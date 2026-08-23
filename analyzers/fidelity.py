@@ -187,7 +187,7 @@ def run(inputs: FidelityInputs) -> FidelityResult:
 # Panel-data factory
 #
 # Lifted out of plots/fidelity_plot.py, which built panel data inside
-# build_matplotlib — at draw time, where no DAG node could supply the window and
+# build_matplotlib - at draw time, where no DAG node could supply the window and
 # read tables. The adapter belongs beside its analyzer, as t2star's does.
 # ---------------------------------------------------------------------------
 
@@ -230,8 +230,8 @@ def make_panel_data(
     use_uncertainty: bool = False,
     dataset_id: str = "",
 ):
-    """Convert FidelityResult + the window tables to NonRepairablePanelData."""
-    from panels._non_repairable_compute import build_non_repairable_panel_data
+    """Convert FidelityResult + the window tables to WithinCalibrationPanelData."""
+    from panels._within_calibration_compute import build_within_calibration_panel_data
     from plots.theme import qubit_color
 
     frame = result.frame
@@ -262,7 +262,7 @@ def make_panel_data(
     else:
         primary_label = "Infidelity"
 
-    return build_non_repairable_panel_data(
+    return build_within_calibration_panel_data(
         t_h=t_h,
         primary_series=infidelity,
         primary_label=primary_label,

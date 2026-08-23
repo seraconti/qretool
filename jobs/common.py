@@ -16,7 +16,7 @@ from analyzers.tlf import run as run_tlf
 from analyzers.windows import DEFAULT_GAP_MULT, WindowsResult
 from core.dataset import Dataset
 from core.job import Job
-from panels.non_repairable import NonRepairablePanel, NonRepairablePanelData
+from panels.within_calibration import WithinCalibrationPanel, WithinCalibrationPanelData
 from plots.allan_plot import AllanPlot
 from plots.tlf_plot import TLFPlot
 from transforms.filter import run as run_filter
@@ -155,7 +155,7 @@ def _fidelity_windows(result: FidelityResult, gap_mult: float) -> WindowsResult:
     """Carve in-spec windows on the infidelity series.
 
     The ladder is data-derived, so this calls the SAME pure `panel_thresholds` on the
-    SAME clipped series the panel adapter uses — the two nodes cannot disagree.
+    SAME clipped series the panel adapter uses - the two nodes cannot disagree.
     """
     series = fidelity.panel_series(result)
     return windows.run(
@@ -183,7 +183,7 @@ XI_SEED = 20260813
 
 def _fidelity_panel_data(
     result: FidelityResult, window_result: WindowsResult, xi_seed: int
-) -> NonRepairablePanelData:
+) -> WithinCalibrationPanelData:
     return fidelity.make_panel_data(
         result,
         windows=window_result.windows,
@@ -212,7 +212,7 @@ def configure_ramsey_job(
 ) -> None:
     config = _copy_config(profile)
     # dataset may be a Dataset (to load) or an already-registered Reference
-    # (LocalRef/ArtifactRef — a node whose result is loaded/enriched upstream).
+    # (LocalRef/ArtifactRef - a node whose result is loaded/enriched upstream).
     if hasattr(dataset, "resolve"):
         raw = dataset
     else:
@@ -256,7 +256,7 @@ def configure_ramsey_job(
         # ones. Interpolation puts points on a uniform grid, which erases exactly the
         # read gaps the carve exists to find: on 100423 the interpolated fidelity
         # reported gaps=0 across a real 30-minute gap, because 99.8% of its points
-        # were manufactured. Allan still uses `interpolated` — it needs uniform
+        # were manufactured. Allan still uses `interpolated` - it needs uniform
         # sampling and is not downstream of a carve.
         #
         # Panel data is a STEP, not a draw-time side effect: the carve has to be a node
@@ -276,7 +276,7 @@ def configure_ramsey_job(
             xi_seed=xi_seed,
         )
         job.figure(
-            NonRepairablePanel,
+            WithinCalibrationPanel,
             fidelity_panel,
             targets=["static", "academic"],
             title=f"{prefix} Fidelity",

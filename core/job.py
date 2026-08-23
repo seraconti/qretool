@@ -118,7 +118,7 @@ class _IncludedJob:
 
     def ref(self, node_name: str) -> ArtifactRef:
         """A reference to this sub-job's `node_name` artifact, usable directly as
-        a composite step input. It is a structured (job locator, node id) pair —
+        a composite step input. It is a structured (job locator, node id) pair -
         no node registered in the composite, no name mangling; the runner resolves
         it via the locator on the resolution context. Ownership (that this ref is
         used only in the composite that created the include) is checked at step()
@@ -194,8 +194,8 @@ def _load_dataset(dataset: Dataset) -> Norm:
         }
     )
     # Determine run_start_unix_s via three resolution levels (see docs/TIME_SEMANTICS.md):
-    #   1. Explicit: Dataset.extra['run_start_unix_s'] already in meta — validate and use.
-    #   2. date_only_midnight: DDMMYY_ filename prefix — midnight of that date (local naive).
+    #   1. Explicit: Dataset.extra['run_start_unix_s'] already in meta - validate and use.
+    #   2. date_only_midnight: DDMMYY_ filename prefix - midnight of that date (local naive).
     #   3. No valid source → raise; do NOT fall back to t_raw[0] (yields ~1970 epoch).
     if meta.get("run_start_unix_s") is not None:
         meta["run_start_unix_s"] = check_unix_s(
@@ -329,7 +329,7 @@ class Job:
                 key = str(path.relative_to(dataset_root))
             except ValueError:
                 # dataset outside dataset_root: fall back to the absolute path.
-                # Machine-specific — flagged for the reuse-key work in a later
+                # Machine-specific - flagged for the reuse-key work in a later
                 # increment; does not occur for the in-repo-parent datasets.
                 key = str(path)
             data[key] = content_hash(path)
@@ -393,7 +393,7 @@ class Job:
         base_name: str,
     ) -> LocalRef:
         # Same-job discipline applies to LocalRefs (a node's result belongs to one
-        # run). ArtifactRefs are cross-job by construction — that is exactly the
+        # run). ArtifactRefs are cross-job by construction - that is exactly the
         # case the old blanket `job_ref is not self` lock wrongly rejected, forcing
         # the sentinel; they are allowed here.
         for input_ref in inputs:
@@ -404,7 +404,7 @@ class Job:
                     )
             elif isinstance(input_ref, ArtifactRef):
                 # An ArtifactRef may only be consumed by the composite that created
-                # its include — this is where a foreign ref would actually leak in.
+                # its include - this is where a foreign ref would actually leak in.
                 if input_ref.included.composite is not self:
                     raise ValueError(
                         "ArtifactRef belongs to a different composite than this job"

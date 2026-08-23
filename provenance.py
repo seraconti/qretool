@@ -149,7 +149,7 @@ def _mermaid_id_factory():
 def _mermaid_graph(record: dict[str, object], node_name: str) -> str:
     """One DAG renderer for every job (standalone or composite).
 
-    Source nodes — loaded datasets and/or references to included sub-jobs — feed
+    Source nodes - loaded datasets and/or references to included sub-jobs - feed
     the pipeline steps, which feed the sink node. Node ids are canonical slugs of
     the real names (not positional A/B/C letters); labels are human, with machine
     hashes shown only as short tags. An included reference is a first-class node

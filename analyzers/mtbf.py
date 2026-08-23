@@ -1,7 +1,7 @@
 """MTBF (Mean Time Between Failures / calibration events) analyzer.
 
 Takes a list of CalibrationEvent objects (from a CalibrationLogSchema Norm)
-and computes inter-event intervals. No filtering is applied — all events
+and computes inter-event intervals. No filtering is applied - all events
 in the log are used regardless of chi_squared or other quality metrics.
 """
 
@@ -66,8 +66,8 @@ def make_inputs_from_norm(norm: Norm) -> MtbfInputs:
 # ---------------------------------------------------------------------------
 # Interval histogram
 #
-# One definition of the binning, used by BOTH the repairable panel's histogram
-# subplot (via panels/_repairable_compute._interval_histogram) and the standalone
+# One definition of the binning, used by BOTH the across-calibration panel's histogram
+# subplot (via panels/_across_calibration_compute._interval_histogram) and the standalone
 # mean-time-between-calibrations figure. Two copies would be two chances for the
 # same bar to mean different things in two figures of the same log.
 # ---------------------------------------------------------------------------

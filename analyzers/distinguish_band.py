@@ -1,4 +1,4 @@
-"""Band 2 of the composed non-repairable panel: is the failure distinguishable.
+"""Band 2 of the composed within-calibration panel: is the failure distinguishable.
 
 Everything here answers one question - given the per-read uncertainty, can a reader tell
 an in-spec read from an out-of-spec one at this threshold, and do the excursions have a
@@ -140,7 +140,7 @@ class DistinguishBand(StaleArtifactGuard):
             if missing:
                 raise ValueError(
                     f"incomplete DistinguishBand: {name} is missing threshold(s) "
-                    f"{missing} — construct via analyzers.distinguish_band.run()"
+                    f"{missing} - construct via analyzers.distinguish_band.run()"
                 )
 
 

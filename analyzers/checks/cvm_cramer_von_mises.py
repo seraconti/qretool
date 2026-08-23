@@ -33,10 +33,18 @@ statistic `W^2` on `u_i = T_i/tau` - agreement to 12 decimals against
 `scipy.stats.cramervonmises`, which is the external cross-check and is stronger evidence
 than a second transcription of the same formula would be.
 
-**Not registered in `battery.ROW_KEYS`.** That tuple is the schema of the bench tables; a
-check absent from `bench/results/size_table.csv` makes `bench_acceptance_at_n` return None,
-and every CvM row in the ledger would read `underpowered / no bench cell`. Promotion is one
-line plus a bench re-run, and is a separate decision.
+**Registered in `battery.ROW_KEYS` since 2026-08-14.** That tuple is the schema of the bench
+tables, so registration alone would have made `bench_acceptance_at_n` return None and every
+CvM ledger row read `underpowered / no bench cell`. The bench was therefore re-run in the
+same change: `jobs/bench/results/size_table.csv` now carries 219 CvM size rows and the power
+table 348. Measured there, CvM is the best calibrated of the three tau-checks - mean
+|size - 0.05| of 0.0070 over the twelve arm=A_iid_weibull / in_spec / unquantised /
+uncensored cells, against 0.0072 for C1 and 0.0084 for C2.
+
+Its PERMUTATION row runs even when `include_tau_checks` is False, which is the reason it was
+promoted: `tau == T_N` on the in-spec clock of a carved record silences C1 and C2, and this
+integrand carries no `1/(s(1-s))` weight. Its ASYMPTOTIC row stays inside that gate, because
+a limiting null still needs a truncation time chosen independently of the events.
 """
 
 from __future__ import annotations

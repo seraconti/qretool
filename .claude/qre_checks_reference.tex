@@ -1,0 +1,1337 @@
+% !TeX program = pdflatex
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{newtxtext,newtxmath}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{csquotes}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,
+            urlcolor=blue!50!black]{hyperref}
+\usepackage{microtype}
+
+% Long monospace identifiers (copula::serialIndepTestSim etc.) cannot hyphenate;
+% give TeX slack rather than letting them punch through the margin.
+\emergencystretch=3em
+\hbadness=2000
+
+\newcommand{\Vtilde}{\widetilde{V}^{0}_{\tau,\hat\gamma}}
+\newcommand{\Wbridge}{W^{0}}
+\newcommand{\gh}{\hat\gamma}
+\newcommand{\Ntau}{N(\tau)}
+
+% Provenance tags
+\newcommand{\PROVED}{\textsc{\textcolor{blue!55!black}{proved}}}
+\newcommand{\SIMULATED}{\textsc{\textcolor{orange!70!black}{simulated}}}
+\newcommand{\ASSERTED}{\textsc{\textcolor{purple!70!black}{asserted}}}
+\newcommand{\MEASURED}{\textsc{\textcolor{green!45!black}{measured}}}
+
+\title{Statistical Instruments of the QRE Licensing Battery\\
+\large Definitions, provenance, calibration, and implementation status}
+\author{Reference document for \texttt{qretool}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This document defines every statistical instrument used or considered in the licensing
+stage of the Quantum Reliability Engineering framework. For each instrument it states
+the object being computed, the null hypothesis, the alternative it is directed at, the
+calibration mechanism and why that mechanism rather than another, the censoring
+behaviour, the published provenance down to equation number, and whether the
+implementation imports a library or transcribes an equation. Load-bearing claims carry
+a provenance tag: \PROVED{} for a theorem or exact algebraic result, \SIMULATED{} for a
+Monte Carlo finding, \ASSERTED{} for a textbook or review statement given without proof
+in the cited passage, \MEASURED{} for an empirical data result.
+\end{abstract}
+
+\tableofcontents
+
+% ==============================================================
+\section{Three worlds, and which one this battery lives in}
+% ==============================================================
+
+Statistical questions about the window durations fall into three groups that need
+different instruments and different prerequisites. Mixing them is the single most common
+source of confusion in this project, so they are separated first.
+
+\begin{center}
+\small
+\begin{tabular}{@{}p{0.16\textwidth}p{0.36\textwidth}p{0.24\textwidth}p{0.18\textwidth}@{}}
+\toprule
+\textbf{World} & \textbf{Question} & \textbf{Instruments} & \textbf{Prerequisite}\\
+\midrule
+A. Licensing &
+May serially observed windows be treated as parallel replicate lifetimes? &
+C1, C2, C3, C5, C6 &
+window table\\[2pt]
+B. Description &
+What shape is the lifetime distribution? Is an exponential model defensible? &
+Weibull shape CI, TTT plot, probability plots, censored GoF &
+Kaplan-Meier\\[2pt]
+C. Model adequacy &
+Is the fitted regression structure correct? &
+Lin-Wei-Ying, Schoenfeld, PH tests &
+a fitted regression\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+\noindent
+This battery is World A only. World B is deferred until the product-limit estimator
+lands. World C is gated on a model-fit branch that does not exist, which is why the
+Lin-Wei-Ying check is documented in Section~\ref{sec:lwy} and not implemented.
+
+\subsection{The one assumption behind the whole battery}
+
+The estimator, the confidence band, and the $k$-sample log-rank test all descend from
+the Aalen multiplicative intensity model (Andersen, Borgan, Gill and Keiding, 1993,
+\S IV.3 and \S V.2), in which the intensity of the counting process factorises as
+$\lambda(t) = \alpha(t)\,Y(t)$ with $Y$ predictable. \PROVED
+
+For a \emph{single} unit observed sequentially, with the at-risk process resetting at
+each renewal and the baseline hazard a deterministic function of backward recurrence
+time, that model is equivalent to independent and identically distributed window
+durations, which is the definition of a renewal process. \PROVED
+
+Two consequences follow and they fall together. The Greenwood band and the log-rank
+merge verdict are not two separate tools resting on two separate assumptions; they are
+two consequences of one assumption. A check failure revokes both, never one alone.
+
+Hence the entire licensing question reduces to: \emph{do the carved windows form a
+renewal sequence, or at least a stationary weakly dependent one?}
+
+\subsection{What counts as a \enquote{process}, and what \texorpdfstring{$m$}{m} is}
+\label{sec:whatism}
+
+This is the single most important mapping in the document and getting it backwards makes
+the whole battery look degenerate.
+
+In Kvaløy and Lindqvist a \emph{process} is one observation unit: a counting process
+$N_j(t)$ watched from $0$ to its own censoring time $\tau_j$, inside which a random
+number $N_j(\tau_j)$ of \emph{events} occur with \emph{gaps} $X_i$ between them.
+
+The mapping used here is:
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Their object} & \textbf{Our object}\\
+\midrule
+process $j$ & one gap-free stretch of the scan record\\
+event $T_i$ & a down-crossing, i.e.\ a window death\\
+gap $X_i$ & one in-spec window duration\\
+$\tau_j$ & when watching stopped for that stretch\\
+$N_j(\tau_j)$ & the number of complete windows in that stretch\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+\noindent
+\textbf{So $m=1$ does not mean one window.} It means one uninterrupted record containing
+$N$ windows, and $N$ is in the tens to low hundreds for this data. A single-process
+analysis at $N=355$ is the ordinary case, not a degenerate one.
+
+$m>1$ arises when the record is interrupted, because events cannot be observed during a
+read gap and the two sides cannot be joined without fabricating an inter-event gap
+across it. So $m$ is one more than the number of gaps that split the record, not the
+number of windows. Gaps are infrequent, so $m$ is usually small and often $1$.
+
+\subsection{Which tests survive at \texorpdfstring{$m>1$}{m>1}}
+\label{sec:mgt1}
+
+The paper's \S 4.2 is explicit about which extensions are easy and which are not, and the
+distinction is purely one of algebra: a functional that is \emph{linear} in the bridge
+carries through the weighted sum $\sum_j A_j \Vtilde[j]$, and a functional that squares
+or takes a supremum does not.
+
+\begin{center}
+\small
+\begin{tabular}{@{}p{0.13\textwidth}p{0.10\textwidth}p{0.30\textwidth}p{0.38\textwidth}@{}}
+\toprule
+\textbf{Test} & \textbf{Linear?} & \textbf{$m>1$ route} & \textbf{Paper's verdict}\\
+\midrule
+LR & yes & closed form, eq.~(16) & recommended for monotone trend at any $m$\\
+ELR & yes & closed form, by the same linearity & \enquote{This also applies to the extended Lewis-Robinson test}\\
+KS & no & sum of statistics & not pursued\\
+CvM & no & sum of statistics, normal approximation & \enquote{works fairly well}\\
+AD & no & sum of statistics, normal approximation & \enquote{less well \dots{} due to the very skew distribution}\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+\noindent
+Verbatim from \S 4.2 on the linear cases: \enquote{This corresponds to what we did for the
+Lewis-Robinson test in the previous subsection, but here things are easy due to the
+linearity of integrals. This also applies to the extended Lewis-Robinson test.} And on
+the rest: \enquote{For the remaining tests it is not straightforward, however, to derive
+explicit expressions for the test statistics, and it is neither clear what would be the
+best weights to use.} \ASSERTED
+
+\paragraph{Is $m>1$ with a non-monotonic alternative uncovered?} No, but only because of
+a choice the implementation makes that the paper does not. Three routes exist:
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=3pt]
+\item \textbf{ELR at $m>1$.} Closed form by linearity, and ELR is directed at
+non-monotonic trend. Cost: $a$ must be prespecified (Section~\ref{sec:missing}).
+\item \textbf{CvM at $m>1$.} Sum of per-process statistics with a normal approximation,
+which the authors report works fairly well. This is the paper's own recommendation for
+the regime, and it is the strongest argument for implementing CvM.
+\item \textbf{AD at $m>1$ by permutation.} The route this implementation takes. The
+statistic is the unweighted sum of per-segment eq.~(7) values, calibrated by
+within-segment permutation. \emph{This sidesteps the paper's problem rather than solving
+it}: the objection in \S 4.2 is to the normal \emph{approximation} to the sum, and a
+permutation calibration makes no distributional claim at all. It is exact under
+independent and identically distributed gaps.
+\end{enumerate}
+
+\noindent
+Route 3 is defensible and arguably better than routes 1 and 2, since it needs neither a
+tuning parameter nor an approximation the authors themselves distrust. But it is an
+extension beyond the source, so it carries no published size evidence and \textbf{must be
+validated in the bench before any $m>1$ Anderson-Darling verdict is reported}. Until then
+the honest statement is that the $m>1$ non-monotonic cell rests on the implementation's
+own calibration, not on the paper's.
+
+\subsection{Vocabulary: parametric, nonparametric, semiparametric}
+\label{sec:semiparametric}
+
+Reliability engineering canon is parametric-first, biostatistics canon is
+semiparametric-first, and the vocabulary gap is a recurring source of trouble. There are
+three tiers, not two.
+
+\begin{description}[leftmargin=1.6em,itemsep=2pt]
+\item[Parametric.] The whole distribution is written down. Weibull, exponential,
+lognormal. A finite parameter vector determines everything.
+\item[Nonparametric.] Nothing is written down. Kaplan-Meier, Nelson-Aalen. The
+distribution is an infinite-dimensional unknown estimated directly.
+\item[Semiparametric.] Part is written down, the rest is left free. Cox is canonical:
+$\lambda(t \mid Z) = \lambda_0(t)\exp(\beta' Z)$, where the covariate effect is
+parametric with finite $\beta$ and the baseline $\lambda_0(t)$ is left completely
+unspecified. Aalen's additive model is the same idea with a different link.
+\end{description}
+
+This tier is why Lin-Wei-Ying does not belong in the battery. It checks a fitted
+semiparametric \emph{regression structure}, not a distribution family and not
+independence. See Section~\ref{sec:lwy}.
+
+% ==============================================================
+\section{The construction shared by C1 and C2}
+% ==============================================================
+
+C1 and C2 are not two unrelated tests. They are two functionals of one object, and
+understanding the object explains both at once, explains why the paper offers four
+tests rather than two, and explains what calibration is available.
+
+\subsection{The functional central limit theorem}
+
+Let a renewal process be observed from $t = 0$ with event times $T_1, T_2, \dots$ and
+gap times $X_i = T_i - T_{i-1}$, independent and identically distributed with
+$E(X_i) = \mu$, $\mathrm{Var}(X_i) = \sigma^2 < \infty$, and coefficient of variation
+$\gamma = \sigma/\mu$. Let $N(t)$ count events in $(0,t]$.
+
+Billingsley (1999, Theorem 14.6) gives, for
+$V_{t,\mu,\sigma}(s) = \mu^{3/2}\bigl(N(st) - st/\mu\bigr)/\bigl(\sigma\sqrt{t}\bigr)$,
+weak convergence $V_{t,\mu,\sigma} \Rightarrow W$ to the Wiener measure. \PROVED
+
+Tying the process down at both ends gives Kvaløy and Lindqvist's Theorem 1: with
+$V^0_{t,\mu,\sigma}(s) = V_{t,\mu,\sigma}(s) - s\,V_{t,\mu,\sigma}(1)$, one has
+$V^0_{t,\mu,\sigma} \Rightarrow \Wbridge$, a Brownian bridge. Their Corollary 1 replaces
+the unknown parameters by the coefficient of variation alone:
+%
+\begin{equation}
+\Vtilde(s) \;=\; \frac{1}{\gh}\,\frac{N(s\tau) - s\,\Ntau}{\sqrt{\Ntau}}
+\;\Longrightarrow\; \Wbridge
+\qquad\text{as } \tau \to \infty .
+\label{eq:corollary1}
+\end{equation}
+\PROVED{} (Kvaløy and Lindqvist, arXiv:1802.08339, eq.~(3) and Corollary 1.)
+
+\subsection{What this buys}
+
+Equation~\eqref{eq:corollary1} says: under the renewal null, the observed counting
+process, normalised and tied down, looks like a Brownian bridge. Any functional that
+measures deviation from a Brownian bridge is therefore a trend test, and its null
+distribution is the distribution of that functional applied to $\Wbridge$, which is
+known classically.
+
+This is why the paper produces a \emph{class}. Four standard functionals give four
+tests:
+
+\begin{center}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Functional of $\Wbridge$} & \textbf{Test} & \textbf{Eq.} & \textbf{Limit law}\\
+\midrule
+$\int_0^1 \Wbridge(s)\,ds$ & Lewis-Robinson & (4) & $N(0, 1/12)$, scaled to $N(0,1)$\\
+$\sup_s |\Wbridge(s)|$ & Kolmogorov-Smirnov & (5) & Kolmogorov distribution\\
+$\int_0^1 \Wbridge(s)^2\,ds$ & Cramér-von Mises & (6) & classical CvM\\
+$\int_0^1 \Wbridge(s)^2 / \bigl(s(1-s)\bigr)\,ds$ & Anderson-Darling & (7) & classical AD\\
+\midrule
+$\int_0^a \Wbridge - \int_a^1 \Wbridge$ & Extended Lewis-Robinson & (8), (9) &
+$N\bigl(0, \tfrac{1}{12} - a^2(1-a)^2\bigr)$\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+\noindent
+The role of $\gh$ deserves emphasis because it is the whole difference between this
+family and the classical Poisson-based tests. Dividing by the estimated coefficient of
+variation removes the renewal distribution's dispersion. Without it, eq.~(4) is exactly
+the Laplace statistic, whose null is a homogeneous Poisson process and which
+over-rejects under overdispersion. That over-rejection is the original observation of
+Lewis and Robinson (1974). \PROVED
+
+\subsection{Estimating \texorpdfstring{$\gamma$}{gamma}}
+
+Three estimators are given in the paper's \S 3.6 and justified in its Appendix 1.
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+\item Sample mean and standard deviation of the \emph{completely observed} gaps,
+$\gh = \hat\sigma / \hat\mu$. Consistent as $\tau\to\infty$, but discards the censored
+final gap $\tau - T_{\Ntau}$.
+\item Estimators using the censored time, their eq.~(10):
+$\tilde\mu = \tau/\Ntau$ and
+$\tilde\sigma^2 = \Ntau^{-1}\bigl\{\sum X_i^2 + (\tau - T_{\Ntau})^2\bigr\} - \tilde\mu^2$.
+\item The successive-difference estimator, their eq.~(11):
+$\sigma^{*2} = \bigl(2(\Ntau-1)\bigr)^{-1}\sum (X_{i+1}-X_i)^2$.
+\end{enumerate}
+
+The paper explicitly declines the third: it tends to be smaller under positive
+dependence between subsequent gaps, which inflates the test statistic and raises
+rejection, and they report \enquote{apparent less satisfactory significance level
+properties} in their simulations. \SIMULATED
+
+\medskip
+\noindent\textbf{This choice matters here more than it does in the paper.} Estimator 3
+is deliberately sensitive to exactly the neighbour dependence C5 and C6 are built to
+detect. Using it would entangle the trend test with the dependence test. The
+implementation exposes estimators 1 and 2 as \texttt{GAMMA\_COMPLETE} and
+\texttt{GAMMA\_TRUNCATED}, and does not offer estimator 3. That is the right call and
+should be stated when the choice is questioned.
+
+% ==============================================================
+\section{C1 -- Lewis-Robinson, time censored}
+% ==============================================================
+
+\paragraph{Object.} The signed area under the tied-down normalised counting process,
+scaled to be asymptotically standard normal:
+%
+\begin{equation}
+\mathrm{LR} \;=\; -\sqrt{12}\int_0^1 \Vtilde(s)\,ds
+\;=\; \frac{1}{\gh}\cdot\frac{\sqrt{12}}{\tau\sqrt{\Ntau}}
+\left[\sum_{i=1}^{\Ntau} T_i - \frac{\Ntau}{2}\,\tau\right].
+\label{eq:lr}
+\end{equation}
+\PROVED{} (their eq.~(4)).
+
+\paragraph{Reading it.} $\sum_i T_i$ is the total of the event times, and
+$(\Ntau/2)\tau$ is its expectation when events are uniform on $[0,\tau]$, which is what
+no trend means. So LR is a centred, scaled \emph{are the events early or late}
+contrast. Positive means increasing intensity, negative means decreasing. It is used
+two-sided here.
+
+\paragraph{Null.} Renewal process: gaps independent and identically distributed.
+
+\paragraph{Directed at.} Monotone trend. \enquote{The resulting test will primarily have
+power against deviations from an RP caused by monotonic trends.} \ASSERTED
+
+\paragraph{Multi-process form, and why it is the one implemented.} With $m$ independent
+processes, weights $A_j \propto \gh_j \tau_j \sqrt{N_j(\tau_j)}$ (their eq.~(14),
+justified by the limit in eq.~(15)) inserted into eq.~(13) give
+%
+\begin{equation}
+\mathrm{LR}^m \;=\;
+\frac{\sqrt{12}}{\sqrt{\sum_{k=1}^{m}\gh_k^2\,\tau_k^2\,N_k(\tau_k)}}
+\sum_{j=1}^{m}\left[\sum_{i=1}^{N_j(\tau_j)} T_{ij} - \frac{N_j(\tau_j)}{2}\,\tau_j\right].
+\label{eq:lrm}
+\end{equation}
+\PROVED{} (their eq.~(16)).
+
+Setting $m = 1$ in \eqref{eq:lrm} gives
+$\sqrt{12}\,\bigl[\textstyle\sum T_i - N\tau/2\bigr] \big/ \sqrt{\gh^2\tau^2 N}
+= (1/\gh)\cdot\sqrt{12}/(\tau\sqrt{N})\cdot[\,\cdot\,]$, which is \eqref{eq:lr}
+exactly. So a separate single-process code path would be a second copy of one formula,
+free to drift. Only \eqref{eq:lrm} is implemented and the collapse is asserted
+numerically in the test suite rather than trusted to the algebra above.
+
+\paragraph{Why $m \neq 1$ is not hypothetical here.} A read gap means events cannot be
+observed during it, so the record splits into gap-free segments, each with its own
+$\tau_j$. The multi-process form is the gap case, not an optional generalisation. On a
+record with three gaps, $m = 4$.
+
+\paragraph{Calibration.}
+
+\emph{Asymptotic, $N(0,1)$ two-sided.} The chain is: Billingsley (1999, Theorem 14.6)
+gives the functional central limit theorem for renewal processes; Kvaløy and Lindqvist's
+Theorem 1 and Corollary 1 tie it down to a Brownian bridge, using Billingsley (1999,
+Theorem 3.1), the converging-together lemma, to replace $\mu,\sigma$ by $\gh$; their
+\S 3.1 then states that $\int_0^1 \Wbridge(s)\,ds$ \enquote{is normally distributed with
+expectation 0 and variance $1/12$}, so the $-\sqrt{12}$ scaling in eq.~(4) gives a
+standard normal limit. For $m>1$ the additional ingredient is their Lemma 1, that a
+weighted sum $\sum_j a_j W_j^0$ of independent Brownian bridges with $\sum a_j^2 = 1$ is
+itself a Brownian bridge, plus the weight limit in their eq.~(15) establishing
+$A_j \xrightarrow{p} a_j$. \PROVED{} (Kvaløy and Lindqvist 2020, Theorem 1, Corollary 1,
+Lemma 1, \S\S 3.1 and 4.1; Billingsley 1999, Theorems 14.6 and 3.1.)
+
+\emph{Permutation of the completely observed gaps within each segment.} Two separate
+claims, with separate provenance:
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+\item \emph{The authors sanction it.} Their \S 7: the asymptotic critical values
+\enquote{are hence only approximate when used in small and medium sized samples}, and
+\enquote{in such cases an alternative procedure would be to simulate the null
+distribution of the test statistic by a permutation approach, permuting the order of the
+completely observed interevent times}. They cite Lawless, Çiğşar and Cook
+(\emph{Technometrics} 54:147--158, 2012) for its validity under \emph{time} censoring,
+which is the non-obvious part, and confirm it in unreported simulations.
+\ASSERTED{} by the authors, \SIMULATED{} by Lawless et al.
+\item \emph{It is exact here, not merely valid.} Under the renewal null the gaps within a
+segment are exchangeable, so the randomisation hypothesis holds and a permutation test
+has exact level $\alpha$ (Lehmann and Romano, \emph{Testing Statistical Hypotheses},
+\S 15.2; Romano and Tirlea 2022, \S\S 2--3). What makes it exact for \emph{this}
+statistic specifically is an invariance that must be checked and is easy to check:
+$\tau_j$, $N_j$ and $\gh_j$ are all invariant to reordering the gaps inside a segment,
+because each is a symmetric function of the gap multiset. The only quantity a permutation
+moves is $\sum_i T_{ij}$. Consequently the permuted statistic has the same denominator as
+the observed one, and the comparison is a like-for-like reordering of one numerator.
+\PROVED
+\end{enumerate}
+
+\noindent
+The practical value of that exactness is measurement, not safety: because the permutation
+$p$-value is exact, the asymptotic-versus-permutation gap in the bench is a clean reading
+of \emph{asymptotic error}, rather than a comparison of two approximations whose
+disagreement could be blamed on either.
+
+\paragraph{Censoring.} Native. The incomplete final gap $\tau - T_{\Ntau}$ is retained
+by construction; it is the whole point of the time-censored formulation. \PROVED
+
+% ==============================================================
+\section{C2 -- Anderson-Darling type, time censored}
+% ==============================================================
+
+\paragraph{Object.}
+$\mathrm{AD} = \int_0^1 \Vtilde(s)^2/\bigl(s(1-s)\bigr)\,ds$, which by
+\eqref{eq:corollary1} converges to $\int_0^1 \Wbridge(s)^2/(s(1-s))\,ds$, the classical
+Anderson-Darling limit (Anderson and Darling, 1952, 1954). Evaluated,
+%
+\begin{equation}
+\begin{split}
+\mathrm{AD} = \frac{1}{\gh^{2}}\,\frac{1}{\Ntau}
+\Biggl\{&\sum_{i=1}^{\Ntau-1}\left[(\Ntau-i)^2\ln\frac{\tau - T_i}{\tau - T_{i+1}}
++ i^2 \ln\frac{T_{i+1}}{T_i}\right]\\
+&+ \Ntau^{2}\left[\ln\frac{\tau}{\tau - T_1} + \ln\frac{\tau}{T_{\Ntau}} - 1\right]\Biggr\}.
+\end{split}
+\label{eq:ad}
+\end{equation}
+\PROVED{} (their eq.~(7)).
+
+\paragraph{Reading it.} With $u_i = T_i/\tau$, eq.~\eqref{eq:ad} at $\gh = 1$ is exactly
+the classical Anderson-Darling statistic testing the event times for uniformity on
+$[0,\tau]$. The $1/\gh^2$ generalises it from a Poisson null to a renewal null. The
+weight $1/(s(1-s))$ is what distinguishes it from Cramér-von Mises: it puts more weight
+on the beginning and end of the observation interval.
+
+\paragraph{Null.} Renewal process.
+
+\paragraph{Directed at.} Monotonic \emph{and} non-monotonic trend. Because the
+integrand is squared, deviation in either direction contributes. This is why the paper
+recommends it as the general-purpose single-process test: \enquote{the Anderson-Darling
+test turns out to have attractive properties when used as a test for general
+alternatives, both monotonic and non-monotonic trends.} \ASSERTED
+
+\paragraph{On the critical value $2.492$.}
+The rejection rule \enquote{reject at $\alpha = 0.05$ when $\mathrm{AD} > 2.492$} is
+correct and is the classical asymptotic Anderson-Darling critical value. Nothing is
+being rederived. The implementation evaluates the same limiting law as a continuous
+cumulative distribution function, using the \texttt{adinf} approximation of Marsaglia
+and Marsaglia (\emph{Journal of Statistical Software} 9(2), 2004), quoted to
+$|\text{error}| < 2\times 10^{-6}$, and it returns $0.05001$ at $z = 2.492$ and
+$0.10001$ at $z = 1.933$. Two reasons for the CDF rather than the table:
+\begin{enumerate}[leftmargin=1.6em,itemsep=1pt]
+\item A $p$-value is strictly more informative than a binary verdict, and the ledger
+records $p$-values so that a near-miss is visible.
+\item The bench needs a continuous $p$-value to measure empirical size at all, since
+empirical size is the rejection rate computed from $p$-values.
+\end{enumerate}
+Marsaglia and Marsaglia's \emph{finite-$N$} correction \texttt{errfix} is deliberately
+not applied: it is fitted for the Anderson-Darling statistic of $N$ independent uniform
+variables, whereas \eqref{eq:ad} is additionally divided by an \emph{estimated}
+$\gh^2$, so the finite-$N$ null here is not the finite-$N$ Anderson-Darling null.
+Applying that correction would be a precision claim the derivation does not support.
+
+\paragraph{Where the recalibration mandate comes from.}
+It is the authors', in their \S 7:
+\enquote{The derived test statistics are based on asymptotic results for renewal
+processes. The calculated critical values are hence only approximate when used in small
+and medium sized samples.} They then name the fallback:
+\enquote{simulate the null distribution of the test statistic by a permutation approach,
+permuting the order of the completely observed interevent times}, citing Lawless,
+Çiğşar and Cook (\emph{Technometrics} 54, 2012) for its validity under time censoring
+and confirming it in unreported simulations. \ASSERTED{} by the authors,
+\SIMULATED{} by Lawless et al.
+
+So the permutation calibration in the implementation is not an invention. It is the
+paper's own prescription for the regime this project sits in.
+
+\paragraph{Multi-process.} See Section~\ref{sec:mgt1} for the full picture. In short:
+there is no asymptotic calibration for $m > 1$, and the implementation raises rather than
+approximating. The paper's \S 4.2 states the normal
+approximation to a weighted sum \enquote{works fairly well for the Cramér-von Mises
+test, but less well for the Anderson-Darling test due to the very skew distribution of
+the Anderson-Darling statistic}, and its \S 5 drops Anderson-Darling for $m > 1$ in
+favour of Cramér-von Mises. The multi-process statistic implemented is the unweighted
+sum of per-segment values, calibrated by within-segment permutation, which needs no
+asymptotic distribution and is exact under independent and identically distributed
+gaps. \ASSERTED
+
+\paragraph{Censoring.} Native, same construction as C1.
+
+% ==============================================================
+\section{Two tests from the same paper that are not implemented}
+\label{sec:missing}
+% ==============================================================
+
+This section exists because the omissions are real and should be decided rather than
+inherited.
+
+\subsection{Extended Lewis-Robinson, eqs.~(8) and (9)}
+
+\paragraph{This is a different test, not a variant of eq.~(4).} Equation~(8) is
+%
+\begin{equation}
+\int_0^a \Vtilde(s)\,ds \;-\; \int_a^1 \Vtilde(s)\,ds ,
+\qquad 0 \le a \le 1,
+\label{eq:elr8}
+\end{equation}
+%
+a functional that splits the bridge at $a$ and gives the two halves opposite signs. It
+is not obtained by specialising eq.~(16); eq.~(16) is the $m$-process generalisation of
+eq.~(4), and eq.~\eqref{eq:elr8} is a different functional of the same bridge. The
+scaled statistic is their eq.~(9),
+%
+\begin{equation}
+\mathrm{ELR} = \frac{1}{\gh}\cdot
+\frac{1}{\tau\sqrt{\Ntau}\sqrt{\tfrac{1}{12} - a^2(1-a)^2}}
+\left\{\sum_{i=1}^{\Ntau}\bigl|T_i - a\tau\bigr|
+- \Bigl(\tfrac{1}{2} - a(1-a)\Bigr)\tau\,\Ntau\right\}.
+\label{eq:elr9}
+\end{equation}
+\PROVED
+
+\paragraph{What Appendix 2 actually proves, and its cost.}
+Appendix 2 derives \eqref{eq:elr9} from \eqref{eq:elr8} by integrating the indicator
+representation $N(t) = \sum_i I_{[T_i,\tau)}(t)$ over $[0,a\tau]$ and $[a\tau,\tau]$
+separately and subtracting, and then proves the null law. Writing
+$U = \int_0^a \Wbridge$ and $V = \int_a^1 \Wbridge$, and using
+$k(s,t) = \min(s,t) - st$:
+$\mathrm{Var}(U) = a^3(4-3a)/12$ and
+$\mathrm{Var}(V) = 1/12 - a^2(6-8a+3a^2)/12$. The covariance is avoided by the identity
+$\mathrm{Var}(U+V) = 1/12$, giving
+$\mathrm{Var}(U-V) = 2(\mathrm{Var}\,U + \mathrm{Var}\,V) - \mathrm{Var}(U+V)
+= 1/12 - a^2(1-a)^2$. \PROVED
+
+Three costs follow, all of them stated by the authors or immediate from the algebra:
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=3pt]
+\item \textbf{$a$ must be fixed in advance.} \enquote{A disadvantage of the above test
+is that the value of $a$ has to be given. One possibility would of course be to allow an
+adaptive choice of $a$. This will, however, destroy the above distributional properties,
+and we will therefore not pursue this approach here.} \ASSERTED{} This is the binding
+constraint. Choosing $a$ by looking at the data invalidates \eqref{eq:elr9}.
+
+\item \textbf{At $a = 1/2$ it is tuned to a symmetric bathtub.} The variance falls from
+$1/12$ to $1/12 - 1/16 = 1/48$, and the authors note the test is
+\enquote{particularly well suited for picking up non-monotonic trends which are
+symmetric around the mid-point of the observation interval}. A non-monotonic trend whose
+turning point is not near $\tau/2$ is not what this test is aimed at.
+
+\item \textbf{It is worse than LR against monotone trend.} The paper reports it only for
+non-monotonic trend \enquote{as it has inferior power against monotonic trends}.
+\SIMULATED
+\end{enumerate}
+
+\paragraph{Verdict for this project.} Anderson-Darling already covers non-monotonic
+trend without requiring a choice of $a$, and their Figure 4 shows both detecting the
+bathtub. The Extended Lewis-Robinson buys a sharper instrument aimed at one specific
+shape at the cost of a prespecified tuning parameter. Recommendation: implement it only
+if a physical argument fixes $a$ a priori. There is no such argument at present, so the
+honest position is that the test is documented, understood, and declined on the
+tuning-parameter objection, which is the same objection already used to retire the block
+bootstrap.
+
+\subsection{Cramér-von Mises, eq.~(6)}
+
+\paragraph{This omission is harder to defend and should be closed.}
+%
+\begin{equation}
+\begin{split}
+\mathrm{CvM} = \frac{1}{\gh^2}\frac{1}{\Ntau}
+\Biggl\{&\sum_{i=0}^{\Ntau-1}\left[i^2\frac{X_{i+1}}{\tau}
+- i\,\Ntau\,\frac{T_{i+1}^2 - T_i^2}{\tau}\right]\\
+&+ \Ntau^2\left[\frac{T_{\Ntau}^2}{\tau^2} - \frac{T_{\Ntau}}{\tau}
++ \frac{1}{3}\right]\Biggr\}.
+\end{split}
+\label{eq:cvm}
+\end{equation}
+\PROVED
+
+Same null, same sensitivity to monotone and non-monotone trend as Anderson-Darling,
+differing only in the weight function. For a single process the paper drops it, since
+\enquote{this test had less power than the Anderson-Darling test}. \SIMULATED
+
+\medskip
+\noindent\textbf{But for $m > 1$ the paper reverses the preference}: \enquote{for
+several processes we do not include the Anderson-Darling test as the Cramér-von Mises
+test had better level properties in this case}. \SIMULATED
+
+Since $m > 1$ is the gap case and gaps are routine in this data, Cramér-von Mises is the
+paper's own recommendation for a regime the battery actually operates in. It is
+approximately thirty lines from \eqref{eq:cvm}, uses the same $\gh$ machinery and the
+same permutation harness already built, and closes a gap the source paper names
+explicitly. \textbf{Recommendation: implement.}
+
+\subsection{Kolmogorov-Smirnov, eq.~(5)}
+
+Dominated and correctly dropped. The paper: \enquote{The Kolmogorov-Smirnov test is less
+powerful than the other tests}, and it is \enquote{too conservative in the overdispersed
+case}. \SIMULATED{} Overdispersion is the expected regime for threshold-excursion
+durations, so the specific failure mode is the one that would bite. No action.
+
+\subsection{On rank tests in reliability}
+
+A note on the concern that rank statistics are a time-series import with no standing in
+recurrent-event analysis. They have standing. Kvaløy and Lindqvist cite Mann (1945),
+\emph{Nonparametric tests against trend}, \emph{Econometrica} 13:245--259, as the first
+nonparametric test under the renewal null, and it operates on reverse arrangements of
+the gap sequence. Rank-based inference on interevent times is native to the field.
+
+The distinction that matters is the \emph{alternative}, not the machinery. Mann's rank
+test is directed at monotone \emph{trend}, which makes it redundant with Lewis-Robinson:
+same null, same directed alternative, high correlation in practice. C5 and C6 use rank
+machinery but are directed at \emph{neighbour dependence}, which no trend test detects.
+That is why they are not redundant with C1 and C2, and it is also why Mann is not in the
+battery.
+
+% ==============================================================
+\section{C3 -- Empirical copula serial independence}
+% ==============================================================
+
+\paragraph{Object.} A Cramér-von Mises functional of the empirical copula process of the
+lagged vector $(X_i, X_{i+1}, \dots, X_{i+p})$, decomposed by Möbius inversion into
+one statistic per subset of lags, so that the dependogram shows which lags carry the
+dependence.
+
+\paragraph{Provenance.} Ghoudi, Kulperger and Rémillard, \emph{Journal of Multivariate
+Analysis} 79(2):191--218 (2001); Genest and Rémillard, \emph{TEST} 13(2):335--369
+(2004); Kojadinovic and Yan, \emph{Annals of the Institute of Statistical Mathematics}
+63(2):347--373 (2011). \PROVED
+
+\paragraph{Null.} Full serial independence, jointly across all lags considered. This is
+strictly stronger than the zero-rank-autocorrelation null of C5 and C6, which is the
+reason it is in the battery despite the R dependency.
+
+\paragraph{Directed at.} Any pairwise and higher-order serial dependence in the copula,
+including dependence with zero rank correlation.
+
+\paragraph{Calibration.} The univariate statistic is asymptotically distribution-free,
+so critical values come from Monte Carlo simulation of the limiting independent null,
+which is what \texttt{copula::serialIndepTestSim} does before
+\texttt{copula::serialIndepTest} applies it. The multivariate Kojadinovic-Yan form is
+\emph{not} distribution-free and the package documentation states that critical values
+and $p$-values come from a bootstrap or permutation of the pseudo-observations. \PROVED
+
+\paragraph{Censoring.} None. No right-censored variant of this statistic has been
+located, so censored windows are dropped. Note that \enquote{drop censored windows} is
+an inference from the absence of a censored variant, not a sourced rule, and the ledger
+must report the dropped count for this reason.
+
+\paragraph{Implementation status.} This is the one check that imports rather than
+transcribes, over a file bridge to \texttt{Rscript}. \textbf{As of this writing R is
+absent from the development machine, so C3 has never executed and carries no bench
+evidence.} Its silence in the ledger is an environment fact, not a pass.
+
+\paragraph{Ties caveat.} The distribution-free property is stated for continuous
+observations. Excursion durations carved on a read grid are integer multiples of the
+read spacing and carry heavy ties at loose thresholds, which violates the assumption the
+calibration rests on. This is a first-class factor in the bench, not a footnote.
+
+% ==============================================================
+\section{C5 -- Studentized max-lag rank autocorrelation}
+% ==============================================================
+
+\paragraph{Object.}
+$T = \max_{h=1..H}\bigl| (r_h - \mu_h)/s_h \bigr|$, where $r_h$ is the within-segment
+rank autocorrelation of the duration sequence at lag $h$ and $(\mu_h, s_h)$ are that
+lag's moments across the augmented permutation ensemble.
+
+\paragraph{Null.} Exchangeability of the duration sequence, hence serial independence
+under the renewal null.
+
+\paragraph{Directed at.} Localised neighbour dependence. If the durations carry a lag-2
+relation and nothing else, the maximum picks it up at full strength where a portmanteau
+statistic dilutes it across every lag examined.
+
+\paragraph{Provenance of the statistic.} There is no single paper to cite for
+\enquote{max-over-lags studentized rank autocorrelation with segmented permutation},
+because it is assembled from three pieces, each of which does have a source:
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+\item \emph{Rank autocorrelation as a randomness statistic.} The rank version of von
+Neumann's ratio is Bartels, R.\ (1982), \enquote{The Rank Version of von Neumann's Ratio
+Test for Randomness}, \emph{JASA} 77(377):40--46, implemented as
+\texttt{randtests::bartels.rank.test} and \texttt{lawstat::bartels.test}. Bartels'
+statistic is a lag-1 rank object and his own Monte Carlo shows it has far greater power
+than the runs-up-and-down test. Our $r_1$ is the Spearman form of the same idea, so
+\texttt{bartels.rank.test} is a legitimate external cross-check on the lag-1
+\emph{statistic}, though not on the max-over-lags \emph{test}. \SIMULATED
+\item \emph{Exactness of the permutation calibration.} The randomisation hypothesis:
+when the joint law is invariant under permutation, a permutation test has exact level
+$\alpha$. Lehmann and Romano, \emph{Testing Statistical Hypotheses}, \S 15.2; stated for
+this setting in Romano and Tirlea (2022), \S\S 2--3. \PROVED
+\item \emph{The max-over-lags form.} A maximum statistic must be calibrated as a maximum,
+not by combining per-lag tests, or the level is not $\alpha$. This is elementary
+multiplicity control and needs no special citation, but it is the reason the
+implementation calibrates $\max_h$ against the permutation distribution of $\max_h$
+rather than running $H$ tests.
+\end{enumerate}
+
+\paragraph{Calibration.} Within-segment permutation, upper tail, exact under
+exchangeability by piece 2 above. \PROVED{} \emph{Within-segment} is load-bearing:
+permuting across a read gap would manufacture inter-event gaps the carve refuses to
+assert, which is the same objection that forbids concatenating segments for C3.
+
+\paragraph{A naming caution that should be recorded.}
+The word \emph{studentized} here means \emph{each lag is put on its own scale}, because
+different lags have different within-segment pair counts and therefore different null
+spreads. That is a lag-comparability correction and it is well motivated: at ten
+segments of five the lag pair counts run from forty down to ten and the null standard
+deviation ratio reaches $1.64$. \MEASURED
+
+This is \emph{not} the studentization of Romano and Tirlea (\emph{Journal of Time Series
+Analysis}, 2022; arXiv:2009.03170), which divides by a consistent estimator of the
+asymptotic standard error in order to restore level $\alpha$ when the null is
+\enquote{uncorrelated} rather than \enquote{independent and identically distributed}.
+Their caveat is that a plain permutation test is not level $\alpha$ under an
+uncorrelated-but-dependent null, with naive rejection reaching $0.233$ at $n = 50$
+against a nominal $0.05$. \SIMULATED
+
+\medskip
+\noindent
+The caveat does not bite here, and the reason should be stated rather than assumed: the
+null this battery tests is the renewal null, which is exchangeability, not mere
+uncorrelatedness. A permutation test is exact under exchangeability. But the shared word
+invites a reviewer to think Romano-Tirlea has been applied when it has not, so the
+documentation should say which of the two problems the code solves.
+
+\paragraph{Censoring.} None. Complete windows only.
+
+% ==============================================================
+\section{C6 -- Permutation exchangeability, portmanteau}
+% ==============================================================
+
+\paragraph{Object.} $Q = \sum_{h=1}^{H} m_h\, r_h^2$, where $m_h$ is the number of
+within-segment pairs at lag $h$.
+
+\paragraph{Null.} Exchangeability, tested directly.
+
+\paragraph{Directed at.} Dependence spread thinly across several lags. The $m_h$
+weighting allocates the statistic's attention in proportion to how much evidence each
+lag rests on, which is the opposite trade to C5's maximum. Neither substitutes for the
+other.
+
+\paragraph{Provenance.} The portmanteau form, a weighted sum of squared
+autocorrelations across lags, is the rank analogue of the Box-Pierce and Ljung-Box
+statistics (Box and Pierce, \emph{JASA} 65:1509--1526, 1970; Ljung and Box,
+\emph{Biometrika} 65:297--303, 1978). Those use asymptotic $\chi^2_H$ critical values and
+are known to be badly oversized under dependence at small $n$: Romano and Tirlea report
+Ljung-Box at $0.187$ and Box-Pierce at $0.174$ against a nominal $0.05$ at $n=50$.
+\SIMULATED{} The $\chi^2$ route is therefore \emph{not} taken here; only the permutation
+route is.
+
+\paragraph{Calibration.} Within-segment permutation, upper tail. Exact under
+exchangeability by the randomisation hypothesis (Lehmann and Romano, \S 15.2). \PROVED
+
+\textbf{This is the one check in the battery whose validity rests on no approximation and
+no transcription.} C1 and C2 rest on an asymptotic limit and on a correctly transcribed
+equation; C3 rests on an external package and a simulated null; C5 shares C6's exactness
+but adds a max-statistic construction. C6 is a permutation test of exactly the null it
+states. That makes it the natural reference point when checks disagree on a cell: the
+burden falls on the other check.
+
+\paragraph{Why $m_h$ weighting rather than uniform.} The number of within-segment pairs
+available at lag $h$ falls as $h$ grows, and falls fastest when segments are short.
+Weighting each squared autocorrelation by its pair count $m_h$ allocates the statistic's
+attention in proportion to the evidence behind each term, which is the same principle
+behind the $(n-h)$ weighting in Ljung-Box. Without it, a high-variance estimate from a
+lag with ten pairs enters on equal terms with a stable one from forty.
+
+\paragraph{Direction.} $Q$ is a sum of squares, therefore one-sided by construction, and
+says nothing about the sign of any dependence it finds. The lag-1 rank correlation is
+carried separately for that.
+
+\paragraph{Censoring.} None. Complete windows only.
+
+% ==============================================================
+\section{C4 -- Lin-Wei-Ying, and why it is not in the battery}
+\label{sec:lwy}
+% ==============================================================
+
+\paragraph{Object.} Cumulative sums of martingale-based residuals from a \emph{fitted}
+Cox or Aalen regression. Lin, Wei and Ying, \emph{Biometrika} 80(3):557--572, 1993.
+\PROVED
+
+\paragraph{What it tests.} Whether the imposed regression \emph{structure} is correct:
+functional form of the covariates, the link function, proportionality of hazards. Under
+the null that the model is correctly specified, the cumulative residual process converges
+to a zero-mean Gaussian process, and the observed path is compared against realisations
+simulated with the covariates and estimated parameters held fixed.
+
+\paragraph{What it does not test.} It does not test whether the durations are Weibull,
+exponential, or anything else. It does not test independence in any sense. Fitting a
+parametric family to the durations does not give it a null, because the object it checks
+is a covariate structure, not a distribution family. See
+Section~\ref{sec:semiparametric}.
+
+\paragraph{Why it was in the candidate set at all.} Two circumstantial reasons, neither
+of them principled. First, it handles right censoring natively, which almost nothing
+else in the serial-independence set does. Second, its null is the multiplicative
+intensity model, which is the same object that licenses the band and the log-rank test.
+That looks like a match but is not, because the version Lin-Wei-Ying checks is the one
+\emph{with covariates}, whereas the case here is the degenerate single-unit one in which
+the model collapses to independent and identically distributed gaps.
+
+\paragraph{The correct relationship.} One model, two specialisations:
+%
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+covariates plus free baseline & Cox or Aalen $\rightarrow$ Lin-Wei-Ying checks it\\
+no covariates, single unit, deterministic age hazard & renewal $\rightarrow$ C1, C2, C3, C5, C6 check it\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Status.} Parked in a World C backlog. It becomes live when a regression with
+covariates is fitted, for example night, threshold, qubit, or gate-voltage stability. It
+is not carried as a permanently inapplicable row in the ledger, because a row that can
+never be computed invites the same question at every reading.
+
+% ==============================================================
+\section{Shape statistics: does the margin predict remaining life?}
+% ==============================================================
+
+These are not licensing checks. They answer the separate question of whether the raw
+signal, rather than the carved window, suffices to predict how long a window will last.
+They are grouped here because the choice among them has been questioned and the reasons
+should be written down.
+
+\subsection{The four candidates and what separates them}
+
+\begin{center}
+\small
+\begin{tabular}{@{}p{0.16\textwidth}p{0.08\textwidth}p{0.30\textwidth}p{0.36\textwidth}@{}}
+\toprule
+\textbf{Measure} & \textbf{Sym.} & \textbf{Detects} & \textbf{Null distribution}\\
+\midrule
+Pearson $r$ & yes & linear only; assumes normality & exact under bivariate normal\\
+Spearman $\rho$ & yes & monotone, linear or not & exact permutation; asymptotic normal\\
+Distance corr.\ $\mathcal{R}$ & yes & arbitrary dependence; $=0$ iff independent &
+non-pivotal; permutation or bootstrap\\
+Chatterjee $\xi$ & \textbf{no} & complete (functional) dependence; $=0$ iff independent,
+$=1$ iff $Y = g(X)$ &
+$\sqrt{n}\,\xi \to N(0, 2/5)$ under independence, \emph{tie-free case}\\
+Mutual information & yes & arbitrary statistical dependence &
+no closed form; estimator-dependent\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{The asymmetry is the argument.} The engineering question is directional:
+\emph{can remaining life be read off the margin?} Distance correlation and mutual
+information are symmetric. They answer \enquote{is there dependence}, which is a weaker
+and less useful statement than \enquote{is forward time a function of margin}. Chatterjee
+(2021, p.~2010) makes the asymmetry deliberate:
+\enquote{we may want to understand if $Y$ is a function of $X$, and not just if one of the
+variables is a function of the other.} \ASSERTED
+
+\paragraph{The symmetry problem that motivated $\xi$ in the first place.} A symmetric
+excursion drives Spearman $\rho$ between a hump-shaped margin and a monotone forward time
+to zero \emph{by construction}, regardless of how predictable the excursion is. Matched
+simulation returned falling-limb $\rho$ of $0.74$ to $0.79$ on data whose pooled $\rho^2$
+was $0.001$. \MEASURED{} So $\rho^2 \approx 0$ alone cannot support the claim that the
+margin carries no information; the supportable claim is narrower, that there is no
+monotone rule from margin alone.
+
+\subsection{Reference and definition for \texorpdfstring{$\xi$}{xi}}
+
+Chatterjee, S. (2021), \enquote{A New Coefficient of Correlation}, \emph{Journal of the
+American Statistical Association} 116(536):2009--2022; preprint arXiv:1909.10140.
+R package \texttt{XICOR}; a third-party Python package exists.
+
+Sort the pairs so that $X_{(1)} \le \dots \le X_{(n)}$, breaking ties uniformly at
+random. Let $r_i$ be the number of $j$ with $Y_j \le Y_{(i)}$, and $\ell_i$ the number
+with $Y_j \ge Y_{(i)}$. Then
+%
+\begin{equation}
+\xi_n(X,Y) \;=\; 1 - \frac{n \sum_{i=1}^{n-1} |r_{i+1} - r_i|}
+{2 \sum_{i=1}^{n} \ell_i (n - \ell_i)} ,
+\label{eq:xi}
+\end{equation}
+%
+which in the tie-free case reduces to
+$1 - 3\sum_{i=1}^{n-1}|r_{i+1}-r_i| / (n^2-1)$.
+Properties: $\xi \to 0$ if and only if $X$ and $Y$ are independent, and $\xi \to 1$ if
+and only if $Y$ is almost surely a measurable function of $X$. \PROVED
+
+\subsection{Three caveats on \texorpdfstring{$\xi$}{xi} that apply directly here}
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=3pt]
+\item \textbf{Ties break the $2/5$ null.} The variance $2/5$ is derived for continuous,
+tie-free data. Excursion durations on a read grid are heavily tied, and at loose
+thresholds most windows are a single read. Where ties dominate, the closed-form $p$-value
+must not be used and a permutation calibration should replace it. This is the same
+quantisation factor that threatens C3, C5 and C6, and it belongs in the same bench
+column.
+
+\item \textbf{Small-sample convergence is contested.} Chatterjee states the normal
+approximation is \enquote{roughly valid even for $n$ as small as 20}. \ASSERTED{}
+Independent practitioner commentary suggests $n$ of several hundred before the
+approximation is comfortable. With window counts from about 35 to 355 this project sits
+squarely in the disputed range, so $\xi$'s $p$-value should be permutation-calibrated in
+the bench regardless of the closed form.
+
+\item \textbf{Lower power than Spearman against smooth monotone alternatives.} $\xi$ buys
+consistency against non-monotone alternatives and pays for it in power where the
+relationship is in fact monotone. This is why $\xi$ and $\rho$ ship together rather than
+one replacing the other. The diagnostic signature worth naming: $\rho^2$ near zero with
+$\xi$ well above its null means structure exists and is not monotone.
+\end{enumerate}
+
+\subsection{Distance correlation: keep}
+
+Székely, Rizzo and Bakirov (2007), \emph{Annals of Statistics} 35(6):2769--2794.
+$\mathcal{R} = 0$ if and only if the variables are independent, for arbitrary dependence.
+Symmetric, so it does not answer the directional question, but it is a legitimate
+omnibus and it is what the Qubit Health Analytics work uses, which makes it the
+comparable statistic when placing this framework against that one. It is already computed
+in the shape statistics and should stay.
+
+\subsection{Mutual information: declined, with the reason}
+
+Mutual information detects arbitrary statistical dependence and is the natural
+information-theoretic answer. It is declined here on three grounds, and the grounds are
+practical rather than principled:
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{No closed-form null.} Every $p$-value must be permutation-calibrated, which
+is affordable but removes the one advantage a closed form would confer.
+\item \textbf{Estimator bias at these sample sizes.} Binning and $k$-nearest-neighbour
+estimators are both biased at $n$ in the tens to low hundreds, and the bias direction
+depends on the estimator and its tuning.
+\item \textbf{A tuning parameter.} Bin width or $k$ must be chosen, and the estimate moves
+with it. This is the same objection already used to retire the block bootstrap from
+calibration routing, and applying it inconsistently would be worse than applying it
+strictly.
+\end{enumerate}
+
+\noindent
+If a reviewer asks why the Qubit Health Analytics quartet was reduced to a trio, that is
+the answer, and it is a defensible one: the two symmetric omnibus measures are
+represented by distance correlation, the monotone case by Spearman, and the directional
+functional question by $\xi$, which their set does not cover at all.
+
+% ==============================================================
+\section{Validation protocol for transcribed statistical code}
+\label{sec:validation}
+% ==============================================================
+
+Transcribing a published equation is not a neutral act. The protocol below is the
+standing requirement for \emph{every} statistical routine in this project that is not a
+direct library call, and it is stated as a general rule rather than a one-off exercise so
+that a routine added later cannot escape it.
+
+\subsection{Four tiers, all required}
+
+\begin{description}[leftmargin=1.8em,itemsep=4pt]
+\item[Tier 1, internal identity.] The transcription reproduces an independently derived
+algebraic form of the same object. Example already in place: eq.~(7) at $\gh=1$ is
+checked against the textbook Anderson-Darling form
+$-N - N^{-1}\sum(2i-1)[\ln u_i + \ln(1-u_{N+1-i})]$ to float precision, and eq.~(16) at
+$m=1$ is checked against eq.~(4).
+
+\item[Tier 2, published reference value.] The routine reproduces a number printed in the
+literature, from data also printed in the literature. This is the tier the battery was
+missing and it is the one that catches transcription errors nothing else catches. Any
+discrepancy is documented rather than tuned away.
+
+\item[Tier 3, null calibration.] Under a simulated null the $p$-values are uniform, or
+the empirical rejection rate matches nominal within Monte Carlo error, at the sample
+sizes actually used. For exact tests this is a property that must hold and its failure is
+a bug; for asymptotic tests it is a measurement of asymptotic error, not a pass or fail.
+
+\item[Tier 4, cross-implementation.] Where an independent implementation exists, the
+statistic agrees with it on a fixed input to a pinned tolerance, with the reference values
+committed as fixtures rather than recomputed at test time.
+\end{description}
+
+\subsection{Tier 2 is available for C1 and C2 and should be taken}
+
+The paper carries two worked examples with numbers, and the first carries its data.
+
+\paragraph{Load-haul-dump machine data.} Kumar, Klefsjö and Granholm (1989), reproduced
+as the paper's Table 1: 36 failure times in hours, time censored at $\tau=2000$. The
+published targets are
+
+\begin{center}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Quantity} & \textbf{Paper} & \textbf{This code} & \textbf{Status}\\
+\midrule
+$\hat\mu$ (complete gaps) & 54.72 & 54.72 & exact\\
+$\hat\sigma$ (complete gaps) & 48.61 & 47.93 & \textbf{differs, see below}\\
+$\gh$ (complete gaps) & 0.888 & 0.876 & \textbf{differs, see below}\\
+$\tilde\mu$ (eq.~10) & 55.56 & 55.56 & exact\\
+$\tilde\sigma$ (eq.~10) & 47.23 & 47.23 & exact\\
+$\tilde\gamma$ (eq.~10) & 0.850 & 0.850 & exact\\
+$\sigma^{*}$ (eq.~11) & 42.77 & 42.77 & exact\\
+Laplace statistic & 0.605 & 0.605 & exact\\
+LR with $\sigma^{*}$ & 0.774, $p=0.44$ & 0.774, $p=0.44$ & exact\\
+LR with $\gh$ & 0.681, $p=0.50$ & 0.691, $p=0.49$ & follows from the above\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{The one discrepancy, and it is the paper's, not the code's.}
+The paper's Appendix 1 defines the estimator with the population divisor,
+$\hat\sigma^2 = N^{-1}\sum(X_i - \hat\mu)^2$, and proves consistency in that form. Its
+Table 2 reports $48.61$, which is the \emph{unbiased} $1/(N-1)$ value:
+$47.93 \times \sqrt{36/35} = 48.61$ to two decimals, and
+$48.61/54.72 = 0.888$, giving $0.605/0.888 = 0.681$ as printed. So the paper's text and
+its table use different divisors. \MEASURED
+
+The implementation follows the \emph{text}, with the stated reason that matching
+eq.~(10)'s divisor makes the two $\gamma$ estimators differ only by the residual term.
+That is a defensible choice and the resulting $1.4\%$ shift in $\gh$ moves no verdict.
+But it must be recorded, because a golden test that pins $0.888$ would fail against
+correct code, and a golden test that pins $0.876$ without explanation looks like a
+transcription error to a reviewer holding the paper.
+
+\paragraph{Small bowel motility data.} Aalen and Husebye (1991), 19 persons, 80 complete
+periods, one censored period each. This is an $m=19$ example and therefore the only
+published exercise of eq.~(16) in its multi-process form. Published targets:
+$\hat\mu = 98.76$, $\hat\sigma = 52.62$, $\gh = 0.533$; Weibull fit
+$\tilde\mu = 104.49$, $\tilde\sigma = 52.45$, $\tilde\gamma = 0.502$; Laplace $=1.95$;
+$\mathrm{LR}^m = 1.95/0.533 = 3.67$ with $p = 0.00024$, against $p = 0.051$ for the
+corresponding HPP null. The data are in Aalen and Husebye (1991), not in the paper, so
+this fixture requires obtaining that dataset. It is worth the effort: nothing else
+validates the $m>1$ path against a published number.
+
+\subsection{Tier 2 for the checks that have no published example}
+
+C5 and C6 are assembled, so no worked example exists. Their Tier 2 substitute is
+threefold and each part is checkable:
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+\item \emph{Exactness is a testable property, not an aspiration.} Under an exchangeable
+null the permutation $p$-value must be uniform on the attainable grid. A
+Kolmogorov-Smirnov test of the $p$-value distribution against uniform, over a few
+thousand replicates, is the strongest single statement available about these two checks
+and it does not depend on any citation.
+\item \emph{The lag-1 statistic has an external counterpart.} \texttt{randtests::bartels.rank.test}
+computes the rank von Neumann ratio, and base R's
+\texttt{cor(rank(x[-n]), rank(x[-1]), method="spearman")} computes the lag-1 rank
+autocorrelation directly. Both are Tier 4 cross-checks on the statistic.
+\item \emph{Romano and Tirlea's Table 5.1 is a reproducible target for the bench.} At
+$n=50$ under a true independent and identically distributed null they report studentized
+$0.0465$ and naive $0.0493$; under $m$-dependence with $m=1$, studentized $0.0611$ and
+naive $0.1388$. Their data-generating process is raw Gaussian sequences rather than
+carved durations, so this is an analogue and not a fixture, but a bench that cannot
+reproduce the qualitative separation is a broken bench. \SIMULATED
+\end{enumerate}
+
+\subsection{Tier 2 and 4 for \texorpdfstring{$\xi$}{xi}}
+
+$\xi$ is currently computed in the shape statistics without any of the four tiers, which
+is an inconsistency: it is transcribed code held to a lower standard than the checks. It
+should be brought up to the same bar.
+
+\begin{description}[leftmargin=1.8em,itemsep=3pt]
+\item[Tier 1.] The tie-free simplification $1 - 3\sum|r_{i+1}-r_i|/(n^2-1)$ must agree
+with the general form \eqref{eq:xi} on tie-free input.
+\item[Tier 4.] \texttt{XICOR::xicor} is on CRAN and returns both the coefficient and the
+asymptotic $p$-value. With R now available this is a direct fixture: commit a handful of
+inputs and the R answers, and pin them.
+\item[Tier 3, and this is the one that matters here.] The $2/5$ asymptotic variance is
+derived for continuous tie-free data. Our durations are lattice-valued and heavily tied.
+The required experiment is a three-way comparison on the same data: the published
+asymptotic $p$-value, our closed-form $p$-value, and our permutation $p$-value, across
+increasing tie fraction. Where the closed form and the permutation diverge, the closed
+form is not usable and the ledger must say so.
+\end{description}
+
+\noindent
+The same three-way figure is the natural validation artifact for the whole document:
+one panel per instrument, showing published value, our asymptotic value, and our
+permutation value, with the sample sizes and tie fractions the project actually operates
+at. That figure is what licenses an instrument for the pipeline.
+
+\subsection{Distance correlation}
+
+Distance correlation is symmetric and consistent against arbitrary dependence, and is
+what the comparable qubit-calibration literature uses, so it belongs in the shape
+statistics on equal footing with $\xi$ and $\rho$. Its validation follows the same tiers:
+Tier 1 against the double-centred distance matrix definition, Tier 4 against
+\texttt{energy::dcor} in R or the \texttt{dcor} package in Python, Tier 3 by permutation
+since the null is not pivotal. It should be rendered as a heatmap alongside $\xi$ and
+$\rho$ so the three are read together rather than one standing in for the others.
+
+% ==============================================================
+\section{Code availability of the cited methods}
+\label{sec:codestatus}
+% ==============================================================
+
+Where an implementation exists, use it. Where it does not, this table records what was
+looked for and what the authors say, so that transcription is a documented last resort
+rather than a default.
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.20\textwidth}
+                 >{\raggedright\arraybackslash}p{0.17\textwidth}
+                 >{\raggedright\arraybackslash}p{0.24\textwidth}
+                 >{\raggedright\arraybackslash}p{0.30\textwidth}@{}}
+\toprule
+\textbf{Source} & \textbf{Needed for} & \textbf{Code status} & \textbf{Action}\\
+\midrule
+Kvaløy and Lindqvist (2020), \emph{Technometrics} 62(1) &
+C1, C2, and CvM, ELR, KS if added &
+\textbf{On request.} Their \S 7 closing line: \enquote{R-code for the tests can be
+obtained from the authors.} No CRAN, PyPI or public repository located. &
+\textbf{Write to the authors.} Correspondence address on the Technometrics record is
+\texttt{jan.t.kvaloy@uis.no} (University of Stavanger); Bo Henry Lindqvist is at NTNU
+Trondheim. Ask for the code behind Table 3, which would also supply reference values for
+AD, CvM, KS and ELR on the load-haul-dump data.\\[3pt]
+
+Lindqvist and Kvaløy (2024), \emph{ASMB}, doi:10.1002/asmb.2848 &
+integrated and supremum variants, a possible future extension &
+Not located. Same group. &
+Ask in the same message. They report simulated critical values for ICvM, IKS and SELR1
+which would be reference values if those tests are ever added.\\[3pt]
+
+Marsaglia and Marsaglia (2004), \emph{JSS} 9(2) &
+C2 limiting CDF &
+\textbf{Public with the article.} \emph{Journal of Statistical Software} publishes source
+alongside every paper. &
+Download and use as a Tier 4 fixture rather than contacting anyone.\\[3pt]
+
+Lawless, Çiğşar and Cook (2012), \emph{Technometrics} 54 &
+validity of permutation under time censoring &
+Not located. &
+Low priority: the result is cited, not computed, so no code is needed to use it.\\[3pt]
+
+Romano and Tirlea (2022), \emph{JTSA} &
+C5 studentization, size targets &
+No package located; simulation tables are in the paper. &
+Use the printed Table 5.1 numbers as bench targets. Contact only if the exact generator
+is needed.\\[3pt]
+
+Chatterjee (2021), \emph{JASA} 116(536) &
+$\xi$ &
+\textbf{Public tool.} \texttt{XICOR} on CRAN, with an independence test. A third-party
+Python package exists. &
+Nothing to request. Use as a Tier 4 fixture.\\[3pt]
+
+Genest-Rémillard, Ghoudi-Kulperger-Rémillard, Kojadinovic-Yan &
+C3 &
+\textbf{Public tool.} \texttt{copula} on CRAN. &
+Nothing to request. Already the implementation.\\[3pt]
+
+Székely, Rizzo and Bakirov (2007) &
+distance correlation &
+\textbf{Public tool.} \texttt{energy} on CRAN; \texttt{dcor} on PyPI. &
+Nothing to request.\\[3pt]
+
+Lin, Wei and Ying (1993) &
+C4, parked &
+\textbf{Public tool.} \texttt{timereg::cum.residuals}, \texttt{gof::cumres.coxph}. &
+Nothing to request until a regression is fitted.\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+\noindent
+Only one row requires a message, and it is the row that matters most: the two tests the
+battery leans on hardest are the two with no public implementation in any language. A
+short, specific request naming the paper, the table, and the intended use is more likely
+to succeed than a general one, and reference values for Table 3 would upgrade C2 from
+Tier 1 to Tier 2 in a single reply.
+
+% ==============================================================
+\section{Implementation provenance}
+% ==============================================================
+
+Every statistical routine in the battery, with what it calls and where the mathematics
+comes from.
+
+\begin{center}
+\small
+\begin{tabular}{@{}p{0.10\textwidth}p{0.22\textwidth}p{0.28\textwidth}p{0.32\textwidth}@{}}
+\toprule
+\textbf{Check} & \textbf{Implementation} & \textbf{Source of the mathematics} &
+\textbf{Why not a library}\\
+\midrule
+C1 & transcribed, pure Python; \texttt{scipy.stats.norm.sf} for the normal tail &
+Kvaløy-Lindqvist eq.~(16), collapsing to eq.~(4) at $m=1$ &
+No CRAN or PyPI package implements the time-censored form. The paper's own closing line:
+\enquote{R-code for the tests can be obtained from the authors.}\\[3pt]
+C2 & transcribed, pure Python; Marsaglia-Marsaglia \texttt{adinf} for the limiting CDF &
+Kvaløy-Lindqvist eq.~(7); Marsaglia and Marsaglia, \emph{JSS} 9(2), 2004 &
+Same. \texttt{scipy.stats.anderson} is a goodness-of-fit test for named distributions and
+is a different statistic.\\[3pt]
+C3 & \textbf{imported} over a file bridge to \texttt{Rscript} &
+\texttt{copula::serialIndepTest}, \texttt{copula::serialIndepTestSim} &
+Library exists and is used. No maintained Python equivalent.\\[3pt]
+C5 & assembled from primitives; \texttt{scipy.stats.rankdata} &
+Rank autocorrelation with permutation calibration; Romano-Tirlea for the level caveat &
+No canonical package for permutation rank autocorrelation on segmented series.
+\texttt{pastecs::trend.test} is a trend test, not a serial test, and is not a
+substitute.\\[3pt]
+C6 & assembled from primitives; shares C5's harness &
+Portmanteau rank statistic, exact permutation &
+Same.\\[3pt]
+C4 & \textbf{not implemented} &
+Lin, Wei and Ying, \emph{Biometrika} 80, 1993 &
+\texttt{timereg::cum.residuals} and \texttt{gof::cumres.coxph} both exist, but there is
+no fitted regression for them to check.\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Summary of the audit.} Of five implemented checks, one imports a library and
+four transcribe published equations. The four are not reinvention: no package implements
+the time-censored Kvaløy-Lindqvist class in any language, and the authors distribute code
+on request rather than through a repository. For C5 and C6 the statistic is elementary and
+the difficulty is entirely in the segmented permutation harness, which no package
+provides because no package knows about read gaps.
+
+\paragraph{Where a library should be preferred and currently is not.} If the
+Cramér-von Mises test of Section~\ref{sec:missing} is added, it should reuse the same
+transcription path, since it comes from the same paper and no package implements it
+either. For $\xi$, the R package \texttt{XICOR} exists and includes the independence test;
+if a shape statistic ever needs an authoritative reference value, that package is the
+cross-check, in the same way R-generated golden fixtures should pin C3.
+
+% ==============================================================
+\section{Consolidated table}
+% ==============================================================
+
+\begin{center}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.05\textwidth}
+                 >{\raggedright\arraybackslash}p{0.13\textwidth}
+                 >{\raggedright\arraybackslash}p{0.20\textwidth}
+                 >{\raggedright\arraybackslash}p{0.20\textwidth}
+                 >{\raggedright\arraybackslash}p{0.08\textwidth}
+                 >{\raggedright\arraybackslash}p{0.21\textwidth}@{}}
+\toprule
+\textbf{Id} & \textbf{Null} & \textbf{Directed at} & \textbf{Calibration} &
+\textbf{Cens.} & \textbf{Status}\\
+\midrule
+C1 & renewal & monotone trend & asymptotic $N(0,1)$; permutation & native & implemented\\
+C2 & renewal & monotone and non-monotone trend & limiting AD; permutation & native & implemented\\
+C3 & serial independence & any serial dependence & simulated null (R) & none & unassessed\\
+C5 & exchangeability & localised neighbour dep. & permutation & none & implemented\\
+C6 & exchangeability & spread neighbour dep. & permutation & none & implemented\\
+\midrule
+CvM & renewal & monotone and non-monotone trend & limiting CvM; permutation & native & \textbf{recommended}\\
+ELR & renewal & symmetric non-monotone & asymptotic $N(0,1)$ & native & declined, tuning parameter\\
+KS & renewal & monotone trend & Kolmogorov & native & declined, dominated\\
+Mann & renewal & monotone trend & rank & limited & declined, redundant with C1\\
+C4 & fitted regression & misspecification & simulated Gaussian null & native & parked, World C\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ==============================================================
+\section*{References}
+% ==============================================================
+\addcontentsline{toc}{section}{References}
+
+\begin{description}[leftmargin=1.2em,labelindent=0em,itemsep=1pt,font=\normalfont]
+\item Andersen, P.~K., Borgan, Ø., Gill, R.~D. and Keiding, N. (1993).
+\emph{Statistical Models Based on Counting Processes}. Springer.
+\item Anderson, T.~W. and Darling, D.~A. (1952). Asymptotic theory of certain goodness of
+fit criteria based on stochastic processes. \emph{Annals of Mathematical Statistics}
+23:193--212.
+\item Aalen, O.~O. and Husebye, E. (1991). Statistical analysis of repeated events
+forming renewal processes. \emph{Statistics in Medicine} 10:1227--1240.
+\item Bartels, R. (1982). The rank version of von Neumann's ratio test for randomness.
+\emph{Journal of the American Statistical Association} 77(377):40--46.
+\item Billingsley, P. (1999). \emph{Convergence of Probability Measures}, 2nd ed. Wiley.
+\item Box, G.~E.~P. and Pierce, D.~A. (1970). Distribution of residual autocorrelations
+in autoregressive-integrated moving average time series models. \emph{Journal of the
+American Statistical Association} 65:1509--1526.
+\item Chatterjee, S. (2021). A new coefficient of correlation. \emph{Journal of the
+American Statistical Association} 116(536):2009--2022.
+\item Genest, C. and Rémillard, B. (2004). Tests of independence and randomness based on
+the empirical copula process. \emph{TEST} 13(2):335--369.
+\item Ghoudi, K., Kulperger, R. and Rémillard, B. (2001). A nonparametric test of serial
+independence for time series and residuals. \emph{Journal of Multivariate Analysis}
+79(2):191--218.
+\item Kojadinovic, I. and Yan, J. (2011). Tests of serial independence for continuous
+multivariate time series based on a Möbius decomposition of the independence empirical
+copula process. \emph{Annals of the Institute of Statistical Mathematics}
+63(2):347--373.
+\item Kumar, U., Klefsjö, B. and Granholm, S. (1989). Reliability investigation for a
+fleet of load haul dump machines in a Swedish mine. \emph{Reliability Engineering and
+System Safety} 24:341--361.
+\item Kvaløy, J.~T. and Lindqvist, B.~H. (1998). TTT-based tests for trend in repairable
+systems data. \emph{Reliability Engineering and System Safety} 60:13--28.
+\item Kvaløy, J.~T. and Lindqvist, B.~H. (2020). A class of tests for trend in time
+censored recurrent event data. \emph{Technometrics} 62(1):101--115.
+Preprint arXiv:1802.08339.
+\item Lawless, J.~F., Çiğşar, C. and Cook, R.~J. (2012). Testing for monotone trend in
+recurrent event processes. \emph{Technometrics} 54:147--158.
+\item Lewis, P.~A.~W. and Robinson, D.~W. (1974). Testing for a monotone trend in a
+modulated renewal process. In \emph{Reliability and Biometry}, SIAM, pp.~163--182.
+\item Lehmann, E.~L. and Romano, J.~P. (2005). \emph{Testing Statistical Hypotheses},
+3rd ed. Springer. (\S 15.2, randomisation tests.)
+\item Lin, D.~Y., Wei, L.~J. and Ying, Z. (1993). Checking the Cox model with cumulative
+sums of martingale-based residuals. \emph{Biometrika} 80(3):557--572.
+\item Lindqvist, B.~H., Elvebakk, G. and Heggland, K. (2003). The trend-renewal process
+for statistical analysis of repairable systems. \emph{Technometrics} 45:31--44.
+\item Lindqvist, B.~H. and Kvaløy, J.~T. (2024). New tests for trend in time censored
+recurrent event data. \emph{Applied Stochastic Models in Business and Industry}.
+doi:10.1002/asmb.2848.
+\item Mann, H.~B. (1945). Nonparametric tests against trend. \emph{Econometrica}
+13:245--259.
+\item Ljung, G.~M. and Box, G.~E.~P. (1978). On a measure of lack of fit in time series
+models. \emph{Biometrika} 65:297--303.
+\item Marsaglia, G. and Marsaglia, J. (2004). Evaluating the Anderson-Darling
+distribution. \emph{Journal of Statistical Software} 9(2).
+\item Romano, J.~P. and Tirlea, M.~A. (2022). Permutation testing for dependence in time
+series. \emph{Journal of Time Series Analysis}. Preprint arXiv:2009.03170.
+\item Székely, G.~J., Rizzo, M.~L. and Bakirov, N.~K. (2007). Measuring and testing
+dependence by correlation of distances. \emph{Annals of Statistics} 35(6):2769--2794.
+\end{description}
+
+\end{document}

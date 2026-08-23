@@ -1,4 +1,4 @@
-"""Archetype: composite job — overlay two sub-jobs' T2* panel data in one figure.
+"""Archetype: composite job - overlay two sub-jobs' T2* panel data in one figure.
 
 Composites live in jobs/composite/, not jobs/active/: main.py globs jobs/active for
 `run --all`, so a composite would otherwise re-run its sub-jobs on every sweep. Run it
@@ -13,7 +13,7 @@ persisted, so `ref("t2star_panel_data")` reads that artifact back with no edit t
 sub-jobs. The two references become a two-input step; the composite's own provenance
 graph click-throughs to each sub-job's graph.
 
-This compares one qubit across two dates rather than two qubits — the mechanism is the
+This compares one qubit across two dates rather than two qubits - the mechanism is the
 same, and both sub-jobs already exist as archetypes.
 """
 
@@ -22,11 +22,11 @@ from __future__ import annotations
 import numpy as np
 
 from core.job import Job
-from panels.comparison import CompareNonRepairableData, CompareNonRepairablePanel
-from panels.non_repairable import NonRepairablePanelData
+from panels.comparison import CompareSeriesData, CompareSeriesPanel
+from panels.within_calibration import WithinCalibrationPanelData
 
 
-def _compare_t2star(*panels: NonRepairablePanelData) -> CompareNonRepairableData:
+def _compare_t2star(*panels: WithinCalibrationPanelData) -> CompareSeriesData:
     """Overlay each sub-job's T2* panel data as a labeled (t_h, values) series.
 
     Reads the SIGNAL band: after the band split the raw series belongs to band 1, and
@@ -46,7 +46,7 @@ def _compare_t2star(*panels: NonRepairablePanelData) -> CompareNonRepairableData
                 np.asarray(pd_.signal.values, dtype=float),
             )
         )
-    return CompareNonRepairableData(
+    return CompareSeriesData(
         series=series,
         x_label="Elapsed time (h)",
         y_label="T2* (µs)",
@@ -65,7 +65,7 @@ _cmp = job.step(
     name="t2star_compare",
 )
 job.figure(
-    CompareNonRepairablePanel,
+    CompareSeriesPanel,
     _cmp,
     targets=["static", "academic"],
     title="t2star 0704 vs 1004",

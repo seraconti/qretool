@@ -143,7 +143,7 @@ DATASET_FILES: tuple[str, ...] = (
     "290623_6D2S_qubit6.pickle",
 )
 
-BENCH_SIZE_TABLE = Dataset(path="bench/results/size_table.csv", schema=None)
+BENCH_SIZE_TABLE = Dataset(path="jobs/bench/results/size_table.csv", schema=None)
 
 
 def _label(filename: str) -> str:

@@ -52,11 +52,11 @@ The promotion report scores four checks. No conclusion anywhere rests on C3.
 The grid asked for censoring 0.25. The generator caps the segment count so each segment
 expects at least a few events, and that cap binds at every n, so the realised value is
 0.1675-0.1685 throughout. The out-of-envelope findings (notably C1 asymptotic at 0.699) are
-real, but they happened at c ≈ 0.17. `bench/report.py` now prints the realised value.
+real, but they happened at c ≈ 0.17. `jobs/bench/report.py` now prints the realised value.
 
 ## 6. The tie cutoff is weakly determined
 
-`bench/grid.py` sweeps quantisation as a BOOLEAN, not as a distinct-duration count, so the
+`jobs/bench/grid.py` sweeps quantisation as a BOOLEAN, not as a distinct-duration count, so the
 evidence brackets the cutoff between roughly 5 and 20 distinct values and no more finely.
 The ledger declares 5 and says so. On the T2* ladder it never binds - durations are
 wall-clock seconds and effectively continuous. It will bind on a quantised metric, and

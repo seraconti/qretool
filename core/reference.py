@@ -1,15 +1,15 @@
 """References: resolvable step inputs.
 
-A step input is a `Reference` — something the runner turns into a concrete value
+A step input is a `Reference` - something the runner turns into a concrete value
 via `resolve(context)`. Two kinds share that one contract:
 
-  - `LocalRef`  — another node's result in the SAME job's run (generalizes the
+  - `LocalRef`  - another node's result in the SAME job's run (generalizes the
     old NodeHandle): resolve = read it from the run's results map.
-  - `ArtifactRef` — a materialized artifact of an *included* job's node: resolve =
+  - `ArtifactRef` - a materialized artifact of an *included* job's node: resolve =
     locate (and if absent, produce) that artifact via an injected locator.
 
 This is the self-similarity the composite layer is built on: a composite consumes
-a sub-job exactly the way a step consumes an upstream result — both are References
+a sub-job exactly the way a step consumes an upstream result - both are References
 in the same input list, resolved through the same call. The locator is injected on
 the `ResolutionContext` (not baked into `ArtifactRef`), so the identity-keyed
 dir-glob strategy can be swapped for another without touching this module.

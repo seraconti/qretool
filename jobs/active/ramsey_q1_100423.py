@@ -1,4 +1,4 @@
-"""Archetype: full Ramsey job — Allan, fidelity and TLF via configure_ramsey_job.
+"""Archetype: full Ramsey job - Allan, fidelity and TLF via configure_ramsey_job.
 
 One of four representative jobs kept in jobs/active. The rest of the historical fleet
 lives in jobs_old/ as reference only; those files predate the current contracts and do

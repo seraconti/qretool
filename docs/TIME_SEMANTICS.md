@@ -32,7 +32,7 @@ Canonical Norm frequency keys:
 
 
 **Source column names** in the calibration pickles (`FOR ZENODO/Main/Fig 2/qubit*.pickle`)
-are not renamed — they remain `frequency` and `Rabi_frequency` as verified in the
+are not renamed - they remain `frequency` and `Rabi_frequency` as verified in the
 external data. The `aliases` argument to `lookup_prior` maps them to the
 correct norm keys:
 ```python
@@ -46,9 +46,9 @@ aliases={“frequency”: “qubit_frequency_hz”, “Rabi_frequency”: “rab
 
 | Level | Source | `run_start_resolution` value | Notes |
 |---|---|---|---|
-| 1 — explicit | `Dataset.extra['run_start_unix_s']` | `"explicit"` | Validated via `check_unix_s`. Preferred. |
-| 2 — date_only_midnight | DDMMYY_ filename prefix (e.g. `040423_...`) | `"date_only_midnight"` | Midnight local naive. Emits `UserWarning`. Intra-day precision lost. |
-| 3 — missing | Neither source available | raises `ValueError` | Do NOT fall back to `t_raw[0]` (~1970 epoch). |
+| 1 - explicit | `Dataset.extra['run_start_unix_s']` | `"explicit"` | Validated via `check_unix_s`. Preferred. |
+| 2 - date_only_midnight | DDMMYY_ filename prefix (e.g. `040423_...`) | `"date_only_midnight"` | Midnight local naive. Emits `UserWarning`. Intra-day precision lost. |
+| 3 - missing | Neither source available | raises `ValueError` | Do NOT fall back to `t_raw[0]` (~1970 epoch). |
 
 **Why not fall back to `t_raw[0]`?** In at least one inspected 912days Ramsey file, `timestamp` starts at 0 (relative seconds), so `t_raw[0] == 0` would yield 1970-01-01 and silently select an incorrect calibration prior.
 

@@ -1,11 +1,13 @@
 """Mean time between calibrations, 6D2S qubit 6 - the single-axes poster histogram.
 
-The repairable archetype: a calibration-event log read through CalibrationLogSchema, with
+The across-calibration archetype (the literature's repairable-system tier; see
+panels/across_calibration.py): a calibration-event log read through
+CalibrationLogSchema, with
 inter-event intervals and nothing else. No thresholds, no window carving, no gap policy -
-those belong to the non-repairable side.
+those belong to the within-calibration side.
 
 This job differs from jobs/active/mtbf_q1.py in exactly two ways, both deliberate: it
-renders ONE axes rather than the four-subplot RepairablePanel, and it renders to the
+renders ONE axes rather than the four-subplot AcrossCalibrationPanel, and it renders to the
 poster target (high-resolution PNG) rather than to static/academic PDF. The binning is not
 a third difference - `analyzers.mtbf.log_interval_histogram` is the one definition the
 panel's histogram subplot also uses.

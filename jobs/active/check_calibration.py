@@ -7,7 +7,7 @@ figures cannot silently be built against a different bench, and
 `tests/test_bench_isolation.py` still holds because the dependency runs through provenance
 rather than through the import graph.
 
-`bench/results/*.csv` is inside the repository, not under the dataset root, which is why
+`jobs/bench/results/*.csv` is inside the repository, not under the dataset root, which is why
 `core.paths.resolve_dataset_path` grows a repo-root fallback - see its docstring.
 
 The fourth figure re-simulates rather than reshaping a table: a P-P plot needs the
@@ -40,8 +40,8 @@ VALIDATION_SEED = 20260811
 VALIDATION_REPLICATES = 4000
 VALIDATION_N = (20, 50, 355)
 
-SIZE_TABLE = Dataset(path="bench/results/size_table.csv", schema=None)
-POWER_TABLE = Dataset(path="bench/results/power_table.csv", schema=None)
+SIZE_TABLE = Dataset(path="jobs/bench/results/size_table.csv", schema=None)
+POWER_TABLE = Dataset(path="jobs/bench/results/power_table.csv", schema=None)
 
 job = Job(PREFIX)
 

@@ -1,4 +1,4 @@
-"""Band 3 of the composed non-repairable panel: reliability.
+"""Band 3 of the composed within-calibration panel: reliability.
 
 The 2-state view - the one the carve actually used - and what follows from it: how long
 windows last, how much of the observed record was in spec, and how many windows the
@@ -108,7 +108,7 @@ class ReliabilityBand(StaleArtifactGuard):
             if missing:
                 raise ValueError(
                     f"incomplete ReliabilityBand: {name} is missing threshold(s) "
-                    f"{missing} — construct via analyzers.reliability_band.run()"
+                    f"{missing} - construct via analyzers.reliability_band.run()"
                 )
 
 
@@ -172,7 +172,7 @@ def _compliance_segments(
 
 
 def run(inputs: ReliabilityBandInputs) -> ReliabilityBand:
-    from panels._non_repairable_compute import (
+    from panels._within_calibration_compute import (
         _analyze_threshold_windows,
         _cumulative_damage,
         _cumulative_time_out_of_spec,

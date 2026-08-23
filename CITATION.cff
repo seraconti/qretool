@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "QUEBRA"
+abstract: >-
+  A reliability-statistics toolkit for qubit quality time series. It carves
+  threshold-excursion durations out of a metric record and applies survival and
+  repairable-systems statistics to them, with every figure traceable to the
+  content hashes of the data and code that produced it.
+type: software
+authors:
+  - family-names: "Conti"
+    given-names: "Sera"
+    # FILL: confirm this is the address you want public and permanent.
+    # A polimi.it or tudelft.nl address is likely more durable than usp.br.
+    email: "sera.conti@usp.br"
+    # FILL: your ORCID, as a full URL. JOSS reviewers look for this.
+    # orcid: "https://orcid.org/0000-0000-0000-0000"
+    # FILL: primary affiliation for this work.
+    # affiliation: "Politecnico di Milano; QuTech, Delft University of Technology"
+license: GPL-3.0-or-later
+repository-code: "https://github.com/seraconti/quebra"
+url: "https://github.com/seraconti/quebra"
+keywords:
+  - qubit
+  - reliability
+  - survival analysis
+  - repairable systems
+  - quantum characterisation
+  - reproducibility
+# Add on the first tag:
+# version: "0.1.0"
+# date-released: "2026-09-01"

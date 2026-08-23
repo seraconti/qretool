@@ -111,7 +111,7 @@ def _check_sink_artifact_names(job: Job) -> None:
     """A sink persists its result to `{basename}.pkl`; a composite later reuses a
     persisted pkl by that name. Two sinks writing the SAME basename from DIFFERENT
     source nodes would silently clobber one another and let a composite reuse a
-    wrong-but-plausible artifact — so reject that collision at run start (before any
+    wrong-but-plausible artifact - so reject that collision at run start (before any
     output dir exists). Duplicates that resolve to the same node are harmless."""
     basename_source: dict[str, str] = {}
     for sink in job.sinks:
@@ -157,8 +157,8 @@ def _reuse_eligible_dir(
     consumer's tree clean NOW, and the artifact PRODUCED on a clean tree. Commit +
     clean-tree (both ends) stand in for a dependency hash on imported/shared code
     (which the identity's code component does not capture): they guarantee the
-    artifact was built from — and is being reused under — exactly the committed
-    code. Any mismatch re-runs — commit-safe, not content-safe against code edits.
+    artifact was built from - and is being reused under - exactly the committed
+    code. Any mismatch re-runs - commit-safe, not content-safe against code edits.
     `candidates` is sorted oldest→newest.
     """
     if not tree_clean:
@@ -173,10 +173,10 @@ def _reuse_eligible_dir(
 def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArtifact:
     """The identity-keyed dir-glob locator (the strategy injected on the context).
 
-    Finds the included sub-job's `{node_name}.pkl` — under --reuse-deps from a
+    Finds the included sub-job's `{node_name}.pkl` - under --reuse-deps from a
     prior standalone or nested run whose identity AND commit match and whose tree
     is clean, otherwise by fresh-running the sub-job in figures-as-materialize mode
-    nested under this composite's subjobs_output/ — loads it, and returns the value
+    nested under this composite's subjobs_output/ - loads it, and returns the value
     plus provenance facts. The strategy is injected on the context, so it can be
     swapped without changing ArtifactRef.
     """
@@ -194,7 +194,7 @@ def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArt
     dir_glob = f"{inc.job.name}_{identity_short}_*"
 
     def _cached_runs() -> list[Path]:
-        # A reusable run is one whose dir holds {node_name}.pkl — a standalone run
+        # A reusable run is one whose dir holds {node_name}.pkl - a standalone run
         # that materialized it, or ANY composite's nested subjobs_output at any
         # depth. Search the whole pool recursively (`**/` matches every depth,
         # including direct children of the pool root); the dir basename ends with
@@ -205,7 +205,7 @@ def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArt
         # include's fresh write. Under nesting `job_out_dir` is the *innermost*
         # run's dir, so this is a per-nested-run guarantee: a sibling branch's
         # already-FINISHED artifact (written earlier in the same top invocation,
-        # under an ancestor composite) is a valid candidate — resolution is
+        # under an ancestor composite) is a valid candidate - resolution is
         # sequential (no partial-write race) and the identity+commit+clean-tree
         # gate still applies, so that is content-correct diamond dedup, not a leak.
         candidates = pool_root.glob(f"**/{dir_glob}")
@@ -329,11 +329,11 @@ def _emit_prov(
     """Build and save one sink's provenance record.
 
     Datasets reachable from `root_node_id` are looked up in `resolved_datasets`
-    (the run's single resolution point — the same paths the loader opened, so the
+    (the run's single resolution point - the same paths the loader opened, so the
     recorded hash describes the file actually loaded) and hashed via `content_hash`
     (memoized per process). Shared by the figure and materialize sinks so their two
     prov passes cannot drift apart. Only `prov_name`, `targets`, and
-    `figure_node_label` differ between them. Hash failures propagate — a
+    `figure_node_label` differ between them. Hash failures propagate - a
     placeholder hash is never recorded.
     """
     ancestors = _ancestors(job, root_node_id)
@@ -396,7 +396,7 @@ def run_job(
     _check_sink_artifact_names(job)  # fail-fast before any output dir exists
 
     # Resolve every dataset path once (fail-fast on a missing file, before any
-    # output dir exists) — this mapping feeds BOTH the execution loop (loader) and
+    # output dir exists) - this mapping feeds BOTH the execution loop (loader) and
     # _emit_prov (hashing), so the recorded hash describes the file actually loaded.
     resolved_datasets: dict[str, Path] = {
         node_id: resolve_dataset_path(node.kwargs["dataset"].path, dataset_root)
@@ -410,7 +410,7 @@ def run_job(
     identity_short = identity[:6]
 
     # Reuse gate (standalone jobs; composites always run fresh). Skip only when a
-    # prior run has the SAME identity AND the SAME commit AND the tree is clean —
+    # prior run has the SAME identity AND the SAME commit AND the tree is clean -
     # any mismatch (edited shared code → commit differs; dirty tree) re-runs fresh.
     if not is_composite and not force:
         candidates = sorted(

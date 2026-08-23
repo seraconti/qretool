@@ -13,7 +13,7 @@ class TLFResult:
     bic_delta: float
     normalized_bic_delta: float | None
     lobe_separation_ppm: float | None
-    # weighted sqrt of per-lobe variances — reflects within-state spread, NOT a clean noise floor; confounded by drift and unresolved sub-fluctuators.
+    # weighted sqrt of per-lobe variances - reflects within-state spread, NOT a clean noise floor; confounded by drift and unresolved sub-fluctuators.
     within_lobe_spread_ppm: float | None
     lobe_snr: float | None
     gmm1: Any

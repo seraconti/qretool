@@ -1,9 +1,14 @@
-"""Archetype: repairable-system job — MTBF over a calibration-event log.
+"""Archetype: across-calibration job - MTBF over a calibration-event log.
+
+The reliability literature calls this tier repairable-system analysis. This project
+names it after the calibration boundary; see panels/across_calibration.py for why, and
+for where the literature's terms are deliberately kept.
 
 The only archetype that is NOT a degradation trace. It reads a calibration log through
 CalibrationLogSchema (one row per event, no T2*/frequency series), derives inter-event
-intervals, and renders RepairablePanel. No thresholds, no window carving, no gap policy:
-those belong to the non-repairable side, where a metric degrades between observations.
+intervals, and renders AcrossCalibrationPanel. No thresholds, no window carving, no gap policy:
+those belong to the within-calibration side, where a metric degrades between
+observations.
 """
 
 from __future__ import annotations
@@ -13,7 +18,11 @@ from analyzers.mtbf import MtbfResult
 from core.dataset import Dataset
 from core.job import Job
 from core.types import Norm
-from panels.repairable import RepairablePanel, RepairablePanelData, make_mtbf_panel_data
+from panels.across_calibration import (
+    AcrossCalibrationPanel,
+    AcrossCalibrationPanelData,
+    make_mtbf_panel_data,
+)
 from schemas.calibration_log import CalibrationLogSchema
 
 job = Job("mtbf_q1")
@@ -33,7 +42,7 @@ def _run_mtbf(n: Norm) -> MtbfResult:
     return mtbf.run(mtbf.make_inputs_from_norm(n))
 
 
-def _make_panel_data(result: MtbfResult) -> RepairablePanelData:
+def _make_panel_data(result: MtbfResult) -> AcrossCalibrationPanelData:
     return make_mtbf_panel_data(result)
 
 
@@ -41,4 +50,6 @@ mtbf_result = job.step(_run_mtbf, norm, name="mtbf")
 panel_data = job.step(_make_panel_data, mtbf_result, name="mtbf_panel_data")
 
 job.materialize(panel_data, name="mtbf_q1_panel_data")
-job.figure(RepairablePanel, panel_data, targets=["static", "academic"], title="mtbf_q1")
+job.figure(
+    AcrossCalibrationPanel, panel_data, targets=["static", "academic"], title="mtbf_q1"
+)

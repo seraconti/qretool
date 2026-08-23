@@ -1,4 +1,4 @@
-"""T2* non-repairable job for 100423_6D2S_qubit1 — carved from observed reads only.
+"""T2* within-calibration job for 100423_6D2S_qubit1 - carved from observed reads only.
 
 Deliberately does NOT call configure_ramsey_job and has NO interpolate node. Windows
 are carved from the filtered reads: the gap policy is meaningless on a uniform grid,
@@ -6,7 +6,7 @@ and an interpolated point is not an observation, so a window must never be built
 one. tests/test_windows_not_interpolated.py pins that as a property of the DAG.
 
 gap_mult, k and use_uncertainty are step kwargs, not closure captures, so they appear
-on the provenance label — the `allan` pattern, not the `filter` pattern.
+on the provenance label - the `allan` pattern, not the `filter` pattern.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from analyzers.windows import WindowsResult
 from core.dataset import Dataset
 from core.job import Job
 from jobs.common import RAMSEY_CONFIG, XI_SEED, _filter_step, _final_stage
-from panels.non_repairable import NonRepairablePanel, NonRepairablePanelData
+from panels.within_calibration import WithinCalibrationPanel, WithinCalibrationPanelData
 from schemas.track912 import track912Schema
 
 PREFIX = "q1_13h_1004_dataset"
@@ -77,7 +77,7 @@ def _t2star_panel_data(
     shape_min_reads: int,
     use_uncertainty: bool,
     xi_seed: int,
-) -> NonRepairablePanelData:
+) -> WithinCalibrationPanelData:
     return t2star.make_panel_data(
         result,
         windows=window_result.windows,
@@ -118,7 +118,7 @@ _panel = job.step(
 
 job.materialize(_windows, name=f"{PREFIX}_windows")
 job.figure(
-    NonRepairablePanel,
+    WithinCalibrationPanel,
     _panel,
     targets=["static", "academic"],
     title=f"{PREFIX}_t2star",

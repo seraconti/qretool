@@ -40,7 +40,7 @@ nearly the same thing.
 ## What we do
 
 Report it, treat it as the reference the others are compared against (that is what
-`bench/report.py::check_agreement` does), and require the same three conditions before a
+`jobs/bench/report.py::check_agreement` does), and require the same three conditions before a
 `pass`. The bench put it on HOLD: calibrated (worst z = -2.46 against 3.45), underpowered
 where it matters.
 

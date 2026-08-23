@@ -4,7 +4,7 @@ P5's closing artifact. Every input is declared as a `Dataset` and loaded with
 `job.load_df`, so each reference table's sha256 lands in `dataset_hashes` and in the run
 identity - the same discipline `check_calibration.py` uses for the bench tables. A figure
 here cannot silently be rebuilt against a regenerated fixture, and no pipeline module
-imports `bench/` or `tests/`.
+imports `jobs/bench/` or `tests/`.
 
 The four views answer four questions and are separate figures on purpose:
 
@@ -41,16 +41,17 @@ N_PERM_IN_TIE_STUDY = 999
 ASYMPTOTIC_SIZE_SEED = 777
 ASYMPTOTIC_SIZE_N = 20
 
-# Published source data and R reference values live in `reference/`, which is TRACKED.
-# They were in `tests/fixtures/` first; `tests/` is gitignored, so a fixture there would
-# not survive a clone and this figure would depend on a file no reviewer has.
-LOAD_HAUL_DUMP = Dataset(path="reference/load_haul_dump.csv", schema=None)
+# Published source data and R reference values live in `jobs/reference/`, beside the
+# jobs that declare them. They were in `tests/fixtures/` first, and `tests/` was
+# gitignored, so a fixture there would not have survived a clone and this figure would
+# have depended on a file no reviewer has.
+LOAD_HAUL_DUMP = Dataset(path="jobs/reference/load_haul_dump.csv", schema=None)
 LOAD_HAUL_DUMP_PUBLISHED = Dataset(
-    path="reference/load_haul_dump_published.csv", schema=None
+    path="jobs/reference/load_haul_dump_published.csv", schema=None
 )
-R_REFERENCE_INPUTS = Dataset(path="reference/r_reference_inputs.csv", schema=None)
-R_REFERENCE_VALUES = Dataset(path="reference/r_reference_values.csv", schema=None)
-TIE_EXPERIMENT = Dataset(path="bench/results/xi_tie_experiment.csv", schema=None)
+R_REFERENCE_INPUTS = Dataset(path="jobs/reference/r_reference_inputs.csv", schema=None)
+R_REFERENCE_VALUES = Dataset(path="jobs/reference/r_reference_values.csv", schema=None)
+TIE_EXPERIMENT = Dataset(path="jobs/bench/results/xi_tie_experiment.csv", schema=None)
 
 job = Job(PREFIX)
 

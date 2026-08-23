@@ -1,6 +1,6 @@
 """T2* coherence-time analyzer.
 
-T2STAR_DEFAULT_LADDER — analyzer-supplied starting point for 912-day silicon
+T2STAR_DEFAULT_LADDER - analyzer-supplied starting point for 912-day silicon
 quantum dot data (T2* range 1–10 µs).  Production jobs MUST supply their own
 thresholds via the `thresholds=` argument to make_panel_data:
 
@@ -22,8 +22,8 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
-from panels._non_repairable_compute import build_non_repairable_panel_data
-from panels.non_repairable import NonRepairablePanelData
+from panels._within_calibration_compute import build_within_calibration_panel_data
+from panels.within_calibration import WithinCalibrationPanelData
 
 
 @dataclass(slots=True)
@@ -109,7 +109,7 @@ def run(inputs: T2StarInputs) -> T2StarResult:
 # ---------------------------------------------------------------------------
 # Analyzer-supplied default ladder (912-day silicon quantum dot context)
 # Values in SI seconds; labels in µs.  Jobs should declare their own
-# thresholds — see module docstring.
+# thresholds - see module docstring.
 # ---------------------------------------------------------------------------
 
 T2STAR_DEFAULT_LADDER: list[tuple[str, float, bool]] = [
@@ -142,12 +142,12 @@ def make_panel_data(
     use_uncertainty: bool = False,
     thresholds: list[tuple[str, float, bool]] | None = None,
     primary_label: str | None = None,
-) -> NonRepairablePanelData:
-    """Convert T2StarResult to NonRepairablePanelData for NonRepairablePanel.
+) -> WithinCalibrationPanelData:
+    """Convert T2StarResult to WithinCalibrationPanelData for WithinCalibrationPanel.
 
     `thresholds`: job-supplied list of (label, value_s, big_values_good) triples
     where values are in SI seconds.  If None, falls back to T2STAR_DEFAULT_LADDER
-    (appropriate for the 912-day context; not universal — see module docstring).
+    (appropriate for the 912-day context; not universal - see module docstring).
     If [], no derived threshold views render.
     """
     frame = result.frame
@@ -159,7 +159,7 @@ def make_panel_data(
     panel_thresholds = [(lbl, val * 1e6, bvg) for lbl, val, bvg in resolved]
     # The carve ran in SI seconds on the SI ladder; the panel plots µs. Scaling both
     # sides by the same constant cannot move a window boundary, so the tables are
-    # valid here unchanged — only durations, which are times, need no conversion.
+    # valid here unchanged - only durations, which are times, need no conversion.
     sigma_us = (
         frame["t2star_error_s"].to_numpy(dtype=float) * 1e6
         if "t2star_error_s" in frame.columns
@@ -173,7 +173,7 @@ def make_panel_data(
     if "std_us" in result.meta:
         meta["std T2*"] = f"{result.meta['std_us']:.4g} µs"
 
-    return build_non_repairable_panel_data(
+    return build_within_calibration_panel_data(
         t_h=t_h,
         primary_series=t2star_us,
         primary_label=label,

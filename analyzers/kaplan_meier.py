@@ -4,8 +4,8 @@ This is a STEP: pure compute, no I/O, no matplotlib. It consumes the window tabl
 `analyzers/windows.py` produces and nothing else, so the gap policy, the censoring and
 the window identity are the same facts here as in every other consumer of that table.
 
-Two decisions separate this from `panels/_non_repairable_compute._window_survival`, the
-crude estimator the non-repairable panel still ships:
+Two decisions separate this from `panels/_within_calibration_compute._window_survival`, the
+crude estimator the within-calibration panel still ships:
 
 - **Right-censored windows are kept, not dropped.** A window that died at a read gap or
   at the end of the scan is not a completed lifetime, but it IS evidence that the window
@@ -22,7 +22,7 @@ crude estimator the non-repairable panel still ships:
   the count is carried on the artifact - `n_unobserved_birth_dropped` - for the figure to
   state. FIGURE_STANDARD requires the exclusion be visible in the panel, not just here.
 
-`reliability_band.estimator` is untouched by this module; flipping the non-repairable
+`reliability_band.estimator` is untouched by this module; flipping the within-calibration
 panel over to Kaplan-Meier is a separate change to that band.
 
 Durations are MINUTES (`_min`), matching `ReliabilityBand.survival_curve_min`, because

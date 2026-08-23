@@ -1,14 +1,14 @@
-"""Content identity for jobs — what a run *is*, independent of when it ran.
+"""Content identity for jobs - what a run *is*, independent of when it ran.
 
 An `Identity` folds three contributions through one canonical encoder:
 
-    code     — the job file's source hash
-    data     — the content hashes of the datasets it loads (sorted by path)
-    children — the identities of the sub-jobs it includes (composites)
+    code     - the job file's source hash
+    data     - the content hashes of the datasets it loads (sorted by path)
+    children - the identities of the sub-jobs it includes (composites)
 
 so a composite *consumes* its sub-jobs' identities instead of re-deriving them.
 The encoder (`fold`) takes a name→hex mapping and sorts keys, so a new
-contribution is added by putting another key in the mapping — no call site
+contribution is added by putting another key in the mapping - no call site
 changes. Everything folded is a deterministic hex digest (never a Python object
 repr, never a memory address), so the same code on the same data always yields
 the same identity.
@@ -38,7 +38,7 @@ def fold(components: Mapping[str, str]) -> str:
     Keys are sorted so insertion order never affects the result; adding a new
     contribution key extends the fold without touching existing call sites. JSON
     encoding (not "k=v" joining) keeps it injective even if a key or value ever
-    contains a separator character — this is the load-bearing encoder a later
+    contains a separator character - this is the load-bearing encoder a later
     increment keys artifact reuse on.
     """
     canonical = json.dumps(components, sort_keys=True, separators=(",", ":"))

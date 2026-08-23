@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-# Type aliases — semantic labels for array roles in the pipeline
+# Type aliases - semantic labels for array roles in the pipeline
 TimeSeries = Any   # 1-D np.ndarray indexed by t_rel_s
 Parameter = Any    # 1-D np.ndarray broadcast-constant (scalar value repeated to match t_rel_s)
 

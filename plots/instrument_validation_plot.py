@@ -122,7 +122,7 @@ class TierMatrixPlot(BasePlot):
                 0.015,
                 "Tier 1 (equation review) is not drawn - it has no number. "
                 "'absent' means no evidence was gathered, not evidence of failure. "
-                "None of this scores power: see bench/results/promotion_report.md.",
+                "None of this scores power: see jobs/bench/results/promotion_report.md.",
                 ha="center",
                 **theme.CAPTION,
                 wrap=True,
@@ -333,7 +333,7 @@ class CrossImplementationPlot(BasePlot):
 
 
 class TieExperimentPlot(BasePlot):
-    """What response ties cost Chatterjee's xi - the three questions of `bench/xi_ties.py`."""
+    """What response ties cost Chatterjee's xi - the three questions of `jobs/bench/xi_ties.py`."""
 
     def build_matplotlib(self, result: object, style: str = "default") -> plt.Figure:
         pd_ = _check(result)

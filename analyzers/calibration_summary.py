@@ -1,7 +1,7 @@
 """Turning the bench tables into the four typed artifacts the calibration figures draw.
 
 These are steps: pure compute, no disk, no matplotlib. The bench tables arrive as
-DataFrames that the job loaded as datasets, so nothing here imports `bench/` - the
+DataFrames that the job loaded as datasets, so nothing here imports `jobs/bench/` - the
 dependency runs through provenance (their sha256 enters the run identity) rather than
 around it.
 
@@ -358,13 +358,13 @@ __all__ = [
 # --------------------------------------------------------------------- bench acceptance
 #
 # "Is this check calibrated at this event count?" has ONE arithmetic definition, and it
-# lives here rather than in `bench/report.py` so that the ledger (a pipeline step) and the
-# report (a study) cannot drift apart. The dependency direction allows it: `bench/` may
+# lives here rather than in `jobs/bench/report.py` so that the ledger (a pipeline step) and the
+# report (a study) cannot drift apart. The dependency direction allows it: `jobs/bench/` may
 # import `analyzers/`, never the reverse.
 #
 # What is shared is the per-cell z-test and its multiplicity correction. What is NOT shared
 # is the aggregation: the report takes the worst cell over all n >= 35 to score a check
-# overall, while the ledger asks about one n at a time. `bench/report.py` imports
+# overall, while the ledger asks about one n at a time. `jobs/bench/report.py` imports
 # `null_se`, `bonferroni_z_crit` and the three constants from here, so the difference
 # between them is the grouping they apply and nothing else.
 #

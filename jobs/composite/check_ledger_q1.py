@@ -49,7 +49,7 @@ LAG_MAX = 5
 N_PERMUTATIONS = 999
 SEED = 20260812
 
-BENCH_SIZE_TABLE = Dataset(path="bench/results/size_table.csv", schema=None)
+BENCH_SIZE_TABLE = Dataset(path="jobs/bench/results/size_table.csv", schema=None)
 
 job = Job("check_ledger_q1")
 

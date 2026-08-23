@@ -1,21 +1,21 @@
 # Panel Contract
 
-Defines the interface between metric modules and `NonRepairablePanel`.
+Defines the interface between metric modules and `WithinCalibrationPanel`.
 Last updated: R1 (2026-05-26).
 
 ---
 
 ## Architecture
 
-`NonRepairablePanel` is a **generic** rendering component. It knows nothing
+`WithinCalibrationPanel` is a **generic** rendering component. It knows nothing
 about fidelity, Allan deviation, or any other specific metric. All
 domain-specific knowledge lives in adapter functions beside their analyzer
 (`analyzers/t2star.py::make_panel_data`, `analyzers/fidelity.py::make_panel_data`)
-that convert a typed result into `NonRepairablePanelData`.
+that convert a typed result into `WithinCalibrationPanelData`.
 
 Those adapters are called by a job STEP, never at draw time. `FidelityPlot` and
 `T2StarPlot` used to build panel data inside `build_matplotlib`, where no DAG node
-could supply the window tables; both are gone and jobs use `NonRepairablePanel`
+could supply the window tables; both are gone and jobs use `WithinCalibrationPanel`
 directly off a panel-data step.
 
 The panel does **not** import from `analyzers.*` for domain logic. It does import
@@ -26,7 +26,7 @@ domain-specific.
 
 ## Three bands
 
-`NonRepairablePanelData` is composed of one contract per band, each produced by its own
+`WithinCalibrationPanelData` is composed of one contract per band, each produced by its own
 step, each complete on its own, each replaceable without touching the others:
 
 | band | step | question it answers |
@@ -35,15 +35,15 @@ step, each complete on its own, each replaceable without touching the others:
 | `distinguish` | `analyzers/distinguish_band.py` | can a reader tell in from out at all |
 | `reliability` | `analyzers/reliability_band.py` | what follows from the 2-state carve |
 
-The outer class owns only what all three share — the ladder, `primary_label`, `traces`,
-the render flags — plus `meta`.
+The outer class owns only what all three share - the ladder, `primary_label`, `traces`,
+the render flags - plus `meta`.
 
 **Two guard requirements, both silent if forgotten.** `StaleArtifactGuard` derives its
 key set from `dataclasses.fields(cls)`, so the outer class alone would validate nothing
 but the four band names: **every band inherits the guard**, and no band uses
 `slots=True` (the guard's non-dict branch fires on the slots tuple even for a valid
 load). And because the per-threshold maps moved off the class that owns `thresholds`,
-each band exposes `check_thresholds(labels)` which the outer `__post_init__` calls —
+each band exposes `check_thresholds(labels)` which the outer `__post_init__` calls -
 without it the construction-time completeness contract silently drops to nothing.
 
 **Both compliance timelines are drawn, never merged.** Band 2 renders the 4-state view
@@ -69,16 +69,16 @@ signal axis rather than in a subplot of their own.
 (`up_crossing` birth, uncensored), then `shape_min_reads`; a threshold with fewer surviving
 windows than `SHAPE_SUPPORT_FLOOR` is named as unsupported rather than drawn. On the
 shipped T2* ladder that is one threshold. Every median ships with its defined-count, and
-`rho2` is never rendered without Chatterjee's xi and the falling-limb rho beside it —
+`rho2` is never rendered without Chatterjee's xi and the falling-limb rho beside it -
 a symmetric excursion drives Spearman to zero by construction.
 
 ---
 
-## NonRepairablePanelData — full field reference
+## WithinCalibrationPanelData - full field reference
 
 ```python
 @dataclass
-class NonRepairablePanelData:
+class WithinCalibrationPanelData:
     # Required
     t_h: np.ndarray            # time in hours (x-axis for all subplots)
     primary_series: np.ndarray # metric values (same units as thresholds)
@@ -108,7 +108,7 @@ class NonRepairablePanelData:
         # per-read 1-sigma on primary_series, same units. Drawn as error bars under
         # the trace; snapshotted y-limits keep it from driving autoscale.
     gap_spans_h: list[tuple[float, float]]
-        # (t_before, t_after) per read gap. The trace is BROKEN across these — a line
+        # (t_before, t_after) per read gap. The trace is BROKEN across these - a line
         # through unobserved time is an interpolation the data does not support.
     timeline_segments_per_threshold: dict[str, list[tuple[float, float, str]]]
         # (t_start_h, t_end_h, state) runs. Required per threshold by __post_init__.
@@ -122,7 +122,7 @@ class NonRepairablePanelData:
 
 ## Panel-internal computations
 
-The following are computed by `build_non_repairable_panel_data` from
+The following are computed by `build_within_calibration_panel_data` from
 `(t_h, primary_series, thresholds, direction, damage_fn)` plus the window and read
 tables. They are NOT separate metric modules. No analyzer module should reimplement
 them.
@@ -134,19 +134,19 @@ raises rather than carving a second time.
 
 | Computation | Method | Integration rule | Notes |
 |---|---|---|---|
-| Threshold compliance timeline | `_timeline_segments` | — | Gantt bars over per-read `state`; 2 or 4 states depending on `use_uncertainty` |
-| Window survival | `_window_survival` | — | Empirical survival, **censored windows dropped** |
-| CV, initial value, range | `_draw_summary` | — | Summary text |
-| Per-threshold window stats | `_analyze_threshold_windows` + `_carve_counts` | — | Above/below counts, mean, p90, plus `n_windows`, `n_censored`, `n_endurance_bags`, `n_gaps` |
+| Threshold compliance timeline | `_timeline_segments` | - | Gantt bars over per-read `state`; 2 or 4 states depending on `use_uncertainty` |
+| Window survival | `_window_survival` | - | Empirical survival, **censored windows dropped** |
+| CV, initial value, range | `_draw_summary` | - | Summary text |
+| Per-threshold window stats | `_analyze_threshold_windows` + `_carve_counts` | - | Above/below counts, mean, p90, plus `n_windows`, `n_censored`, `n_endurance_bags`, `n_gaps` |
 | **Cumulative time out of spec** | `_cumulative_time_out_of_spec` | Left-Riemann | Step-function indicator; result in hours |
 | **Cumulative damage** | `_cumulative_damage` | Trapezoidal | Continuous damage_rate; result in primary_unit · h |
-| **MTTR (first crossing time)** | `_mttr` | — | Scalar per threshold; shown in summary text |
+| **MTTR (first crossing time)** | `_mttr` | - | Scalar per threshold; shown in summary text |
 
 ### Why left-Riemann for time out of spec, trapezoidal for damage
 
 The out-of-spec indicator is a step function: `{0, 1}`. Trapezoidal
 integration would interpolate between 0 and 1 at transitions, which is
-physically wrong — a moment is either in-spec or out-of-spec. Left-Riemann
+physically wrong - a moment is either in-spec or out-of-spec. Left-Riemann
 correctly assigns the state at the left edge of each interval.
 
 The damage rate (excess after applying `damage_fn`) is continuous assuming
@@ -156,15 +156,15 @@ is second-order accurate and appropriate for continuous integrands.
 ### Polarity convention (big_values_good per threshold)
 
 Each threshold tuple carries a `big_values_good: bool` as its third element.
-Polarity is per-threshold — different thresholds in the same panel can have
+Polarity is per-threshold - different thresholds in the same panel can have
 different polarities.
 
-For `big_values_good=False` (e.g. infidelity — lower is better):
+For `big_values_good=False` (e.g. infidelity - lower is better):
   - `out_of_spec[i] = primary_series[i] > threshold_value`
   - `excess[i] = max(primary_series[i] - threshold_value, 0)`
   - TTF: first `i` where `primary_series[i] > threshold_value`
 
-For `big_values_good=True` (e.g. T2* — higher is better):
+For `big_values_good=True` (e.g. T2* - higher is better):
   - `out_of_spec[i] = primary_series[i] < threshold_value`
   - `excess[i] = max(threshold_value - primary_series[i], 0)`
   - TTF: first `i` where `primary_series[i] < threshold_value`
@@ -174,7 +174,7 @@ For `big_values_good=True` (e.g. T2* — higher is better):
 `None` → identity on excess (`lambda x: x`). Produces linear damage in the
 excess above/below the threshold. The y-axis label is
 `"Cumulative damage ({primary_label} · h)"`. Callers using nonlinear
-`damage_fn` should note that the label is not automatically updated — they
+`damage_fn` should note that the label is not automatically updated - they
 may supply a descriptive `primary_label` that includes units if needed.
 
 ### Empty thresholds
@@ -216,11 +216,11 @@ four locations, so colors correspond visually.
 
 Sampling across `len(thresholds)` replaced a fixed 8-entry list indexed
 `i % 8`, which gave two thresholds the same color on any ladder longer than
-8 — the shipped T2* ladder has 10.
+8 - the shipped T2* ladder has 10.
 
 Timeline bars are colored by per-read spec state through `plots/theme.py::state_color`,
-not by the threshold color: `in_spec`, `out_of_spec`, and — when the carve ran with
-`use_uncertainty=True` — `in_spec_uncertain` / `out_of_spec_uncertain`, which are the
+not by the threshold color: `in_spec`, `out_of_spec`, and - when the carve ran with
+`use_uncertainty=True` - `in_spec_uncertain` / `out_of_spec_uncertain`, which are the
 crisp colors washed toward white. A read is uncertain when
 `abs(value - threshold) < k * sigma`. Uncertainty is an annotation only: it never moves
 a window boundary.
@@ -231,7 +231,7 @@ a window boundary.
 
 Two axes variants depending on flags:
 
-**8-axis layout** (default — both cumulative flags True):
+**8-axis layout** (default - both cumulative flags True):
 ```
 Row 0: primary (spans 2 cols)                  height ratio 1.8
 Row 1: threshold timeline (spans 2 cols)        height ratio 0.9
@@ -262,16 +262,16 @@ in a separate subplot. This keeps scalar-per-threshold outputs out of the
 
 ## Adding a new metric
 
-To add a new metric that uses `NonRepairablePanel`:
+To add a new metric that uses `WithinCalibrationPanel`:
 
 1. Write a compute function or analyzer that returns a typed result.
-2. Write an adapter function `make_<metric>_panel_data(result) -> NonRepairablePanelData`.
+2. Write an adapter function `make_<metric>_panel_data(result) -> WithinCalibrationPanelData`.
    Set `t_h`, `primary_series`, `thresholds`, `direction`, and other fields.
-3. Write a plot class that calls the adapter and delegates to `NonRepairablePanel`.
+3. Write a plot class that calls the adapter and delegates to `WithinCalibrationPanel`.
 
 **No metric needs to modify the panel.** The panel's internal computations
 (including cumulative time, cumulative damage, and MTTR) cover the standard
-non-repairable degradation analysis surface. Only add panel-internal
+within-calibration degradation analysis surface. Only add panel-internal
 computation if a new view is fundamentally about `(t, primary_series,
 thresholds)` and cannot be expressed as a step result or adapter field.
 
@@ -286,13 +286,13 @@ metric that supplies these inputs automatically gets all three views.
 
 ## Fidelity adapter
 
-`plots/fidelity_plot.py::make_fidelity_panel_data(result: FidelityResult, dataset_id: str) -> NonRepairablePanelData`
+`plots/fidelity_plot.py::make_fidelity_panel_data(result: FidelityResult, dataset_id: str) -> WithinCalibrationPanelData`
 
 Decisions made by the adapter:
 - `primary_series` = infidelity (clipped to ≥ 1e-16 for log scale)
 - `primary_label` = "Infidelity"
 - `thresholds` = "nines" thresholds in infidelity units (e.g. 0.01 = 99%
-  fidelity, 0.001 = 99.9%) — only thresholds that the data actually
+  fidelity, 0.001 = 99.9%) - only thresholds that the data actually
   crosses (`inf_min < thr < inf_max`) are included
 - `use_log_scale` = True
 - `big_values_good` = False per threshold (above infidelity threshold = out of spec)
@@ -302,8 +302,12 @@ Decisions made by the adapter:
 
 ## File size note
 
-`panels/non_repairable.py` is ~650 lines, exceeding the project's 200-line
-guideline. The natural split is to extract the compute helpers into
-`panels/_non_repairable_compute.py`. This has been deferred; R1 requires
-these views to be panel-internal and the file boundary is the most auditable
-location. A split does not change any public API and can be done at any time.
+`panels/within_calibration.py` is 1057 lines, five times the project's 200-line
+guideline. The number in this paragraph read "~650" until 2026-08-23; the file had
+grown and the doc had not.
+
+The split it proposed has since happened in part: `panels/_within_calibration_compute.py`
+builds the artifact, `_within_calibration_render.py` holds the functions-of-axes half, and
+`_within_calibration_data.py` is the typed contract. What remains in the main file is the
+drawing sequence, which is still the largest module in the tree. A further split does not
+change any public API and can be done at any time.
