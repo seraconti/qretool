@@ -51,15 +51,15 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import analyzers.checks.c1_lewis_robinson as c1
-import analyzers.checks.c2_anderson_darling as c2
-import analyzers.checks.c5_rank_autocorr as c5
-import analyzers.checks.c6_exchangeability as c6
-import analyzers.checks.cvm_cramer_von_mises as cvm
-from analyzers.calibration_summary import bonferroni_z_crit, null_se
-from analyzers.checks._permutation import block_permutations, permutation_p_value
-from analyzers.checks.result import CALIB_ASYMPTOTIC, Segment
-from analyzers.instrument_validation import (
+import quebra.analyzers.checks.c1_lewis_robinson as c1
+import quebra.analyzers.checks.c2_anderson_darling as c2
+import quebra.analyzers.checks.c5_rank_autocorr as c5
+import quebra.analyzers.checks.c6_exchangeability as c6
+import quebra.analyzers.checks.cvm_cramer_von_mises as cvm
+from quebra.analyzers.calibration_summary import bonferroni_z_crit, null_se
+from quebra.analyzers.checks._permutation import block_permutations, permutation_p_value
+from quebra.analyzers.checks.result import CALIB_ASYMPTOTIC, Segment
+from quebra.analyzers.instrument_validation import (
     measure_asymptotic_size,
 )
 

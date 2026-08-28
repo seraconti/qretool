@@ -17,7 +17,7 @@ THREE THINGS TO KNOW BEFORE READING THE OUTPUT
 3. Every job file declares a ladder byte-identical to T2STAR_DEFAULT_LADDER, so that
    ladder is used for all datasets.
 
-Usage:  PYTHONPATH=. python bench/probe_unresolved.py
+Usage:  python jobs/bench/probe_unresolved.py
 Writes: bench/results/probe_unresolved_out.csv
 """
 
@@ -31,12 +31,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from analyzers import windows
-from analyzers.t2star import T2STAR_DEFAULT_LADDER
-from core.dataset import Dataset
-from core.job import _load_dataset
-from core.paths import default_dataset_root, repo_root, resolve_dataset_path
-from schemas.track912 import track912Schema
+from quebra.analyzers import windows
+from quebra.analyzers.t2star import T2STAR_DEFAULT_LADDER
+from quebra.core.dataset import Dataset
+from quebra.core.job import _load_dataset
+from quebra.core.paths import default_dataset_root, repo_root, resolve_dataset_path
+from quebra.schemas.track912 import track912Schema
 
 K_VALUES = (0.5, 1.0, 2.0)
 LADDER_SPACING_S = 1e-6  # the ladder steps in 1 µs

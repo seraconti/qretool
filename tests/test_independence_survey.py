@@ -17,16 +17,20 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analyzers.check_ledger import VERDICT_FAIL, VERDICT_PASS, VERDICT_UNDERPOWERED
-from analyzers.checks.battery import ROW_KEYS
-from analyzers.independence_survey import (
+from quebra.analyzers.check_ledger import (
+    VERDICT_FAIL,
+    VERDICT_PASS,
+    VERDICT_UNDERPOWERED,
+)
+from quebra.analyzers.checks.battery import ROW_KEYS
+from quebra.analyzers.independence_survey import (
     CHECK_LABELS,
     CHECK_NULL,
     InstrumentGrid,
     build_independence_survey,
     survey_summary,
 )
-from plots.independence_survey_plot import SURVEY_PLOTS
+from quebra.plots.independence_survey_plot import SURVEY_PLOTS
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -218,14 +222,14 @@ def test_there_is_exactly_one_figure_per_surveyed_instrument():
     and it was RUN but drawn nowhere until this was separated - the ledger computed C3 rows
     for every dataset and every grid was built from ROW_KEYS, so they went in the bin.
     """
-    from analyzers.independence_survey import SURVEY_KEYS
+    from quebra.analyzers.independence_survey import SURVEY_KEYS
 
     assert len(SURVEY_PLOTS) == len(SURVEY_KEYS)
     assert [p.KEY for p in SURVEY_PLOTS] == list(SURVEY_KEYS)
 
 
 def test_the_survey_draws_c3_even_though_the_bench_cannot_score_it():
-    from analyzers.independence_survey import C3_KEY, SURVEY_KEYS
+    from quebra.analyzers.independence_survey import C3_KEY, SURVEY_KEYS
 
     assert C3_KEY in SURVEY_KEYS
     assert C3_KEY not in ROW_KEYS
@@ -234,7 +238,7 @@ def test_the_survey_draws_c3_even_though_the_bench_cannot_score_it():
 
 def test_every_surveyed_key_has_a_label_and_a_stated_null():
     """A grid whose caption cannot say what a red cell MEANS is not publishable."""
-    from analyzers.independence_survey import SURVEY_KEYS
+    from quebra.analyzers.independence_survey import SURVEY_KEYS
 
     for key in SURVEY_KEYS:
         assert key in CHECK_LABELS and CHECK_LABELS[key].strip()

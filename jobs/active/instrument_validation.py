@@ -20,10 +20,10 @@ checks and not five, and C3 and CvM have no bench cell at all.
 
 from __future__ import annotations
 
-from analyzers.instrument_validation import build_instrument_validation
-from core.dataset import Dataset
-from core.job import Job
-from plots.instrument_validation_plot import (
+from quebra.analyzers.instrument_validation import build_instrument_validation
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.plots.instrument_validation_plot import (
     CrossImplementationPlot,
     PublishedValuesPlot,
     TierMatrixPlot,

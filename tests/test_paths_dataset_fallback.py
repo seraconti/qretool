@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import pytest
 
-from core.paths import default_dataset_root, repo_root, resolve_dataset_path
+from quebra.core.paths import default_dataset_root, repo_root, resolve_dataset_path
 
 
-def test_a_tracked_in_repo_table_resolves(tmp_path):
+def test_a_tracked_in_repo_table_resolves(in_repo):
     """The case that forced the fallback: bench tables live inside the repo."""
     resolved = resolve_dataset_path(
         "jobs/bench/results/size_table.csv", default_dataset_root()
@@ -25,7 +25,7 @@ def test_a_tracked_in_repo_table_resolves(tmp_path):
     assert resolved.exists()
 
 
-def test_without_the_fallback_that_path_would_not_exist():
+def test_without_the_fallback_that_path_would_not_exist(in_repo):
     """Positive control: the dataset root really is the wrong place to look for it.
 
     Without this, the test above could pass because the dataset root happens to contain a
@@ -51,7 +51,7 @@ def test_the_dataset_root_wins_when_both_exist(tmp_path):
     )
 
 
-def test_an_absolute_path_is_still_existence_checked(tmp_path):
+def test_an_absolute_path_is_still_existence_checked(tmp_path, in_repo):
     missing = tmp_path / "nope.csv"
     with pytest.raises(FileNotFoundError, match="dataset not found"):
         resolve_dataset_path(missing, default_dataset_root())

@@ -1,0 +1,13 @@
+# Where this checkout finds its datasets.
+#
+# This file IS the answer to "how does a checkout work without repo-root arithmetic". The
+# data root used to be computed as `repo_root().parent`, which is `__file__` arithmetic and
+# cannot survive installation: from site-packages there is no repository to be the parent
+# of. SPEC 0002 R1.3 replaces that with an explicit resolution chain, and mechanism 3 of
+# that chain is exactly this file, discovered by walking up from the working directory.
+#
+# So the checkout keeps behaving as it always did, but through a route that is declared,
+# inspectable and overridable rather than inferred from where a .py file happens to sit.
+# Anyone else sets QUEBRA_DATA_ROOT or writes their own quebra.toml.
+[tool.quebra]
+data_root = ".."

@@ -11,10 +11,10 @@ Differs from the 6D2S Ramsey archetype in two ways, both deliberate:
 
 from __future__ import annotations
 
-from core.dataset import Dataset
-from core.job import Job
-from jobs.common import configure_ramsey_job
-from schemas.track912 import track912Schema
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.recipes import configure_ramsey_job
+from quebra.schemas.track912 import track912Schema
 
 PREFIX = "q1_2x2_16h_0307_dataset"
 

@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from analyzers.check_ledger import CheckLedger, make_inputs_from_windows
-from analyzers.check_ledger import run as run_ledger
-from core.dataset import Dataset
-from core.job import Job
-from panels.check_ledger import CheckLedgerPanel
+from quebra.analyzers.check_ledger import CheckLedger, make_inputs_from_windows
+from quebra.analyzers.check_ledger import run as run_ledger
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.panels.check_ledger import CheckLedgerPanel
 
 # The T2* ladder, repeated from the datasets' own jobs. Kept literal rather than imported
 # so the ladder this ledger scored is visible in this file and lands on the label.

@@ -11,11 +11,11 @@ threshold ladder and window carving belong to the t2star archetype, not here.
 
 from __future__ import annotations
 
-from core.dataset import Dataset
-from core.job import Job
-from jobs.common import configure_ramsey_job
-from schemas.track912 import track912Schema
-from transforms.lookup_prior import lookup_prior
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.recipes import configure_ramsey_job
+from quebra.schemas.track912 import track912Schema
+from quebra.transforms.lookup_prior import lookup_prior
 
 PREFIX = "q1_13h_1004_dataset"
 

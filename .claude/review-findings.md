@@ -1978,3 +1978,189 @@ IMPORTANT | panels/within_calibration.py:6-9 | The mechanical rename rewrote a s
 MINOR | R0.5 acceptance "No file contains an em dash" | Technically fails: `spec/ledger/*.jsonl` has 79. Editing a verbatim transcript to satisfy a style rule would be worse than the violation. | Scope the criterion to source and prose in the banner.
 
 BLOCKING-BY-SPEC | "Done when" | `git ls-files` must show `.github/` tracked, and `.github/` does not exist. The same section says "Explicitly not in this phase: ... no CI." The spec contradicts itself: `.github/` has no non-CI content to hold. The R0.1 acceptance line only requires that `.github/workflows/ci.yml` NOT be ignored, which passes. | Sera's call to amend "Done when" to the acceptance line's weaker form; do not create `.github/` just to satisfy it.
+
+---
+
+# Phase 1 / SPEC 0002 review (installability)
+
+SCOPE: whole repo, Phase 1 / SPEC 0002 (staged + untracked)
+COMMIT: 9057803 (nothing committed; phase is staged/untracked)
+
+## Manifest
+- [x] src/quebra/core/paths.py
+- [x] src/quebra/cli.py
+- [x] pyproject.toml + quebra.toml
+- [x] scripts/acceptance.sh + .github/workflows/ci.yml
+- [x] docs/WRITING_A_JOB.md + README.md
+- [x] conftest.py + tests/ deltas
+- [x] src/quebra/recipes.py + __init__.py files
+- [x] jobs/ import rewrites
+- [x] baselines reproduction
+
+## Reviewed
+- jobs/ import rewrites
+- baselines reproduction
+- src/quebra/recipes.py + __init__.py files
+- conftest.py + tests/ deltas
+- docs/WRITING_A_JOB.md + README.md
+- scripts/acceptance.sh + .github/workflows/ci.yml
+- pyproject.toml + quebra.toml
+- src/quebra/cli.py
+- src/quebra/core/paths.py
+
+## Findings
+
+### src/quebra/core/paths.py
+
+IMPORTANT | src/quebra/core/paths.py:3-7 | The module docstring, the first thing a reader meets, still says the repo root is "anchored off this file's location, the same pattern as provenance.get_git_commit". That is exactly what `repo_root` (:44-48) stopped doing in this phase - it walks up from `Path.cwd()`. The header also still calls the project `qre_tool/` and asserts the dataset root is "one level above" the repo, which is now only true because `quebra.toml` happens to say `data_root = ".."`. Header and function docstrings contradict each other on the single largest behaviour change in the phase. | Rewrite lines 3-7 to describe cwd-anchored marker discovery and the four-mechanism data root.
+
+IMPORTANT | src/quebra/core/paths.py:150-156 | An explicit root that does not exist SILENTLY falls through to the environment, then `quebra.toml`, then platformdirs. In this checkout `quebra.toml` always resolves, so `--data-root /tpyo` yields `912days/` with no warning, and the run then hashes a different dataset tree than the operator asked for. AGENTS.md 3 makes fall-through the wrong direction ("errors are raised, not swallowed"); R1.3.4 only requires a raise when NOTHING resolves, it does not ask for this. `tests/test_data_root_resolution.py:96-107` pins the fall-through as intended behaviour, so the test locks the defect in. | Raise when `explicit is not None and not root.is_dir()`; keep the fall-through for the three non-explicit mechanisms.
+
+IMPORTANT | src/quebra/core/runner.py:390 and src/quebra/cli.py:130-132 vs paths.py:139 | R1.3.5 says the `--data-root` flag maps to mechanism 1. It does not: the CLI resolves it itself and `run_job` does `Path(data_root).resolve() if data_root else default_dataset_root()`. `resolve_data_root(explicit=...)` therefore has NO production caller - mechanism 1 exists only for the test that exercises it. The two routes also disagree: the runner accepts a nonexistent root verbatim (and fails later at dataset resolution), the tested route falls through. | `run_job` should call `resolve_data_root(data_root)` so one chain governs.
+
+MINOR | src/quebra/core/paths.py:22 | `PROJECT_MARKERS` includes `pyproject.toml` and `.git`, so ANY python project or git repository above the cwd is accepted as the QUEBRA project root - a git-tracked `$HOME`, a sibling project, a vendored subrepo. Measured: `cd /tmp && repo_root()` returns `/tmp`; `cd / ` returns `/`, after which `resolve_dataset_path`'s second candidate is `/<relative path>`. No live defect (the dataset fallback then simply misses and raises), but the marker set makes "some other project" indistinguishable from "this project". | Prefer `quebra.toml` as the sole positive marker, or document that the other two are heuristics.
+
+MINOR | src/quebra/core/paths.py:65-92 | `resolve_dataset_path` is now cwd-dependent through its `repo_root()` fallback candidate, so which file gets content-hashed into the run identity depends on where the process was launched. Inside the checkout this is stable; outside it the candidate silently changes. The docstring argues the fallback (D4) but does not say it moved from `__file__` to the cwd. | One sentence in the docstring stating the fallback now follows the caller's project.
+
+MINOR | R1.3.2 | `src/quebra/_fixtures/` was not created and nothing anywhere uses `importlib.resources` (`grep -rn "importlib.resources" src/` is empty). The requirement's first mechanism, packaged resources, is simply unimplemented. Defensible - there are no packaged resources yet - but it is an undeclared deviation, and the phase claims R1.3 complete. | Say so in the checkpoint banner, or add the empty package with a README.
+
+### src/quebra/cli.py (and the death of main.py)
+
+VERIFIED PASS | R1.1.4 | `grep -rn "sys.path" src/ tests/ | wc -l` = 0. The only hit anywhere in the tree is the word appearing in `conftest.py:16`'s prose. No `jobs.*` import in `jobs/active/` or `jobs/composite/` (only stdlib + `quebra.*`). `main.py -> src/quebra/cli.py` and `jobs/common.py -> src/quebra/recipes.py` both register as `RM` renames, so R1.1.2 holds.
+
+VERIFIED PASS | src/quebra/cli.py:31-36 | The output root cannot land in site-packages: `_output_root` is `Path.cwd()/"output"` (or an explicit flag) and `_jobs_dir` is `Path.cwd()/"jobs"`. Nothing in the module touches `Path(__file__)`.
+
+IMPORTANT | AGENTS.md:45-47 and AGENTS.md:200 | This change set DELETES `main.py` (renamed to `src/quebra/cli.py`) and, in the same uncommitted working tree, ADDS a Commands block telling every agent to run `python main.py run jobs/active/<job>.py`, `python main.py run --all` and `python main.py inspect`. All three now fail with "can't open file". Line 200's layout block still lists `main.py   CLI` while the block directly above it already gained the new `src/quebra/recipes.py` entry - a half-applied edit, the exact failure class this review was asked to sweep for. | Replace with `quebra run ...` / `quebra inspect ...`, and change line 200 to `src/quebra/cli.py`.
+
+IMPORTANT | AGENTS.md:180-205 | The whole "Layout (real)" block still describes the pre-phase top-level layout (`core/`, `loaders/`, `transforms/`, `analyzers/`, `plots/`, `panels/`, `schemas/` at the repository root). After R1.1.1 every one of those lives under `src/quebra/`. The block is labelled "(real)", which is now false for eight of its ten entries. | Prefix the tree with `src/quebra/`.
+
+IMPORTANT | jobs/composite/compare_t2star_0704_vs_1004.py:3,7,8 and jobs/composite/independence_survey.py:12,33 | Both files were edited in this phase (import rewrites) and both still document `PYTHONPATH=. python main.py run jobs/composite/<job>.py` as the way to run them. `main.py` no longer exists and `PYTHONPATH=.` is no longer needed. A composite is the ONE job family a reader cannot discover by `run --all`, so its docstring is the only instruction that exists. | `quebra run jobs/composite/<job>.py`.
+
+IMPORTANT | src/quebra/__init__.py (empty) vs SPEC 0002 R1.3 acceptance | The spec's acceptance line is `QUEBRA_DATA_ROOT=/tmp/qd python -c "import quebra; print(quebra.__version__)"`. Measured from `/tmp`: `AttributeError: module 'quebra' has no attribute '__version__'`. `scripts/acceptance.sh:50-51` prints `quebra.__file__` instead, so the script passes while the stated criterion does not hold. | Add `__version__ = importlib.metadata.version("quebra")` to `src/quebra/__init__.py`, or amend the criterion.
+
+MINOR | src/quebra/cli.py:119 | `--data-root` help still says "(default: the repo's parent directory)". After R1.3 the default is the four-mechanism chain; the repo's parent is merely what `quebra.toml` happens to declare. | "default: QUEBRA_DATA_ROOT, then [tool.quebra] data_root, then the user data dir".
+
+MINOR | src/quebra/cli.py:134-139 | `quebra run --all` from a directory with no `jobs/active/` glob-matches nothing, prints nothing and exits 0. Silent success for a command that did no work, and this is now reachable because the CLI is anchored on an arbitrary cwd rather than on the repo. | Raise if `_jobs_dir("active")` does not exist, or if `job_files` is empty.
+
+MINOR | src/quebra/cli.py:16-19, 190 | `h5py` is wrapped in `try/except ImportError: h5py = None`, but `pyproject.toml:37` makes `h5py>=3.11` a mandatory dependency and `loaders/registry.py` imports it unguarded. The guard can no longer fire, and if it somehow did, `schema-wizard` on an `.h5` file falls silently through to `load(file_path)` rather than saying h5py is missing. | Drop the try/except now that the dependency is declared.
+
+### pyproject.toml + quebra.toml + Makefile
+
+VERIFIED PASS | pyproject.toml:28-40 vs R1.2.2 | Derived independently with an AST walk over all 76 files under `src/quebra/`. The third-party import set is exactly {allantools, h5py, matplotlib, numpy, pandas, pandera, platformdirs, plotly, scipy, sklearn, yaml} - 11 names, and all 11 are declared (sklearn -> scikit-learn, yaml -> PyYAML). Nothing declared is unimported. `joblib` really is absent from `src/` (it appears only in `jobs/bench/runner.py:33`), so the comment at :25-27 is accurate. `make deps` (deptry over src/quebra) exits 0, 76 files scanned, no issues.
+
+VERIFIED PASS | pyproject.toml:81-90 | `select = ["E4","E7","E9","F"]` is ruff's documented default, so this phase changes no lint outcome. Confirmed the claim at :84-85 is in the right ballpark and in the right direction: `ruff check .` under the shipped selection reports exactly 1 finding (the pre-existing F841 at `src/quebra/plots/interpolation_stage_plot.py:63`), and widening would land a reformat nobody reviewed. Correct call for an installability phase.
+
+VERIFIED PASS | pyproject.toml:66-72, 92-103, 105-125 | R1.2.4 satisfied: `[tool.ruff]`, `[tool.pytest.ini_options]` with `addopts = "--strict-markers"` and all four markers, `[tool.hatch.build.targets.wheel] packages = ["src/quebra"]`. R1.2.6 satisfied: no `[tool.importlinter]`, and `make arch` correctly SKIPS with that reason (exit 0). R1.2.3 satisfied (`dev` has all seven named tools plus `build`; `r = []`).
+
+VERIFIED PASS | LICENSE vs pyproject.toml:11 | `license = "GPL-3.0-or-later"` matches the GPLv3 text actually in `LICENSE`.
+
+IMPORTANT | .github/workflows/ci.yml:33-34 | CI runs `ruff check .` as its second step. Measured at this commit: `ruff check .` exits **1** on the pre-existing `F841` in `src/quebra/plots/interpolation_stage_plot.py:63`. The workflow therefore CANNOT be green on the first push, which is R1.4.2's own acceptance criterion ("The CI workflow passes on a push"). The spec asks CI to run the fast selector; the lint step is an addition that fails. | Fix the F841 (it is one dead assignment) or drop the lint step to match the spec.
+
+IMPORTANT | Makefile:18-20 | The skip-guard on `types` was DELETED, so `make types` now hard-fails (measured: 11 mypy errors, exit 2), and `make check` (`lint types arch test`) fails with it. AGENTS.md:50-52, edited in this same working tree, still tells agents `make types` and `make arch` "do not pass yet" and that a failure "tells you which phase you are in" - but a hard failure in `check` no longer distinguishes "wrong phase" from "you broke the build". Same for `lint`: `ruff check .` exits 1 and `ruff format --check .` reports 11 files. `make check`, the documented pre-checkpoint gate, cannot pass at this commit. | Restore the guard (or gate `types` on a spec marker the way `arch` now is), and say in AGENTS.md which of the four are expected red.
+
+MINOR | Makefile:9 | `.PHONY` lists `check lint types arch deps test test-all test-r docs clean` but not `test-real`, which is a real target at :45. A file named `test-real` would shadow it. | Add it.
+
+MINOR | Makefile:46 | `pytest -m "real or regression"` names a `regression` marker that `[tool.pytest.ini_options] markers` does not define. `--strict-markers` does not validate `-m` expressions, so this silently selects nothing rather than erroring. | Drop `or regression`, or register the marker.
+
+MINOR | pyproject.toml:69-72 vs R1.2.5 | R1.2.5 says "Exclude from the wheel: spec/, docs/adr/, tests/, data/, outputs/". No wheel `exclude` is written; the exclusion is implicit in `packages = ["src/quebra"]`. That is stronger in practice, but the sdist `exclude` at :72 is explicit while the wheel one is not, so a reader checking R1.2.5 finds nothing where they look. | One comment saying the wheel excludes by construction.
+
+MINOR | quebra.toml (untracked) | The file is the sole reason mechanism 3 resolves in this checkout and is currently UNTRACKED. If it is not staged with the rest of the phase, a fresh clone has no data root at all and every dataset job dies with `DataRootNotFound`. | Confirm it is added before the commit.
+
+### scripts/acceptance.sh + .github/workflows/ci.yml
+
+VERIFIED PASS | scripts/acceptance.sh | Ran it: exit 0, seven steps, all 0. The venv IS outside the repo (`$(mktemp -d)/venv`) and the wheel IS what is under test - verified independently by running `env -C <repo> <venv>/bin/python -c "import quebra; print(quebra.__file__)"`, which prints `/tmp/tmp.*/venv/lib64/python3.13/site-packages/quebra/__init__.py`, not `src/`. So the pytest step, despite running with the repo as cwd, exercises the installed distribution. The wheel itself is clean: 82 members, top level exactly `quebra/` and `quebra-0.1.0.dev0.dist-info/`, zero entries under `spec/ data/ outputs/ tests/ jobs/ output/`. R1.2 acceptance holds.
+
+IMPORTANT | scripts/acceptance.sh:57-58 and .github/workflows/ci.yml:36-39 | **The fast selector deselects nothing.** Measured: `pytest -m "slow or heavy or real or r"` collects 0 tests and deselects all 339; `grep` finds no `@pytest.mark.{slow,heavy,real,r}` anywhere in `tests/`. The acceptance step and CI both report 337 passed / 2 skipped, identical to the full suite. So ci.yml:36-37's stated mechanism - "The `real` marker is what keeps those tests out; CI never sees the tree they need" - is not a mechanism at all. R1.4.3 passes today only because `data/real_private/` does not yet exist and no test happens to read a private tree; nothing enforces it. | Say the marker set is declared but unused, or mark the tests that need `tool/datasets/` (`tests/test_paths_dataset_fallback.py` is the closest) before SPEC 0003 creates the private tree.
+
+IMPORTANT | pyproject.toml:69-72 (sdist exclude) | The sdist ships `.claude/` - all of it, including `review-findings.md` (2000+ lines of internal review notes on unreleased statistics) and `qre_checks_reference.tex`, plus `settings.json`, the hooks and the agent definitions. Verified against the built `dist/quebra-0.1.0.dev0.tar.gz`. `spec/ledger/*.jsonl` was correctly excluded; `.claude/` was not considered. | Add `.claude/` to `[tool.hatch.build.targets.sdist] exclude`.
+
+IMPORTANT | .github/workflows/ci.yml | CI does not run `scripts/acceptance.sh`, does not run `python -m build`, and installs from the source tree with the repository present. The single claim this phase exists to make - a wheel installs and works with no checkout - is therefore verified only by a script a human has to remember to run. R1.4 acceptance lists the two as separate criteria so this is not a spec violation, but "CI is green" will not catch a packaging regression. | Add one step running `bash scripts/acceptance.sh`, or say in the banner that CI does not cover packaging.
+
+MINOR | scripts/acceptance.sh:37 | `WHEEL="$(ls -t "${REPO}"/dist/*.whl | head -1)"` picks the newest wheel in a directory that ACCUMULATES. If the build step fails, the script keeps going and installs a stale wheel from a previous run; every later step then passes and only `STATUS=1` from the failed build makes the overall exit nonzero. The steps after a failed build prove nothing about the current tree while printing "exit 0". | `rm -rf "${REPO}/dist"` before building, or exit immediately when the build step fails.
+
+MINOR | scripts/acceptance.sh:44-46 | The venv is created but never removed, and neither is the `mktemp -d` parent. Each run leaks a full venv (numpy, scipy, matplotlib, plotly) into `/tmp`. | `trap 'rm -rf "$(dirname "${VENV}")"' EXIT`.
+
+MINOR | scripts/acceptance.sh:15 | `set -u` without `set -o pipefail`. The one pipeline (`ls -t ... | head -1`) is guarded by the emptiness check at :38, so nothing is masked today. | Note only.
+
+MINOR | .github/workflows/ci.yml:6-8 | No `concurrency` group and no `permissions:` block. Every push to every branch starts a full 2-interpreter matrix, and the job runs with the default (write) token. | `permissions: contents: read` and a concurrency group.
+
+### docs/WRITING_A_JOB.md + README.md
+
+VERIFIED PASS | docs/WRITING_A_JOB.md:13-40 | The example job is real, not illustrative. Wrote it verbatim to a scratch directory outside the repo and ran `quebra inspect my_first_job.py`: exit 0, two nodes printed. Every API it names exists with the signature shown - `Dataset(path, schema, qubit, device)` (core/dataset.py:9-15), `Job("name")` positional (core/job.py:279), `track912Schema` (schemas/track912.py:9), `t2star.run` / `t2star.make_inputs_from_norm` (analyzers/t2star.py:46,72), `job.load` / `job.step` / `job.materialize` / `job.figure` / `job.include(..., alias=)` / `.ref`. The run-directory format at :87 matches `runner.py:428` exactly (`<job>_<identity6>_<timestamp>`). The data-root order at :63-69 matches `resolve_data_root`. 124 lines, single-purpose: not doc bloat.
+
+IMPORTANT | docs/WRITING_A_JOB.md:8 | "`pip install quebra`, put a `.py` file anywhere, and run it by path." Measured: `pip index versions quebra` -> "No matching distribution found"; `https://pypi.org/pypi/quebra/json` -> 404. The distribution is unpublished (`version = "0.1.0.dev0"`, and SPEC 0001 R0.5.4 forbids tagging). The first instruction in the new doc is a command that cannot succeed, and it is the one a JOSS reviewer would try first. | "`pip install .` from a checkout, or `pip install <wheel>`" until the name is claimed on PyPI.
+
+IMPORTANT | README.md:105-106 vs scripts/acceptance.sh:35-58 | R1.4.4's acceptance is that the README install commands and the script "agree line for line", and README:107-109 asserts flatly "Nothing is documented here that the script does not do". They differ on four points: (a) the script builds a wheel with `python -m build` and installs THAT, the README says `pip install .`; (b) the script runs `pip install pytest` as its own step, the README omits it; (c) the script runs `pytest -m "not slow and not heavy and not real and not r" -q tests/`, the README says `pytest tests/`; (d) the script's venv is outside the repo, the README's `.venv` is inside it. (b) is the one that bites: after a plain `pip install .` pytest is NOT installed (it lives only in the `dev` extra), so a reviewer following the README literally gets "command not found" on the next line. | Add `pip install pytest` (or `pip install ".[dev]"`) to the README block, and soften the "line for line" claim to what is actually shared.
+
+IMPORTANT | README.md:97-98 | The clone command changed from `https://github.com/seraconti/quebra.git` to `git@github.com:seraconti/qretool.git`. The SSH form requires a key registered with GitHub; a reviewer on a machine that has never seen this repository - the governing constraint of the whole spec - cannot run it. The repository-name mismatch (quebra vs qretool) was already logged in the Phase 0 section; this change fixes the name and breaks the protocol. | `git clone https://github.com/seraconti/qretool.git`.
+
+MINOR | README.md:87-91 | The "Feedback is welcome, particularly from anyone who runs long characterization campaigns..." sentence appears twice: once inside the Status paragraph at :87 and again as its own paragraph at :89-91. Pre-existing (untouched by this diff), but the README is in R1.4.4's scope and this is in the section a reviewer reads. | Delete one.
+
+MINOR | README.md:141-142 | The Documentation section lists "time and clock semantics, the panel contract, and the figure standard" and does not mention `docs/WRITING_A_JOB.md`, the doc this phase added and the only entry point for someone writing their own job. | Add it.
+
+MINOR | docs/WRITING_A_JOB.md:31 | The showcase example wires its step as a `lambda`, nine lines after the doc explains that "anything that changes the answer belongs in a kwarg rather than a closure" (:50-52). It works (verified), but the first job a reader writes is now a closure, and `quebra inspect` renders the node as `<lambda>` with no kwargs, which is exactly the opaque graph the doc sells inspect against. | Use a named `def`.
+
+MINOR | docs/WRITING_A_JOB.md:24 | `path="tool/datasets/6D2S/070423_6D2S_qubit1.pickle"` hard-codes this researcher's private tree into the generic getting-started doc, and SPEC 0003 replaces `tool/datasets/` with the three-way `data/` split. A reader without those files gets a FileNotFoundError from step one. | Use an obviously-placeholder path, e.g. `my_device/run_001.pickle`.
+
+### conftest.py + tests/ deltas
+
+VERIFIED PASS | baselines | Reproduced all of them. `pytest -q` -> **337 passed, 2 skipped**. `pytest --collect-only -q | tail -1` -> **339 collected**; 339 - 7 (the new `tests/test_data_root_resolution.py`) = **332**, the P2 baseline, so D6(b)'s collect-count condition holds. `ruff check .` -> exactly 1 finding, the pre-existing F841 at `src/quebra/plots/interpolation_stage_plot.py:63`. `bash scripts/acceptance.sh` -> exit 0, seven steps, all 0. `mypy src/quebra/core` -> 11 errors in 2 files (out of phase). `make arch` -> SKIPPED, exit 0, correct under R1.2.6. `make deps` -> exit 0.
+
+VERIFIED PASS | tests/test_bench_isolation.py:80-96, 105-116 | The relative-import hole logged in the Phase 0 section is genuinely FIXED, confirmed by mutation against `_imports_bench` on planted files: `from ..bench import runner`, `from .bench import runner` and `from ..bench.carve import carve_windows` all now return True, while `from quebra.recipes import ...` and `import jobs` return False. `node.level` is recorded and matched.
+
+IMPORTANT | tests/test_bench_isolation.py:76-79 | The SAME class of hole remains one line away: for a non-relative `ImportFrom` only `node.module` is recorded, never `module + "." + alias`. Measured: `from jobs import bench` yields `{'jobs'}` and `_imports_bench` returns **False**. That is an ordinary, working absolute import of the bench that the guard admits. AGENTS.md 4: "Fix every site of a class, not the one that failed" - the relative half was fixed and the absolute half was not. | `roots.update(f"{node.module}.{a.name}" for a in node.names)` for the `node.level == 0` branch, and add `from jobs import bench` to the control table.
+
+IMPORTANT | tests/test_bench_isolation.py:41-50 | `PIPELINE_PACKAGES` names the seven `src/quebra/` subpackages but not the package's TOP-LEVEL modules. `cli.py` gets its own assertion at :148-149; `src/quebra/recipes.py` and `src/quebra/provenance.py` get none. `recipes.py` is the file this phase moved INTO the distributed package, so it is precisely the new module that must not depend on the study, and it is now the one that is unscanned. | Replace the seven entries with `"src/quebra"`; rglob covers all of them and the top-level modules too.
+
+IMPORTANT | tests/test_artifact_guard.py:277-290 | The ModuleNotFoundError assertion was WIDENED from `"non_repairable" in exc or "repairable" in exc` to a five-token any() including the bare strings `"panels"`, `"analyzers"` and `"core"`. D6(b) says no assertion may change; this one did, and in the direction that weakens it. Concretely: if the wheel ever fails to ship `quebra/panels/`, unpickling raises `No module named 'quebra.panels'`, the token `"panels"` matches, and the test passes - the packaging break that this whole phase exists to prevent is now indistinguishable from the accepted rename loss. The comment two lines above claims the opposite ("this clause cannot swallow an unrelated packaging break"). | Match on the REMOVED module names only: `panels.non_repairable`, `panels.repairable`, or a bare `panels.`/`analyzers.`/`core.` prefix that cannot appear under `quebra.`.
+
+MINOR | tests/test_bench_isolation.py:180-208 | The positive control still asserts `expected in _imported_roots(...)` rather than `_imports_bench(...)`, so it certifies the collector, not the predicate. This was already logged in the Phase 0 section and carried forward unchanged. It is why the `from jobs import bench` miss above is invisible: the control would happily accept `"jobs"`. | Assert `_imports_bench(planted)` as well.
+
+MINOR | tests/test_path_resolution.py:62-66 | `test_resolve_repo_path_is_cwd_independent` is now a TAUTOLOGY. `resolve_repo_path(p)` is `(repo_root()/p).resolve()` and the assertion's right-hand side is `repo_root()/"jobs"/"active"`; both sides read the same cwd-derived value, so it holds for every cwd including the `tmp_path` it chdirs to. Under the old `__file__` implementation it was a real assertion. The name and the change it was written to guard are now opposites of the shipped behaviour. | Rename to what it checks, or pin against an absolute path captured before the chdir.
+
+MINOR | tests/test_path_resolution.py:31-39, tests/test_data_root_resolution.py:110-116 | Three tests now depend on the process cwd being inside this checkout: `repo_root()` must find a marker, and `default_dataset_root()` must resolve through the repo's `quebra.toml`. Run the suite from anywhere else and they fail with `DataRootNotFound`. `scripts/acceptance.sh:57` avoids this only because it passes `env -C "${REPO}"`, which is also what stops the "clean environment" step from being as clean as its comment claims. | Note the cwd requirement in the module docstring so a future runner does not chase it.
+
+MINOR | tests/test_data_root_resolution.py:63,78 | Raw `os.chdir(deep)` inside two tests instead of `monkeypatch.chdir`. Safe today only because the `isolated` fixture already called `monkeypatch.chdir`, whose undo restores the pre-test cwd; drop the fixture from either test and the suite leaks a cwd into every test that follows. | Use `monkeypatch.chdir`.
+
+MINOR | conftest.py | Docstring-only, no code, which is the whole trick (pytest's prepend import mode puts the rootdir on `sys.path`). It works - verified, `jobs.*` and `tests.fixtures` both import - but the mechanism is entirely implicit and one `--import-mode=importlib` away from silently breaking. | Consider `sys.path` being explicit here instead; R1.1.4 scopes its ban to `src/` and `tests/`, and this file is neither.
+
+### src/quebra/recipes.py + __init__.py files + jobs/ import rewrites
+
+VERIFIED PASS | R1.1.1 / R1.1.2 / R1.1.3 | `git status --porcelain` = 136 entries: 71 `R`/`RM` renames, 0 `A`, 1 unstaged `D` (pytest.ini). No file appears as add-plus-delete. All 9 directories under `src/quebra/` carry an `__init__.py` (9 of 9, matching the acceptance criterion), plus `jobs/`, `jobs/active/`, `jobs/composite/`, `jobs/bench/`. Every module under `quebra.` imports cleanly (`pkgutil.walk_packages` over all 76: zero failures), and every file in `jobs/active/`, `jobs/composite/` and `jobs/bench/` imports cleanly.
+
+VERIFIED PASS | jobs/bench/instrument_report.py, jobs/bench/xi_ties.py | The two `sys.path.insert(0, ...parents[2])` lines were REMOVED, not preserved, as R1.1.4 demands. Both documented invocations still work after the removal: `python jobs/bench/instrument_report.py` regenerates `jobs/bench/results/instrument_report.md` byte-identically (checked - `git status` on that path stays empty), and `python jobs/bench/xi_ties.py` starts its Monte Carlo. Zero un-rewritten imports anywhere: `grep` for a top-level `from|import (analyzers|core|panels|plots|loaders|schemas|transforms|provenance)` over every `.py` in the tree returns nothing.
+
+IMPORTANT | src/quebra/provenance.py:23, :46 | `get_git_commit` and `is_tree_clean` still anchor on `Path(__file__).resolve().parent`. Before this phase that was the repository root; now it is `<...>/site-packages/quebra/`. So the two roots in one run disagree by construction: `paths.repo_root()` follows the caller's cwd while provenance asks git about wherever the LIBRARY is installed. Installed from a wheel this yields `"nogit"` and `is_tree_clean() == False` (reuse permanently disabled, silently); installed editable inside some other checkout it records THAT repository's commit into `.prov.json`. Provenance is a hard rule in AGENTS.md 1 and this is the one field a reader uses to reproduce a figure. | Anchor both on `paths.repo_root()`, and record explicitly when no repository was found rather than the string "nogit".
+
+MINOR | src/quebra/recipes.py:55-77 | `run_start_unix_s_from_hdf5` opens an HDF5 file. It is called at job-build time rather than inside a step, so it does not violate "a step never reads disk" - but this phase moved the function INTO the distributed package on the grounds that it is reusable library code, and AGENTS.md 3 puts disk access in `loaders/`. The package now has a second I/O site outside the loader registry. | Either move it behind the loader registry or say in the docstring why it is exempt.
+
+MINOR | src/quebra/analyzers/reliability_band.py:111, distinguish_band.py:143, check_ledger.py:133 | Three user-facing error messages instruct the reader to "construct via `analyzers.reliability_band.run()`" (and siblings). Those dotted paths no longer import after R1.1.1; the working form is `quebra.analyzers.*`. An actionable error message that gives an unimportable path is worse than none. About a dozen more docstring references carry the old prefix, but these three are the ones a user is told to type. | Prefix the three with `quebra.`.
+
+MINOR | tests/test_checks_cvm.py:163, jobs/bench/probe_unresolved.py:20 | Two more run instructions that do not run: `python jobs/bench/runner.py` fails with `ModuleNotFoundError: No module named 'jobs'` (its `from jobs.bench.arms import ...` needs the repo root on the path; `python -m jobs.bench.runner` works), and probe_unresolved's usage line still says `PYTHONPATH=. python bench/probe_unresolved.py` from before the bench moved under `jobs/`. Both pre-date this phase, but both files are in this change set. | `python -m jobs.bench.runner`, `python jobs/bench/probe_unresolved.py`.
+
+MINOR | the index vs the working tree | 48 files are `RM`: staged as renames, with the import rewrite left UNSTAGED. The staged tree alone does not import - `git show :src/quebra/recipes.py` still says `import analyzers.fidelity`. `pytest.ini`'s deletion is also unstaged (` D`), and `quebra.toml`, `conftest.py`, `pyproject.toml`, `.github/`, `scripts/`, `docs/WRITING_A_JOB.md`, `tests/test_data_root_resolution.py` and six `__init__.py` files are untracked. A `git commit` without `git add -A` produces a broken commit. | `git add -A` before committing; the phase is one commit, not two.
+
+### baselines reproduction and the Done-when clause
+
+CRITICAL | SPEC 0002 "Done when" vs scripts/acceptance.sh:57 | **The fast test suite does NOT pass from an unrelated working directory.** The Done-when clause is: "`pip install .` succeeds in a fresh virtualenv outside the repository, `import quebra` works from an unrelated working directory, the fast test suite passes THERE, and CI is green." Measured, using the very venv the acceptance script built:
+
+```
+cd /tmp && <venv>/bin/python -m pytest -q -m "not slow and not heavy and not real and not r" <repo>/tests
+6 failed, 331 passed, 2 skipped
+```
+
+The six: `test_data_root_resolution.py::test_the_repository_resolves_through_its_own_quebra_toml`, `test_path_resolution.py::test_repo_root_is_the_tool_repo`, `::test_default_dataset_root_is_repo_parent`, `test_paths_dataset_fallback.py::test_a_tracked_in_repo_table_resolves`, `::test_without_the_fallback_that_path_would_not_exist`, `::test_an_absolute_path_is_still_existence_checked`. All six die on `DataRootNotFound` or a missing marker, because `repo_root()` and `resolve_data_root()` now both read `Path.cwd()`.
+
+`scripts/acceptance.sh:57` runs that step with `env -C "${REPO}"`, so the one cwd under which these six pass is the one the script chooses. The script's own header claims it "is the only thing that can falsify" the installability claim; on this point it does the opposite. This is not a packaging bug - the wheel is correct - it is the phase's headline claim being checked under the single condition that makes it true. | Either fix the six tests to be cwd-independent (capture an anchor from `Path(__file__)` in the TEST, which is legitimate there), or amend Done-when to say the suite runs from the checkout because `tests/` is not shipped. Do not leave the current wording and the current script together.
+
+VERIFIED PASS | baselines | `pytest -q` -> 337 passed, 2 skipped. `pytest --collect-only -q | tail -1` -> 339; minus the 7 new tests in `tests/test_data_root_resolution.py` = 332, the P2 baseline, so D6(b) holds on the count. `ruff check .` -> 1 pre-existing F841. `bash scripts/acceptance.sh` -> exit 0, seven steps. `mypy src/quebra/core` -> 11 errors. `lint-imports` -> skipped, no contract. `make deps` -> exit 0. Wheel: 82 members, `quebra/` + dist-info only.
+
+VERIFIED PASS | src/quebra/core/paths.py:31 | "the four jobs that declare `jobs/bench/results/*.csv` as a Dataset" - exactly four: `jobs/active/check_calibration.py`, `jobs/active/instrument_validation.py`, `jobs/composite/check_ledger_q1.py`, `jobs/composite/independence_survey.py`. Accurate.
+
+VERIFIED PASS | tests/test_artifact_guard.py:246-250 | "77 pickles under `output/` and `output_backup*/` are affected, plus 5 naming `panels.repairable`" - measured over all 1012 pickles in the three output trees: exactly 77 contain `panels.non_repairable` and exactly 5 contain `panels.repairable` without it. Accurate. (0 contain `quebra.panels`, which confirms the `ValueError` branch of that test is still unreachable - already logged in the Phase 0 section.)
+
+VERIFIED PASS | .github/workflows/ci.yml:16-18 | The 3.11 claim checks out: `ast.parse(..., feature_version=(3,11))` over every `.py` in `src/`, `jobs/` and `tests/` reports zero syntax failures, so the nested f-string it cites is genuinely gone and the 3.11 matrix leg will not die on import.
+
+MINOR | pyproject.toml:84-85 | "Measured on this tree, `select = ["E","F","I","UP","B"]` reports 1193 findings, 1116 of them line-too-long." Measured now: **1212 findings, 1138 E501**. The numbers were taken before the phase finished adding files. AGENTS.md 4 names this exact defect class ("a measured number in a docstring must come from the artifact it cites, in the state it ships"). The argument is unaffected; the numbers are wrong. | 1212 / 1138, or drop the counts and keep the reasoning.
+
+MINOR | AGENTS.md:213 | "`monoliths/`, `scripts/` and `jobs_old/` were deleted and no longer exist." This phase CREATED `scripts/`, and `scripts/acceptance.sh` is R1.4.1's deliverable. Same half-applied-edit class as the `main.py` lines. The layout section also never gained `pyproject.toml`, `quebra.toml`, `conftest.py`, `scripts/` or `.github/`. | Drop `scripts/` from that sentence and add the five new root files to the layout.

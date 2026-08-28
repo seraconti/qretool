@@ -4,8 +4,8 @@ Composites live in jobs/composite/, not jobs/active/: main.py globs jobs/active 
 `run --all`, so a composite would otherwise re-run its sub-jobs on every sweep. Run it
 by path instead:
 
-    PYTHONPATH=. python main.py run jobs/composite/compare_t2star_0704_vs_1004.py
-    PYTHONPATH=. python main.py run jobs/composite/compare_t2star_0704_vs_1004.py --reuse-deps
+    quebra run jobs/composite/compare_t2star_0704_vs_1004.py
+    quebra run jobs/composite/compare_t2star_0704_vs_1004.py --reuse-deps
 
 `include` pulls each sub-job in and runs it through the normal runner, so its datasets
 and provenance resolve exactly as a standalone run. Every figure sink's input is always
@@ -21,9 +21,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from core.job import Job
-from panels.comparison import CompareSeriesData, CompareSeriesPanel
-from panels.within_calibration import WithinCalibrationPanelData
+from quebra.core.job import Job
+from quebra.panels.comparison import CompareSeriesData, CompareSeriesPanel
+from quebra.panels.within_calibration import WithinCalibrationPanelData
 
 
 def _compare_t2star(*panels: WithinCalibrationPanelData) -> CompareSeriesData:

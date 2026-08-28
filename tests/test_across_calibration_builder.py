@@ -12,8 +12,13 @@ import numpy as np
 
 matplotlib.use("Agg")
 
-from panels._across_calibration_compute import build_across_calibration_panel_data
-from panels.across_calibration import AcrossCalibrationPanel, AcrossCalibrationPanelData
+from quebra.panels._across_calibration_compute import (
+    build_across_calibration_panel_data,
+)
+from quebra.panels.across_calibration import (
+    AcrossCalibrationPanel,
+    AcrossCalibrationPanelData,
+)
 
 
 def _case(

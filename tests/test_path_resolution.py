@@ -14,26 +14,28 @@ from pathlib import Path
 
 import pytest
 
-from core.dataset import Dataset
-from core.job import Job
-from core.paths import (
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.core.paths import (
     default_dataset_root,
     repo_root,
     resolve_dataset_path,
     resolve_repo_path,
 )
-from core.runner import run_job
-from provenance import hash_file
+from quebra.core.runner import run_job
+from quebra.provenance import hash_file
 
 # --- pure units -------------------------------------------------------------
 
 
-def test_repo_root_is_the_tool_repo() -> None:
+def test_repo_root_is_the_tool_repo(in_repo) -> None:
     root = repo_root()
-    assert (root / "main.py").exists()
+    # The CLI moved into the package in SPEC 0002; the repo root is now the
+    # directory holding pyproject.toml, not the one holding main.py.
+    assert (root / "pyproject.toml").exists()
 
 
-def test_default_dataset_root_is_repo_parent() -> None:
+def test_default_dataset_root_is_repo_parent(in_repo) -> None:
     assert default_dataset_root() == repo_root().parent
 
 
@@ -174,7 +176,7 @@ def test_prov_byte_stable_across_repeated_runs(
 def test_run_all_isolates_one_bad_job(tmp_path: Path) -> None:
     """A dataset missing for one job in `run --all` must not abort the batch.
 
-    main.py's --all loop (main.py: the `for job_file in job_files:` block) wraps
+    the CLI's --all loop (quebra/cli.py: the `for job_file in job_files:` block) wraps
     each run_job call in try/except, prints a red ERROR line for the failing job,
     and continues to the next one. jobs/active is glob'd relative to the real
     repo root, so driving the actual CLI here would require the fake bad job to
@@ -182,21 +184,21 @@ def test_run_all_isolates_one_bad_job(tmp_path: Path) -> None:
     per-job try/except isolation contract directly against run_job, with a real
     good job and a real missing-dataset job side by side.
     """
-    from main import _module_from_path
+    from quebra.cli import _module_from_path
 
     jobs_dir = tmp_path / "jobs"
     jobs_dir.mkdir()
     (tmp_path / "data.csv").write_text("a,b\n1,2\n")
     (jobs_dir / "ok_job.py").write_text(
-        "from core.job import Job\n"
-        "from core.dataset import Dataset\n"
+        "from quebra.core.job import Job\n"
+        "from quebra.core.dataset import Dataset\n"
         'job = Job(name="ok_job")\n'
         'node = job.load_df(Dataset(path="data.csv", schema=None))\n'
         'job.materialize(node, name="raw_df")\n'
     )
     (jobs_dir / "bad_job.py").write_text(
-        "from core.job import Job\n"
-        "from core.dataset import Dataset\n"
+        "from quebra.core.job import Job\n"
+        "from quebra.core.dataset import Dataset\n"
         'job = Job(name="bad_job")\n'
         'node = job.load_df(Dataset(path="does_not_exist.csv", schema=None))\n'
         'job.materialize(node, name="raw_df")\n'
@@ -210,7 +212,7 @@ def test_run_all_isolates_one_bad_job(tmp_path: Path) -> None:
     for job_file in sorted(jobs_dir.glob("*.py")):
         try:
             run_job(_load(job_file), out, force=True, data_root=tmp_path)
-        except Exception as exc:  # mirrors main.py's per-job isolation
+        except Exception as exc:  # mirrors quebra/cli.py's per-job isolation
             failures.append((job_file, exc))
 
     assert [f.name for f, _ in failures] == ["bad_job.py"]

@@ -17,15 +17,12 @@ Run:  python jobs/bench/instrument_report.py
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pandas as pd
 
-# parents[2]: this file is jobs/bench/<name>.py, so the repo root is two levels up.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from analyzers.instrument_validation import (  # noqa: E402
+from quebra.analyzers.instrument_validation import (
     build_instrument_validation,
     render_tier_table_markdown,
 )

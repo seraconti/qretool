@@ -11,15 +11,18 @@ on the provenance label - the `allan` pattern, not the `filter` pattern.
 
 from __future__ import annotations
 
-import analyzers.t2star as t2star
-import analyzers.windows as windows
-from analyzers.t2star import T2StarResult
-from analyzers.windows import WindowsResult
-from core.dataset import Dataset
-from core.job import Job
-from jobs.common import RAMSEY_CONFIG, XI_SEED, _filter_step, _final_stage
-from panels.within_calibration import WithinCalibrationPanel, WithinCalibrationPanelData
-from schemas.track912 import track912Schema
+import quebra.analyzers.t2star as t2star
+import quebra.analyzers.windows as windows
+from quebra.analyzers.t2star import T2StarResult
+from quebra.analyzers.windows import WindowsResult
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.recipes import RAMSEY_CONFIG, XI_SEED, _filter_step, _final_stage
+from quebra.panels.within_calibration import (
+    WithinCalibrationPanel,
+    WithinCalibrationPanelData,
+)
+from quebra.schemas.track912 import track912Schema
 
 PREFIX = "q1_13h_1004_dataset"
 

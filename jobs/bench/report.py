@@ -30,15 +30,15 @@ import pandas as pd
 
 from jobs.bench.arms import ARM_A, ARM_B, ARM_C, ARM_D, ARM_E
 from jobs.bench.grid import ALPHA, N_GRID
-from analyzers.calibration_summary import (
+from quebra.analyzers.calibration_summary import (
     ENVELOPE_MAX_CENSORING,
     FAMILYWISE_ALPHA,
     MIN_SUPPORT_FRACTION,
     bonferroni_z_crit,
     null_se,
 )
-from analyzers.checks.result import CALIB_ASYMPTOTIC
-from analyzers.checks.result import CLOCK_IN_SPEC
+from quebra.analyzers.checks.result import CALIB_ASYMPTOTIC
+from quebra.analyzers.checks.result import CLOCK_IN_SPEC
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 

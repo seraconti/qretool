@@ -47,13 +47,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import analyzers.checks.c1_lewis_robinson as c1
-from analyzers.checks._multiprocess import (
+import quebra.analyzers.checks.c1_lewis_robinson as c1
+from quebra.analyzers.checks._multiprocess import (
     GAMMA_COMPLETE,
     GAMMA_TRUNCATED,
     gamma_hat,
 )
-from analyzers.checks.result import Segment, validate_segment
+from quebra.analyzers.checks.result import Segment, validate_segment
 from tests.fixtures.load_haul_dump import PUBLISHED, TAU_H, gaps_h
 
 X = gaps_h()
@@ -176,7 +176,7 @@ def test_eq11_reproduces_the_papers_alternative_lr():
 
 def test_eq11_is_not_reachable_through_the_shipped_api():
     """Pins the decision: asking for it must fail, not silently pick another estimator."""
-    from analyzers.checks._multiprocess import GAMMA_ESTIMATORS
+    from quebra.analyzers.checks._multiprocess import GAMMA_ESTIMATORS
 
     assert "eq11_successive_difference" not in GAMMA_ESTIMATORS
     assert set(GAMMA_ESTIMATORS) == {GAMMA_COMPLETE, GAMMA_TRUNCATED}

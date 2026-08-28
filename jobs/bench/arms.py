@@ -72,8 +72,8 @@ from scipy.signal import lfilter
 from scipy.special import gamma as gamma_fn
 
 from jobs.bench.carve import carve_windows
-from analyzers.checks._multiprocess import segments_from_windows
-from analyzers.checks.result import CLOCK_IN_SPEC, Segment
+from quebra.analyzers.checks._multiprocess import segments_from_windows
+from quebra.analyzers.checks.result import CLOCK_IN_SPEC, Segment
 
 ARM_A = "A_iid_weibull"
 ARM_B = "B_iid_reads_carved"

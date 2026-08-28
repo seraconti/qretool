@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analyzers.instrument_validation import (
+from quebra.analyzers.instrument_validation import (
     TIER_ABSENT,
     TIER_FAIL,
     TIER_PARTIAL,
@@ -139,7 +139,7 @@ def test_cvm_is_promoted_and_its_tier_3_no_longer_says_it_has_no_bench_cell():
     CvM rows that sentence is false, and a report repeating it would understate the
     evidence - the mirror image of the overclaiming this pass has been correcting.
     """
-    from analyzers.checks.battery import ROW_KEYS
+    from quebra.analyzers.checks.battery import ROW_KEYS
 
     assert any(key[0] == "cvm_cramer_von_mises" for key in ROW_KEYS)
     row = _build().tier_verdict("CvM", 3)
@@ -271,7 +271,7 @@ def test_the_tier_3_rows_quote_a_number_this_run_produced():
         )
         # The number must be the one the artifact's own measurement produces, not merely
         # four decimals in the right shape: a regex alone passes "0.9999".
-        from analyzers.instrument_validation import measure_all_asymptotic_sizes
+        from quebra.analyzers.instrument_validation import measure_all_asymptotic_sizes
 
         expected = measure_all_asymptotic_sizes(n=int(match.group(1)))[instrument]
         assert float(match.group(2)) == pytest.approx(expected, abs=5e-5), (

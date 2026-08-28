@@ -27,20 +27,24 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import analyzers.checks.c1_lewis_robinson as c1
-import analyzers.checks.c2_anderson_darling as c2
-import analyzers.checks.c5_rank_autocorr as c5
-import analyzers.checks.c6_exchangeability as c6
-from analyzers.checks._multiprocess import GAMMA_COMPLETE, GAMMA_TRUNCATED, gamma_hat
-from analyzers import windows
-from analyzers.checks._multiprocess import segments_from_windows
-from analyzers.checks._permutation import (
+import quebra.analyzers.checks.c1_lewis_robinson as c1
+import quebra.analyzers.checks.c2_anderson_darling as c2
+import quebra.analyzers.checks.c5_rank_autocorr as c5
+import quebra.analyzers.checks.c6_exchangeability as c6
+from quebra.analyzers.checks._multiprocess import (
+    GAMMA_COMPLETE,
+    GAMMA_TRUNCATED,
+    gamma_hat,
+)
+from quebra.analyzers import windows
+from quebra.analyzers.checks._multiprocess import segments_from_windows
+from quebra.analyzers.checks._permutation import (
     PermutationSet,
     block_permutations,
     permutation_p_value,
 )
-from analyzers.checks.battery import ROW_KEYS, row_key, run_battery
-from analyzers.checks.result import (
+from quebra.analyzers.checks.battery import ROW_KEYS, row_key, run_battery
+from quebra.analyzers.checks.result import (
     CALIB_ASYMPTOTIC,
     CALIB_PERMUTATION,
     CLOCK_CALENDAR,

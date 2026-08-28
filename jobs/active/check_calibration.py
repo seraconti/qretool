@@ -18,15 +18,15 @@ reproducible from the record alone.
 
 from __future__ import annotations
 
-from analyzers.calibration_summary import (
+from quebra.analyzers.calibration_summary import (
     power_vs_dependence,
     read_dependence,
     size_vs_n,
     validation_curve,
 )
-from core.dataset import Dataset
-from core.job import Job
-from plots.calibration_plot import (
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.plots.calibration_plot import (
     CalibrationPowerPlot,
     CalibrationReadDependencePlot,
     CalibrationSizePlot,

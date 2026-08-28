@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from analyzers import windows
+from quebra.analyzers import windows
 
 T = np.r_[np.arange(10) * 1.0, np.arange(10) * 1.0 + 110.0]
 Y = np.array(

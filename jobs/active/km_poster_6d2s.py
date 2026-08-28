@@ -23,17 +23,17 @@ jobs/active/t2star_q1_100423.py: a window must never be carved from a manufactur
 
 from __future__ import annotations
 
-import analyzers.kaplan_meier as kaplan_meier
-import analyzers.t2star as t2star
-import analyzers.windows as windows
-from analyzers.kaplan_meier import KaplanMeierComparison, KaplanMeierCurve
-from analyzers.t2star import T2StarResult
-from analyzers.windows import WindowsResult
-from core.dataset import Dataset
-from core.job import Job
-from jobs.common import RAMSEY_CONFIG, _filter_step, _final_stage
-from plots.km_survival_plot import KMSurvivalPlot
-from schemas.track912 import track912Schema
+import quebra.analyzers.kaplan_meier as kaplan_meier
+import quebra.analyzers.t2star as t2star
+import quebra.analyzers.windows as windows
+from quebra.analyzers.kaplan_meier import KaplanMeierComparison, KaplanMeierCurve
+from quebra.analyzers.t2star import T2StarResult
+from quebra.analyzers.windows import WindowsResult
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.recipes import RAMSEY_CONFIG, _filter_step, _final_stage
+from quebra.plots.km_survival_plot import KMSurvivalPlot
+from quebra.schemas.track912 import track912Schema
 
 PREFIX = "km_poster_6d2s"
 

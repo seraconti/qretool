@@ -24,7 +24,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from analyzers.windows import (
+from quebra.analyzers.windows import (
     DEATH_DOWN_CROSSING,
     DEFAULT_GAP_MULT,
     carve,

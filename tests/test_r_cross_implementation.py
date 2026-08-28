@@ -31,7 +31,7 @@ import pandas as pd
 import pytest
 from scipy.stats import rankdata, spearmanr
 
-from analyzers.shape_stats import chatterjee_xi, dcor
+from quebra.analyzers.shape_stats import chatterjee_xi, dcor
 from tests.fixtures import R_REFERENCE_INPUTS, R_REFERENCE_VALUES
 
 _INPUTS = pd.read_csv(R_REFERENCE_INPUTS)

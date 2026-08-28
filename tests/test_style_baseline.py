@@ -17,7 +17,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # plots/theme.py is the one place these literals are supposed to live.
-THEME_FILE = REPO_ROOT / "plots" / "theme.py"
+THEME_FILE = REPO_ROOT / "src" / "quebra" / "plots" / "theme.py"
 
 PATTERNS = {
     "hex": re.compile(r"#[0-9A-Fa-f]{6}\b"),
@@ -33,7 +33,7 @@ BASELINE = 17
 
 def _counts() -> dict[str, int]:
     counts: dict[str, int] = {}
-    for directory in ("panels", "plots"):
+    for directory in ("src/quebra/panels", "src/quebra/plots"):
         for path in sorted((REPO_ROOT / directory).glob("*.py")):
             if path == THEME_FILE:
                 continue

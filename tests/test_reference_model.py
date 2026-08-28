@@ -16,13 +16,13 @@ from pathlib import Path
 
 import pytest
 
-from core.job import Job
-from core.reference import ArtifactRef
-from core.runner import run_job
+from quebra.core.job import Job
+from quebra.core.reference import ArtifactRef
+from quebra.core.runner import run_job
 
 _SUB_SRC = (
-    "from core.job import Job\n"
-    "from core.dataset import Dataset\n"
+    "from quebra.core.job import Job\n"
+    "from quebra.core.dataset import Dataset\n"
     'job = Job(name="{name}")\n'
     'node = job.load_df(Dataset(path="data.csv", schema=None))\n'
     'job.materialize(node, name="panel_data")\n'

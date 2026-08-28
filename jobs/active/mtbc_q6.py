@@ -18,13 +18,13 @@ Kaplan-Meier figure (jobs/active/km_poster_6d2s.py).
 
 from __future__ import annotations
 
-import analyzers.mtbf as mtbf
-from analyzers.mtbf import IntervalHistogramResult, MtbfResult
-from core.dataset import Dataset
-from core.job import Job
-from core.types import Norm
-from plots.mtbc_hist_plot import MTBCHistogramPlot
-from schemas.calibration_log import CalibrationLogSchema
+import quebra.analyzers.mtbf as mtbf
+from quebra.analyzers.mtbf import IntervalHistogramResult, MtbfResult
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.core.types import Norm
+from quebra.plots.mtbc_hist_plot import MTBCHistogramPlot
+from quebra.schemas.calibration_log import CalibrationLogSchema
 
 PREFIX = "mtbc_q6"
 

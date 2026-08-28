@@ -1,0 +1,39 @@
+name: ci
+
+# One job, deliberately. SPEC 0002 R1.4.2 rules out an R job, a nightly job and a coverage
+# gate; each has its own spec. What this proves is narrow and worth proving: the package
+# builds and its fast suite passes on every interpreter the metadata claims to support.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both ends of `requires-python = ">=3.11"`. 3.11 is not decoration: a nested
+        # f-string in provenance.py was a SyntaxError there and legal only from 3.12, and
+        # it survived for months because every machine that ran it had 3.13.
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the package and the test runner
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      # R1.4.3: no step fetches data/real_private/, and none may be added. The `real`
+      # marker is what keeps those tests out; CI never sees the tree they need.
+      - name: Fast test selector
+        run: pytest -m "not slow and not heavy and not real and not r" -q tests/

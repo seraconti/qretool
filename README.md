@@ -92,26 +92,38 @@ merely confusing things. See CONTRIBUTING.md.
 
 Install
 
-QUEBRA runs from a source checkout: Python 3.11 or newer.
+QUEBRA installs as a package. Python 3.11 or newer.
 
-git clone https://github.com/seraconti/quebra.git
-cd quebra
+git clone https://github.com/seraconti/qretool.git
+cd qretool
 
 # an isolated environment, so QUEBRA's dependencies stay out of your system Python
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
-pip install -r requirements.txt
-pytest
+pip install .                      # or: pip install -e ".[dev]" to work on it
+pip install pytest                 # the test runner is not a runtime dependency
+pytest tests/
+
+These are the steps `scripts/acceptance.sh` performs, in a throwaway virtualenv created
+outside the repository. If they stop working, that script fails. Nothing is documented here
+that the script does not do.
+
+There is no `requirements.txt`. Dependencies are declared in `pyproject.toml` and derived
+from the imports that actually appear under `src/quebra/`.
 
 The copula serial-independence check additionally needs R with the copula package. Without R
 that one check reports not computed, and nothing else is affected.
 
 Running a job
 
-python main.py run jobs/active/t2star_q1_070423.py   # run one job
-python main.py run --all                             # run every active job
-python main.py inspect jobs/active/km_poster_6d2s.py # print the graph without running it
+quebra run jobs/active/t2star_q1_070423.py   # run one job
+quebra run --all                             # run every active job in ./jobs/active
+quebra inspect jobs/active/km_poster_6d2s.py # print the graph without running it
+
+`quebra` is installed by pip as a console script. It anchors on the working directory: run
+directories are written to `./output`, and `--all` sweeps `./jobs/active`. Pass
+`--output-root` to send them elsewhere.
 
 inspect is the fastest way to understand a job: it prints the step graph, including the
 keyword arguments that affect each result, without computing anything.
@@ -121,8 +133,9 @@ materialized artifacts, and the provenance record.
 
 Documentation
 
-Reference documentation is in docs/, covering time and clock semantics, the panel contract,
-and the figure standard. It is not published as a site yet.
+Reference documentation is in docs/. Start with WRITING_A_JOB.md to run something, then
+WRITING_A_SCHEMA.md to point the tool at your own data; the rest covers time and clock
+semantics, the panel contract, and the figure standard. It is not published as a site yet.
 
 Citing
 

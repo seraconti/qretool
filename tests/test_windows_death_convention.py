@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from analyzers import windows
+from quebra.analyzers import windows
 
 MINUTE_S = 60.0
 THRESHOLDS = [("3", 3.0, True)]

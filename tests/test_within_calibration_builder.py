@@ -14,9 +14,14 @@ import numpy as np
 
 matplotlib.use("Agg")
 
-from analyzers import windows
-from panels._within_calibration_compute import build_within_calibration_panel_data
-from panels.within_calibration import WithinCalibrationPanel, WithinCalibrationPanelData
+from quebra.analyzers import windows
+from quebra.panels._within_calibration_compute import (
+    build_within_calibration_panel_data,
+)
+from quebra.panels.within_calibration import (
+    WithinCalibrationPanel,
+    WithinCalibrationPanelData,
+)
 
 
 def _carved(t_h, series, thresholds):

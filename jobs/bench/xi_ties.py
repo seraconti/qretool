@@ -34,7 +34,6 @@ Run:  python jobs/bench/xi_ties.py
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -42,11 +41,9 @@ import numpy as np
 import pandas as pd
 from scipy.stats import rankdata
 
-# parents[2]: this file is jobs/bench/<name>.py, so the repo root is two levels up.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from analyzers.permutation import paired_permutation_test  # noqa: E402
-from analyzers.shape_stats import (  # noqa: E402
+from quebra.analyzers.permutation import paired_permutation_test
+from quebra.analyzers.shape_stats import (
     chatterjee_xi,
     tie_fraction,
     xi_p_value_asymptotic,

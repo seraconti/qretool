@@ -19,11 +19,15 @@ import pytest
 
 matplotlib.use("Agg")
 
-from analyzers import windows
-from panels._within_calibration_compute import build_within_calibration_panel_data
-from panels._across_calibration_compute import build_across_calibration_panel_data
-from panels.within_calibration import WithinCalibrationPanelData
-from panels.across_calibration import AcrossCalibrationPanelData
+from quebra.analyzers import windows
+from quebra.panels._within_calibration_compute import (
+    build_within_calibration_panel_data,
+)
+from quebra.panels._across_calibration_compute import (
+    build_across_calibration_panel_data,
+)
+from quebra.panels.within_calibration import WithinCalibrationPanelData
+from quebra.panels.across_calibration import AcrossCalibrationPanelData
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -167,7 +171,7 @@ def _identity(x: object) -> object:
 
 def _import_job_module(job_py: Path):
     # delegate to the real CLI loader so this test tracks its behavior
-    from main import _module_from_path
+    from quebra.cli import _module_from_path
 
     return _module_from_path(job_py).job
 
@@ -179,22 +183,30 @@ def test_composite_reuse_of_reuse_eligible_stale_artifact_aborts(
     (matching identity + commit, clean tree) must abort at load if its pickle is
     schema-stale - the guard, not a mid-render crash. Requires seeding the cache
     dir by the sub-job's IDENTITY and forcing a clean tree so the gate admits it."""
-    from core.dataset import Dataset  # noqa: F401  (sub-job module imports it)
-    from core.job import Job
-    from core import runner
-    from core.runner import run_job
-    from provenance import get_git_commit
+    from quebra.core.dataset import Dataset  # noqa: F401  (sub-job module imports it)
+    from quebra.core.job import Job
+    from quebra.core import runner
+    from quebra.core.runner import run_job
+    from quebra.provenance import get_git_commit
 
     sub_py = tmp_path / "tiny_sub.py"
     sub_py.write_text(
-        "from core.job import Job\n"
-        "from core.dataset import Dataset\n"
+        "from quebra.core.job import Job\n"
+        "from quebra.core.dataset import Dataset\n"
         'job = Job(name="tiny_sub")\n'
         'node = job.load_df(Dataset(path="data.csv", schema=None))\n'
         'job.materialize(node, name="panel_data")\n'
     )
     (tmp_path / "data.csv").write_text("a,b\n1,2\n")
     out = tmp_path / "out"
+
+    # chdir BEFORE seeding. `get_git_commit()` is anchored on the working directory since
+    # SPEC 0002 (it used to read `Path(__file__).parent`, which is site-packages once
+    # installed). Seeding the record from the repository and then running from tmp_path
+    # recorded 9057803 against a run that sees "nogit", the commits disagreed, the reuse
+    # gate rejected the artifact, and the stale pickle was never loaded - so the test
+    # stopped exercising the guard it exists for.
+    monkeypatch.chdir(tmp_path)
 
     # the sub-job's real identity names its cache dir; seed a prov record whose
     # identity + commit MATCH this run so the gate admits it, plus a stale pickle
@@ -223,7 +235,6 @@ def test_composite_reuse_of_reuse_eligible_stale_artifact_aborts(
     comp.materialize(node, name="reused_out")
     comp.job_file = comp_py.resolve()
 
-    monkeypatch.chdir(tmp_path)
     with pytest.raises(ValueError, match="stale WithinCalibrationPanelData"):
         run_job(comp, out, force=True, data_root=tmp_path, reuse_deps=True)
 
@@ -236,9 +247,12 @@ def test_real_pre_split_artifact_raises() -> None:
     `ValueError` is the guard working as designed: the artifact loaded, its field names
     did not match the current contract, and `StaleArtifactGuard` said so.
 
-    `ModuleNotFoundError` is the vocabulary rename of 2026-08-23. Artifacts written before
-    it name `panels.non_repairable.NonRepairablePanelData` in their pickle stream, and that
-    module no longer exists. 77 pickles under `output/` and `output_backup*/` are affected,
+    `ModuleNotFoundError` is a rename. TWO have now landed: the vocabulary rename of
+    2026-08-23 (`panels.non_repairable` -> `panels.within_calibration`) and the SPEC 0002
+    src-layout move (`panels.*` -> `quebra.panels.*`). A pickle stores the fully qualified
+    module path, so either one is enough to make an artifact unloadable, and after the
+    second every artifact written before this phase is out of reach regardless of its
+    vocabulary. 77 pickles under `output/` and `output_backup*/` are affected,
     plus 5 naming `panels.repairable`. A compatibility shim would not have helped: the
     MODULE is gone, not just the symbol, so `pickle.load` fails before any re-export could
     be consulted. Recovering them means re-running the jobs that wrote them.
@@ -264,10 +278,27 @@ def test_real_pre_split_artifact_raises() -> None:
             assert "stale" in str(exc) and "--reuse-deps" in str(exc)
             stale_errors.append(str(exc))
         except (ModuleNotFoundError, AttributeError) as exc:
-            # The rename. Assert it is THAT module and not some unrelated import error,
-            # or this clause would swallow a genuine packaging break.
-            assert "non_repairable" in str(exc) or "repairable" in str(exc), exc
-            stale_errors.append(str(exc))
+            # TWO renames now put artifacts out of reach, and both are accepted losses:
+            #   2026-08-23  vocabulary: panels.non_repairable -> panels.within_calibration
+            #   SPEC 0002   layout:     panels.*              -> quebra.panels.*
+            # Assert the failure names one of the modules those renames removed, so this
+            # clause cannot swallow an unrelated packaging break.
+            missing = str(exc)
+            # Match the MODULE PATHS the two renames removed, not bare package names. An
+            # earlier version accepted the token "panels", which would also swallow a wheel
+            # that simply failed to ship `quebra/panels/` - the test would then pass on a
+            # broken distribution. These strings only appear in a pre-rename pickle.
+            assert any(
+                token in missing
+                for token in (
+                    "panels.non_repairable",
+                    "panels.repairable",
+                    "No module named 'panels'",
+                    "No module named 'analyzers'",
+                    "No module named 'core'",
+                )
+            ), exc
+            stale_errors.append(missing)
         else:
             assert isinstance(obj, WithinCalibrationPanelData)
     if not stale_errors:

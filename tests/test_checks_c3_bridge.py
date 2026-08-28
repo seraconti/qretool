@@ -11,8 +11,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import analyzers.checks.c3_serial_copula as c3
-from analyzers.checks.result import Segment
+import quebra.analyzers.checks.c3_serial_copula as c3
+from quebra.analyzers.checks.result import Segment
 
 
 def _segment(n: int = 30, seed: int = 3) -> Segment:

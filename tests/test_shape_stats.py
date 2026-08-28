@@ -21,8 +21,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from analyzers.permutation import paired_permutation_test
-from analyzers.shape_stats import (
+from quebra.analyzers.permutation import paired_permutation_test
+from quebra.analyzers.shape_stats import (
     DCOR_CONSTANT,
     DCOR_OK,
     DCOR_TOO_SHORT,

@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analyzers.check_ledger import (
+from quebra.analyzers.check_ledger import (
     VERDICT_FAIL,
     VERDICT_NOT_COMPUTED,
     VERDICT_PASS,
@@ -18,7 +18,7 @@ from analyzers.check_ledger import (
     VERDICT_UNDERPOWERED,
     _verdict,
 )
-from analyzers.checks.result import CALIB_PERMUTATION, CheckResult
+from quebra.analyzers.checks.result import CALIB_PERMUTATION, CheckResult
 
 
 def _result(check: str = "c6_exchangeability", p: float | None = 0.4) -> CheckResult:
@@ -112,7 +112,7 @@ def test_the_per_threshold_seed_is_stable_across_processes():
 
 
 def test_tie_stats_counts_what_it_says():
-    from analyzers.check_ledger import _tie_stats
+    from quebra.analyzers.check_ledger import _tie_stats
 
     distinct, tied = _tie_stats(np.array([1.0, 1.0, 2.0, 3.0]))
     assert distinct == 3
@@ -122,7 +122,7 @@ def test_tie_stats_counts_what_it_says():
 
 def test_ledger_refuses_a_partial_artifact():
     """`check_thresholds` is the construction-time completeness contract."""
-    from analyzers.check_ledger import CheckLedger
+    from quebra.analyzers.check_ledger import CheckLedger
 
     ledger = CheckLedger(rows=pd.DataFrame({"threshold_label": ["3 µs"]}))
     ledger.check_thresholds(["3 µs"])

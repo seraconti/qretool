@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-from provenance import _mermaid_graph
+from quebra.provenance import _mermaid_graph
 
 
 def _ids_and_edges(md: str) -> tuple[set[str], list[tuple[str, str]]]:

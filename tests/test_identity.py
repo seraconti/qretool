@@ -11,9 +11,9 @@ from __future__ import annotations
 from pathlib import Path
 
 
-from core.dataset import Dataset
-from core.identity import Identity, fold
-from core.job import Job
+from quebra.core.dataset import Dataset
+from quebra.core.identity import Identity, fold
+from quebra.core.job import Job
 
 # --- fold encoder -----------------------------------------------------------
 
@@ -100,8 +100,8 @@ def _composite_over(tmp_path: Path, sub_csv: str) -> Job:
     (tmp_path / "sub.csv").write_text(sub_csv)
     sub_py = tmp_path / "sub.py"
     sub_py.write_text(
-        "from core.job import Job\n"
-        "from core.dataset import Dataset\n"
+        "from quebra.core.job import Job\n"
+        "from quebra.core.dataset import Dataset\n"
         'job = Job(name="sub")\n'
         'node = job.load_df(Dataset(path="sub.csv", schema=None))\n'
         'job.materialize(node, name="panel")\n'

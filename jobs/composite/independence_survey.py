@@ -30,7 +30,7 @@ available at thirty-four datasets, so the parameters below must stay equal to th
 or the survey and the panels describe different windows. `tests/test_independence_survey.py`
 asserts that equality rather than trusting this comment.
 
-Run:  PYTHONPATH=. python main.py run jobs/composite/independence_survey.py
+Run:  quebra run jobs/composite/independence_survey.py
 """
 
 from __future__ import annotations
@@ -39,20 +39,20 @@ import re
 
 import pandas as pd
 
-import analyzers.check_ledger as check_ledger
-import analyzers.t2star as t2star
-import analyzers.windows as windows
-from analyzers.independence_survey import build_independence_survey
-from analyzers.t2star import T2StarResult
-from analyzers.windows import WindowsResult
-from core.dataset import Dataset
-from core.job import Job
-from jobs.common import RAMSEY_CONFIG, _filter_step, _final_stage
-from plots.independence_survey_plot import (
+import quebra.analyzers.check_ledger as check_ledger
+import quebra.analyzers.t2star as t2star
+import quebra.analyzers.windows as windows
+from quebra.analyzers.independence_survey import build_independence_survey
+from quebra.analyzers.t2star import T2StarResult
+from quebra.analyzers.windows import WindowsResult
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.recipes import RAMSEY_CONFIG, _filter_step, _final_stage
+from quebra.plots.independence_survey_plot import (
     SURVEY_PLOTS,
     IndependenceSurveyOverviewPlot,
 )
-from schemas.track912 import track912Schema
+from quebra.schemas.track912 import track912Schema
 
 PREFIX = "independence_survey"
 

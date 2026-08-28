@@ -34,15 +34,19 @@ REPO = Path(__file__).resolve().parent.parent
 
 # Every package that is part of the pipeline proper. `analyzers` includes `analyzers/checks`
 # via rglob, which is deliberate: a check may use `analyzers.windows`, never the bench.
+# Paths relative to the repository root. Seven of these moved under `src/quebra/` in
+# SPEC 0002 R1.1; `jobs/` deliberately stayed at the root, because it is the researcher's
+# analysis configuration rather than library code, and moving it would have put `output/`
+# inside site-packages.
 PIPELINE_PACKAGES = (
-    "analyzers",
-    "core",
+    "src/quebra/analyzers",
+    "src/quebra/core",
     "jobs",
-    "loaders",
-    "panels",
-    "plots",
-    "schemas",
-    "transforms",
+    "src/quebra/loaders",
+    "src/quebra/panels",
+    "src/quebra/plots",
+    "src/quebra/schemas",
+    "src/quebra/transforms",
 )
 
 
@@ -76,6 +80,12 @@ def _imported_roots(path: Path) -> set[str]:
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 roots.add(node.module)
+                # `from jobs import bench` has module="jobs" and the package in `names`.
+                # Recording only `node.module` yielded the bare "jobs", legitimate
+                # everywhere, so the guard admitted a real bench import. The relative half
+                # of this same defect was fixed first; this is its sibling, found by review.
+                for alias in node.names:
+                    roots.add(f"{node.module}.{alias.name}")
             # A RELATIVE import carries its package in `node.level`, not in `node.module`:
             # `from ..bench import runner` inside jobs/active/ has module="bench", level=2,
             # and resolves at runtime to jobs.bench.runner. Recording only `node.module`
@@ -101,7 +111,7 @@ def _imports_bench(path: Path) -> bool:
     """True when this module imports the bench package by any route.
 
     Matches `jobs.bench` exactly and any submodule of it, so `from jobs.bench.carve
-    import carve_windows` is caught while a module merely importing `jobs.common` is not.
+    import carve_windows` is caught while a module merely importing `quebra.recipes` is not.
     """
     for name in _imported_roots(path):
         if name == BENCH_PACKAGE or name.startswith(BENCH_PACKAGE + "."):
@@ -142,22 +152,22 @@ def test_pipeline_packages_do_not_import_the_bench(package):
 
 
 def test_main_does_not_import_the_bench():
-    assert not _imports_bench(REPO / "main.py")
+    assert not _imports_bench(REPO / "src" / "quebra" / "cli.py")
 
 
 def test_the_checks_package_is_where_the_pipeline_can_reach_it():
     """The move is the point of this increment; pin it so a revert is loud."""
-    package = REPO / "analyzers" / "checks"
+    package = REPO / "src" / "quebra" / "analyzers" / "checks"
     assert package.is_dir(), "analyzers/checks/ is missing"
     assert (package / "battery.py").exists()
-    assert not (REPO / "checks").exists(), (
+    assert not (REPO / "src" / "quebra" / "checks").exists(), (
         "the old top-level checks/ is back; imports now expect analyzers.checks"
     )
 
 
 def test_checks_import_analyzers_but_never_the_bench():
     """Direction of the dependency: checks may use the carve, never the study of it."""
-    files = _python_files("analyzers/checks")
+    files = _python_files("src/quebra/analyzers/checks")
     assert files, "found no check modules - the test would pass vacuously"
     for path in files:
         assert not _imports_bench(path), f"{path.name} imports the bench"
@@ -166,8 +176,9 @@ def test_checks_import_analyzers_but_never_the_bench():
 def test_the_bench_is_allowed_to_import_the_checks():
     """The permitted edge, asserted so nobody 'fixes' it in the wrong direction."""
     roots = _imported_roots(REPO / "jobs" / "bench" / "runner.py")
-    assert any(name.startswith("analyzers") for name in roots), (
-        "jobs/bench/runner.py should import analyzers.checks; if this fails the move is "
+    assert any(name.startswith("quebra.analyzers") for name in roots), (
+        "jobs/bench/runner.py should import quebra.analyzers.checks; if this fails the "
+        "move is "
         "half-done"
     )
 
@@ -188,8 +199,8 @@ def test_the_bench_is_allowed_to_import_the_checks():
             "jobs.bench",
         ),
         (
-            "from analyzers.checks.battery import run_battery\n",
-            "analyzers.checks.battery",
+            "from quebra.analyzers.checks.battery import run_battery\n",
+            "quebra.analyzers.checks.battery",
         ),
     ],
 )

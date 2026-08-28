@@ -13,17 +13,17 @@ observations.
 
 from __future__ import annotations
 
-import analyzers.mtbf as mtbf
-from analyzers.mtbf import MtbfResult
-from core.dataset import Dataset
-from core.job import Job
-from core.types import Norm
-from panels.across_calibration import (
+import quebra.analyzers.mtbf as mtbf
+from quebra.analyzers.mtbf import MtbfResult
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.core.types import Norm
+from quebra.panels.across_calibration import (
     AcrossCalibrationPanel,
     AcrossCalibrationPanelData,
     make_mtbf_panel_data,
 )
-from schemas.calibration_log import CalibrationLogSchema
+from quebra.schemas.calibration_log import CalibrationLogSchema
 
 job = Job("mtbf_q1")
 

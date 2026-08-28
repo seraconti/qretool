@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from jobs.bench.arms import ARM_A, ARM_B, ARM_C, ARM_D, ARM_E
-from analyzers.checks.result import CLOCK_CALENDAR, CLOCK_IN_SPEC
+from quebra.analyzers.checks.result import CLOCK_CALENDAR, CLOCK_IN_SPEC
 
 KIND_SIZE = "size"
 KIND_POWER = "power"

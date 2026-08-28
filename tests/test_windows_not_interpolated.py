@@ -17,10 +17,10 @@ from pathlib import Path
 
 import pytest
 
-from core.dataset import Dataset
-from core.job import Job
-from core.reference import LocalRef
-from core.runner import _ancestors
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.core.reference import LocalRef
+from quebra.core.runner import _ancestors
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 JOBS_DIR = REPO_ROOT / "jobs" / "active"
@@ -99,7 +99,7 @@ def _unexpected(job: Job, node_id: str) -> set[str]:
 
 def _windows_nodes(job: Job) -> list[str]:
     # Key on node_id / fn_name, never fn.__name__: every closure-factory step in
-    # jobs/common.py names its inner function `step`, so filter, interpolate, allan
+    # quebra/recipes.py names its inner function `step`, so filter, interpolate, allan
     # and fidelity all report the same fn.__name__.
     # Substring, not equality: the fidelity carve is named `fidelity_windows`, and an
     # exact match silently skipped it - the test passed while that node was in fact

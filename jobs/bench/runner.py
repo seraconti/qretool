@@ -52,9 +52,9 @@ from jobs.bench.grid import (
     Cell,
     all_cells,
 )
-from analyzers.checks._permutation import block_permutations
-from analyzers.checks.battery import row_key, run_battery
-from analyzers.checks.result import Segment
+from quebra.analyzers.checks._permutation import block_permutations
+from quebra.analyzers.checks.battery import row_key, run_battery
+from quebra.analyzers.checks.result import Segment
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 

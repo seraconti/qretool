@@ -19,10 +19,10 @@ import pytest
 from scipy.integrate import quad
 from scipy.stats import cramervonmises
 
-import analyzers.checks.c2_anderson_darling as c2
-import analyzers.checks.cvm_cramer_von_mises as cvm
-from analyzers.checks._permutation import PermutationSet, block_permutations
-from analyzers.checks.result import CALIB_ASYMPTOTIC, CALIB_PERMUTATION, Segment
+import quebra.analyzers.checks.c2_anderson_darling as c2
+import quebra.analyzers.checks.cvm_cramer_von_mises as cvm
+from quebra.analyzers.checks._permutation import PermutationSet, block_permutations
+from quebra.analyzers.checks.result import CALIB_ASYMPTOTIC, CALIB_PERMUTATION, Segment
 
 
 def _segment(n: int, seed: int, slack: float = 1.0) -> Segment:
@@ -146,7 +146,7 @@ def test_cvm_is_registered_in_the_bench_row_schema():
 
     import pandas as pd
 
-    from analyzers.checks.battery import ROW_KEYS
+    from quebra.analyzers.checks.battery import ROW_KEYS
 
     assert any(key[0] == cvm.CHECK_NAME for key in ROW_KEYS)
 

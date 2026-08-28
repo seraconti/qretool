@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analyzers import windows
+from quebra.analyzers import windows
 from jobs.bench.carve import BENCH_WINDOW_COLUMNS, carve_windows
 
 THRESHOLD = 0.0

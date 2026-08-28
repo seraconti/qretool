@@ -1,0 +1,134 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "quebra"
+version = "0.1.0.dev0"
+description = "Reliability statistics for qubit quality time series"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+authors = [{ name = "Sera Conti", email = "sera.conti@usp.br" }]
+keywords = ["qubit", "reliability", "survival analysis", "reproducibility"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Physics",
+]
+
+# Derived from the imports actually present under src/quebra/, not copied from a
+# requirements file. Lower bounds only, set to the versions this was developed against.
+#
+# `joblib` is deliberately absent: it is imported only by jobs/bench/runner.py, and jobs/
+# stayed at the repository root rather than moving into the package. A study's parallel
+# execution backend has no business being a mandatory dependency of the toolkit.
+dependencies = [
+  "numpy>=2.0",
+  "scipy>=1.14",
+  "pandas>=2.2",
+  "matplotlib>=3.9",
+  "plotly>=6.0",
+  "pandera>=0.20",
+  "allantools>=2024.6",
+  "scikit-learn>=1.5",
+  "h5py>=3.11",
+  "PyYAML>=6.0",
+  "platformdirs>=4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "hypothesis>=6.100",
+  "import-linter>=2.0",
+  "deptry>=0.20",
+  "build>=1.2",
+]
+# Placeholder for SPEC 0007. The copula serial-independence check shells out to Rscript,
+# which pip cannot install; this extra exists so the dependency has a declared home when
+# that spec decides how to express it.
+r = []
+
+[project.urls]
+Homepage = "https://github.com/seraconti/qretool"
+Repository = "https://github.com/seraconti/qretool"
+Issues = "https://github.com/seraconti/qretool/issues"
+
+[project.scripts]
+quebra = "quebra.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quebra"]
+
+[tool.hatch.build.targets.sdist]
+# The sdist is a source distribution, so tests and specs are legitimate content. What must
+# never ship is data or generated artifacts.
+# `.claude/` holds agent configuration and an internal review ledger; neither is
+# source. `spec/ledger/` is a 10 MB transcript. None of it belongs in a source
+# distribution that a JOSS reviewer downloads.
+exclude = [
+  "output/",
+  "output_backup*/",
+  "spec/ledger/",
+  ".claude/",
+  "dist/",
+]
+
+[tool.ruff]
+line-length = 88
+# The OLDEST supported interpreter, not the newest. This is what caught a nested f-string
+# in provenance.py that is a SyntaxError on 3.11 and legal from 3.12: the dev machine runs
+# 3.13, so nothing else would have.
+target-version = "py311"
+
+[tool.ruff.lint]
+# Ruff's default selection, stated explicitly rather than inherited.
+#
+# Widening it is tempting and is NOT this phase. Measured on this tree, `select = ["E",
+# "F", "I", "UP", "B"]` reports 1193 findings, 1116 of them line-too-long. Landing that
+# inside an installability phase would either force a reformat nobody reviewed or leave the
+# lint gate permanently red. SPEC 0002 is about making the package install; the rule set it
+# ships with is deliberately the one already in force, so this phase changes no lint
+# outcome. Widening belongs in its own phase with its own checkpoint.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.pytest.ini_options]
+# NO `pythonpath`. That entry existed only while nothing was installable; keeping it would
+# put the source tree on sys.path and the wheel would never be the thing under test, which
+# is the one claim this phase exists to make good. Develop with `pip install -e .`.
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+  "slow: full statistical grids; excluded from the fast gate",
+  "heavy: large end-to-end job runs; excluded from the fast gate",
+  "real: needs the private dataset tree; never runs in CI",
+  "r: needs Rscript plus the copula and randtests packages",
+]
+
+[tool.deptry]
+# Scope the scan to the distributed package. `jobs/` and `tests/` live at the repository
+# root by design (SPEC 0002 D1) and legitimately import `quebra`; without this deptry reads
+# those as DEP003 "transitive dependency" on the project's own name, which is noise.
+known_first_party = ["quebra"]
+
+[tool.deptry.per_rule_ignores]
+# DEP002 is "declared but never imported". Every name below is a COMMAND, not a library:
+# they are run from the Makefile and from CI, so nothing in the source imports them and
+# deptry is right that it cannot see a use. Listing them here states that on purpose, so a
+# genuinely unused runtime dependency still surfaces.
+DEP002 = [
+  "ruff",
+  "mypy",
+  "pytest",
+  "pytest-cov",
+  "hypothesis",
+  "import-linter",
+  "deptry",
+  "build",
+]

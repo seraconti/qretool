@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from core import runner
-from core.job import Job
-from core.runner import run_job
-from main import _module_from_path
+from quebra.core import runner
+from quebra.core.job import Job
+from quebra.core.runner import run_job
+from quebra.cli import _module_from_path
 
 
 def _load(job_py: Path) -> Job:
@@ -26,8 +26,8 @@ def _leaf(d: Path, name: str, csv: str = "a,b\n1,2\n") -> Path:
     (d / f"{name}.csv").write_text(csv)
     p = d / f"{name}.py"
     p.write_text(
-        "from core.job import Job\n"
-        "from core.dataset import Dataset\n"
+        "from quebra.core.job import Job\n"
+        "from quebra.core.dataset import Dataset\n"
         f'job = Job(name="{name}")\n'
         f'node = job.load_df(Dataset(path="{name}.csv", schema=None))\n'
         'job.materialize(node, name="out")\n'
@@ -38,7 +38,7 @@ def _leaf(d: Path, name: str, csv: str = "a,b\n1,2\n") -> Path:
 def _composite(d: Path, name: str, child: Path, alias: str = "c") -> Path:
     p = d / f"{name}.py"
     p.write_text(
-        "from core.job import Job\n"
+        "from quebra.core.job import Job\n"
         f'job = Job(name="{name}")\n'
         f'inc = job.include(r"{child}", alias="{alias}")\n'
         f'm = job.step(lambda x: x, inc.ref("out"), name="{name}_step")\n'
@@ -57,15 +57,21 @@ def _n(out: Path, pattern: str) -> int:
 def test_include_cycle_raises_at_import(tmp_path: Path) -> None:
     a = tmp_path / "a.py"
     b = tmp_path / "b.py"
-    a.write_text(f'from core.job import Job\njob = Job("a")\njob.include(r"{b}")\n')
-    b.write_text(f'from core.job import Job\njob = Job("b")\njob.include(r"{a}")\n')
+    a.write_text(
+        f'from quebra.core.job import Job\njob = Job("a")\njob.include(r"{b}")\n'
+    )
+    b.write_text(
+        f'from quebra.core.job import Job\njob = Job("b")\njob.include(r"{a}")\n'
+    )
     with pytest.raises(ValueError, match="include cycle:"):
         Job("top").include(a)
 
 
 def test_self_include_raises_at_import(tmp_path: Path) -> None:
     s = tmp_path / "s.py"
-    s.write_text(f'from core.job import Job\njob = Job("s")\njob.include(r"{s}")\n')
+    s.write_text(
+        f'from quebra.core.job import Job\njob = Job("s")\njob.include(r"{s}")\n'
+    )
     with pytest.raises(ValueError, match="include cycle:"):
         Job("top").include(s)
 
@@ -73,7 +79,7 @@ def test_self_include_raises_at_import(tmp_path: Path) -> None:
 def test_import_stack_unwinds_on_mid_import_error(tmp_path: Path) -> None:
     # a sub-job that raises during import must not leak a stale stack entry -
     # a subsequent unrelated include of the same file must still work
-    from core.job import _IMPORT_STACK
+    from quebra.core.job import _IMPORT_STACK
 
     boom = tmp_path / "boom.py"
     boom.write_text('raise RuntimeError("boom during import")\n')
@@ -81,7 +87,7 @@ def test_import_stack_unwinds_on_mid_import_error(tmp_path: Path) -> None:
         Job("top").include(boom)
     assert _IMPORT_STACK == []  # popped despite the exception
 
-    boom.write_text('from core.job import Job\njob = Job("fixed")\n')
+    boom.write_text('from quebra.core.job import Job\njob = Job("fixed")\n')
     assert Job("top2").include(boom).job.name == "fixed"
 
 
@@ -135,7 +141,7 @@ def test_same_invocation_diamond_dedup(
     c2 = _composite(tmp_path, "c2", leaf, alias="l")
     g = tmp_path / "g.py"
     g.write_text(
-        "from core.job import Job\n"
+        "from quebra.core.job import Job\n"
         'job = Job(name="g")\n'
         f'a = job.include(r"{c1}", alias="c1")\n'
         f'b = job.include(r"{c2}", alias="c2")\n'

@@ -14,9 +14,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from core.dataset import Dataset
-from core.job import Job
-from core.runner import _reuse_eligible_dir, run_job
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.core.runner import _reuse_eligible_dir, run_job
 
 
 def _passthrough(x: object) -> object:
@@ -99,11 +99,11 @@ def test_reuse_skips_provless_dir(tmp_path: Path) -> None:
 
 
 def test_within_calibration_incomplete_construction_raises() -> None:
-    from panels.within_calibration import WithinCalibrationPanelData
+    from quebra.panels.within_calibration import WithinCalibrationPanelData
 
-    from analyzers.distinguish_band import DistinguishBand
-    from analyzers.reliability_band import ReliabilityBand
-    from analyzers.signal_band import SignalBand
+    from quebra.analyzers.distinguish_band import DistinguishBand
+    from quebra.analyzers.reliability_band import ReliabilityBand
+    from quebra.analyzers.signal_band import SignalBand
 
     # A threshold with no per-threshold entries in any band is incomplete. The outer
     # class owns the ladder and delegates the sweep, so the error comes from the band.
@@ -119,7 +119,7 @@ def test_within_calibration_incomplete_construction_raises() -> None:
 
 
 def test_across_calibration_incomplete_construction_raises() -> None:
-    from panels.across_calibration import AcrossCalibrationPanelData
+    from quebra.panels.across_calibration import AcrossCalibrationPanelData
 
     with pytest.raises(ValueError, match="incomplete AcrossCalibrationPanelData"):
         # non-empty raw inputs but default (empty) derived arrays => length mismatch

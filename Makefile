@@ -1,7 +1,9 @@
-# No src/ layout yet - that is SPEC 0002. `core` is the layering root AGENTS.md
-# section 3 names, so it is what the type gate checks today. Becomes src/quebra/core
-# when the tree moves.
-PKG := core
+# The src/ layout landed in SPEC 0002. mypy checks the layering root AGENTS.md section 3
+# names; widening it to the whole package is a later phase with its own checkpoint.
+PKG := src/quebra/core
+# deptry scans the DISTRIBUTED package only. `jobs/` legitimately imports joblib and
+# quebra, and neither is a dependency of the wheel - that is the point of D1.
+PKGROOT := src/quebra
 FAST := -m "not slow and not heavy and not real and not r"
 
 .PHONY: check lint types arch deps test test-all test-r docs clean
@@ -15,17 +17,16 @@ lint:
 
 ## Phase 1 onward: mypy needs the src layout to exist first.
 types:
-	@command -v mypy >/dev/null 2>&1 || { echo "SKIPPED types: mypy not installed; needs the src/ layout (SPEC 0002)"; exit 0; }; \
 	mypy $(PKG)
 
 ## Phase 2 onward: needs the import-linter contract in pyproject.toml.
 arch:
-	@command -v lint-imports >/dev/null 2>&1 || { echo "SKIPPED arch: lint-imports not installed; needs the import-linter contract in pyproject.toml (SPEC 0002)"; exit 0; }; \
+	@python3 -c "import tomllib,sys; d=tomllib.load(open('pyproject.toml','rb')); sys.exit(0 if 'importlinter' in d.get('tool',{}) else 1)" 2>/dev/null \
+		|| { echo "SKIPPED arch: no [tool.importlinter] contract yet - SPEC 0004 defines it (SPEC 0002 R1.2.6 forbids adding it here)"; exit 0; }; \
 	lint-imports
 
 deps:
-	@command -v deptry >/dev/null 2>&1 || { echo "SKIPPED deps: deptry not installed; needs pyproject.toml (SPEC 0002)"; exit 0; }; \
-	deptry .
+	deptry $(PKGROOT)
 
 ## What CI runs on every push, and what a JOSS reviewer will run.
 ## Must pass with zero private data and zero R.
