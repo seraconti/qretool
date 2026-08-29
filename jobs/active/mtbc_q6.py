@@ -31,7 +31,7 @@ PREFIX = "mtbc_q6"
 job = Job(PREFIX)
 
 ds = Dataset(
-    path="FOR ZENODO/Supplementary/Sup fig 1/6D2S/6D2S_qubit6_freq_log.pickle",
+    path="data/real_private/calibration_logs/6D2S_qubit6_freq_log.pickle",
     schema=CalibrationLogSchema,
     qubit=6,
     device="6D2S",

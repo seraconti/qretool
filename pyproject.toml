@@ -22,9 +22,10 @@ classifiers = [
 # Derived from the imports actually present under src/quebra/, not copied from a
 # requirements file. Lower bounds only, set to the versions this was developed against.
 #
-# `joblib` is deliberately absent: it is imported only by jobs/bench/runner.py, and jobs/
-# stayed at the repository root rather than moving into the package. A study's parallel
-# execution backend has no business being a mandatory dependency of the toolkit.
+# `joblib` is deliberately absent HERE: it is imported only by jobs/bench/runner.py, and
+# jobs/ stayed at the repository root rather than moving into the package. A study's parallel
+# execution backend has no business being a mandatory dependency of the toolkit - so it is
+# declared under the `bench` extra below instead (SPEC 0003 R3.1).
 dependencies = [
   "numpy>=2.0",
   "scipy>=1.14",
@@ -54,6 +55,11 @@ dev = [
 # which pip cannot install; this extra exists so the dependency has a declared home when
 # that spec decides how to express it.
 r = []
+# The bench study parallelises over cells with joblib (jobs/bench/runner.py). Declared here
+# rather than in `dependencies` because a study's execution backend is not something an
+# install of the toolkit should drag in - but declared SOMEWHERE, which it previously was
+# not: it resolved only as a transitive requirement of scikit-learn.
+bench = ["joblib>=1.3"]
 
 [project.urls]
 Homepage = "https://github.com/seraconti/qretool"

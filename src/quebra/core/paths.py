@@ -16,6 +16,7 @@ downstream may ever record a placeholder hash.
 from __future__ import annotations
 
 import os
+import tomllib
 from pathlib import Path
 
 
@@ -62,6 +63,29 @@ def default_dataset_root() -> Path:
     return resolve_data_root()
 
 
+_MANIFEST_RELATIVE = Path("data") / "real_private" / "MANIFEST.toml"
+
+
+def _is_manifested(raw: Path) -> bool:
+    """Is this path one of the records the private manifest lists?
+
+    Read lazily and failure-tolerantly on purpose: this runs only on the error path, and an
+    unreadable or absent manifest must degrade to "not manifested" rather than replace a
+    missing-dataset message with a manifest-parsing one.
+    """
+    manifest = repo_root() / _MANIFEST_RELATIVE
+    if not manifest.is_file():
+        return False
+    try:
+        records = tomllib.loads(manifest.read_text()).get("record", [])
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    # Match on the tail, because a job writes `data/real_private/6D2S/x.pickle` while the
+    # manifest keys on `6D2S/x.pickle` - relative to the private root.
+    text = raw.as_posix()
+    return any(text.endswith(str(record.get("path", "\0"))) for record in records)
+
+
 def resolve_dataset_path(path: str | Path, dataset_root: Path) -> Path:
     """Resolve a Dataset.path against dataset_root, then the repo root; must exist.
 
@@ -83,13 +107,7 @@ def resolve_dataset_path(path: str | Path, dataset_root: Path) -> Path:
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    tried = " or ".join(f"'{c}'" for c in candidates)
-    raise FileNotFoundError(
-        f"dataset not found: '{raw}' resolved to {tried} "
-        f"(dataset root: '{dataset_root}', repo root: '{repo_root()}'). Relative dataset "
-        "paths anchor on the dataset root, falling back to the repo root for tracked "
-        "in-repo tables - pass --data-root to override the former."
-    )
+    raise DataUnavailable(raw, candidates, dataset_root, _is_manifested(raw))
 
 
 def resolve_repo_path(path: str | Path) -> Path:
@@ -106,6 +124,54 @@ QUEBRA_DATA_ROOT_ENV = "QUEBRA_DATA_ROOT"
 QUEBRA_TOML = "quebra.toml"
 
 
+class DataUnavailable(FileNotFoundError):
+    """A dataset path did not resolve, with the reason a reader actually needs.
+
+    Subclasses `FileNotFoundError` so existing handlers keep working; what it adds is the
+    distinction between the two situations that used to look identical:
+
+    - the file is one of ours and is embargoed, so the reader is not missing a step - they
+      are missing data we cannot redistribute, and the simulated path is the way forward;
+    - the path is simply wrong, and no amount of asking us will produce the file.
+
+    SPEC 0003 R3.4. `data/real_private/MANIFEST.toml` is what separates the two: it is
+    committed precisely so this message can be specific without shipping any record.
+    """
+
+    def __init__(
+        self,
+        raw: Path,
+        candidates: list[Path],
+        dataset_root: Path,
+        manifested: bool,
+    ) -> None:
+        self.raw = raw
+        self.candidates = candidates
+        self.dataset_root = dataset_root
+        self.manifested = manifested
+        tried = " or ".join(f"'{c}'" for c in candidates)
+        if manifested:
+            reason = (
+                f"'{raw}' is listed in data/real_private/MANIFEST.toml, so this is an "
+                f"EMBARGOED record rather than a wrong path. It is not distributed with the "
+                f"repository. Run against the packaged fixtures instead - see "
+                f"`quebra._fixtures.fixture_path` and docs/WRITING_A_JOB.md - or set "
+                f"--data-root to a tree that has it."
+            )
+        else:
+            reason = (
+                f"'{raw}' is not in data/real_private/MANIFEST.toml, so this is a PATH that "
+                f"does not exist rather than data being withheld. Check the spelling, and "
+                f"note that relative dataset paths anchor on the dataset root, falling back "
+                f"to the repo root for tracked in-repo tables - pass --data-root to "
+                f"override the former."
+            )
+        super().__init__(
+            f"dataset not found: {reason} Tried {tried} "
+            f"(dataset root: '{dataset_root}', repo root: '{repo_root()}')."
+        )
+
+
 class DataRootNotFound(RuntimeError):
     """No data root could be resolved, with every location that was tried.
 
@@ -117,8 +183,6 @@ class DataRootNotFound(RuntimeError):
 
 def _data_root_from_toml(start: Path) -> tuple[Path | None, list[str]]:
     """Walk up from `start` looking for `quebra.toml` with `[tool.quebra] data_root`."""
-    import tomllib
-
     tried: list[str] = []
     for directory in [start, *start.parents]:
         candidate = directory / QUEBRA_TOML

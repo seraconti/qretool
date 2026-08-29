@@ -174,6 +174,29 @@ The `<identity>` is a content hash of the job file's source, the datasets it loa
 identities of any sub-jobs. Two runs with the same identity computed the same thing. Change
 a kwarg and the identity changes, which is the point.
 
+### Publishing a figure
+
+`output/` is gitignored — the artifacts run to hundreds of megabytes. The provenance beside
+them is kilobytes and carries the identity, the dataset digests, the git commit and the
+pipeline steps, which is everything needed to say what produced a figure without shipping any
+of it. When a figure appears in a paper, commit that:
+
+```bash
+make promote RUN=output/t2star_q1_070423_43e8d4_20260829_141549 NOTE="thesis ch4 fig 3"
+```
+
+It writes `published/<job>_<identity>/` with the provenance records and a `PROMOTED.toml`
+saying where the figure appears. **Only the provenance is copied** — never an artifact, or
+the rule keeping `output/` out of the repository would mean nothing.
+
+A run made against an uncommitted working tree is refused, because no commit reproduces it.
+Commit first and re-run, or pass `PROMOTE_FLAGS=--allow-dirty` to promote it anyway with
+`tree_clean = false` recorded in the file.
+
+The `dataset_hash` in a promoted record is the same digest
+`data/real_private/MANIFEST.toml` lists, so a reader can check which records a published
+figure rests on without receiving any of them.
+
 ## Rules that are not style
 
 **A step is a pure function.** No disk access, no `matplotlib`, no clock, no global state.

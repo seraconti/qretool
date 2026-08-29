@@ -28,7 +28,7 @@ PREFIX = "q1_27h_0704_dataset"
 
 job = Job("t2star_q1_070423")
 main_ds = Dataset(
-    path="tool/datasets/6D2S/070423_6D2S_qubit1.pickle",
+    path="data/real_private/6D2S/070423_6D2S_qubit1.pickle",
     schema=track912Schema,
     qubit=1,
     device="6D2S",

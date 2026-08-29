@@ -6,7 +6,7 @@ PKG := src/quebra/core
 PKGROOT := src/quebra
 FAST := -m "not slow and not heavy and not real and not r"
 
-.PHONY: check lint types arch deps test test-all test-r docs clean
+.PHONY: check lint types arch deps test test-all test-r test-real promote docs clean
 
 ## Run before every checkpoint. This is what the checkpoint banner reports.
 check: lint types arch test
@@ -44,6 +44,14 @@ test-r:
 ## Local only. Touches data/real_private/. Never on GitHub Actions.
 test-real:
 	pytest -m "real or regression"
+
+## Commit the provenance of a figure that appears in a publication. output/ is gitignored,
+## so this copies the kilobytes that make a figure auditable and none of the megabytes.
+##   make promote RUN=output/<run-dir> NOTE="thesis ch4 fig 3"
+promote:
+	@test -n "$(RUN)" || { echo "usage: make promote RUN=output/<run-dir> NOTE=\"where it appears\""; exit 2; }
+	@test -n "$(NOTE)" || { echo "NOTE is required: say where the figure appears"; exit 2; }
+	python scripts/promote_run.py "$(RUN)" --note "$(NOTE)" $(PROMOTE_FLAGS)
 
 ## Phase 8 onward.
 docs:

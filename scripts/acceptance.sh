@@ -57,6 +57,22 @@ step "import quebra from elsewhere" env -C / "${VENV}/bin/python" -c \
 
 step "the console script exists" env -C / "${VENV}/bin/quebra" --help
 
+# SPEC 0003 R3.6: a reviewer with none of our data must still reach a real result. This runs
+# the packaged fixture through the actual analyzer from `/`, so it fails if the CSV did not
+# ship in the wheel or if the fixture is reached by `__file__` arithmetic rather than
+# importlib.resources.
+step "a packaged fixture runs the pipeline from elsewhere" env -C / "${VENV}/bin/python" -c "
+import quebra.analyzers.t2star as t2star
+from quebra._fixtures import fixture_path
+from quebra.core.dataset import Dataset
+from quebra.core.job import _load_dataset
+norm = _load_dataset(Dataset(path=fixture_path('ramsey_synthetic.csv'), qubit=1,
+                             extra={'run_start_unix_s': 1.7e9}))
+result = t2star.run(t2star.make_inputs_from_norm(norm))
+assert len(result.frame) == 200, result.frame.shape
+print('fixture ->', len(result.frame), 'T2* points')
+"
+
 # The suite lives in the checkout - `tests/` is deliberately not in the wheel - but it runs
 # from a DIRECTORY THAT IS NOT THE REPOSITORY, because that is the claim the spec makes:
 # "import quebra works from an unrelated working directory, the fast test suite passes

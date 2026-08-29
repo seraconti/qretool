@@ -35,8 +35,19 @@ def test_repo_root_is_the_tool_repo(in_repo) -> None:
     assert (root / "pyproject.toml").exists()
 
 
-def test_default_dataset_root_is_repo_parent(in_repo) -> None:
-    assert default_dataset_root() == repo_root().parent
+def test_default_dataset_root_follows_the_declared_root(in_repo) -> None:
+    """Was `== repo_root().parent`, which SPEC 0003 made false: the datasets moved inside the
+    checkout under `data/` and `quebra.toml` now declares `data_root = "."`.
+
+    Asserting against the declared value rather than a fixed relationship is the point -
+    `default_dataset_root` delegates to the resolution chain, and a test that hardcodes one
+    link's answer stops testing the chain."""
+    import tomllib
+
+    declared = tomllib.loads((repo_root() / "quebra.toml").read_text())["tool"][
+        "quebra"
+    ]["data_root"]
+    assert default_dataset_root() == (repo_root() / declared).resolve()
 
 
 def test_resolve_dataset_path_relative_joins_root(tmp_path: Path) -> None:

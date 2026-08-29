@@ -24,7 +24,7 @@ Do not re-derive or re-argue the decisions below.
 
 **R0.1.2** `.gitignore` must exclude, from this commit onward:
 `data/real_private/` except `data/real_private/MANIFEST.toml`; `data/simulated/` except
-`*.toml` and `*.json` manifests; `outputs/`; `__pycache__/`; `*.py[cod]`; `.venv/`; `build/`;
+`*.toml` and `*.json` manifests; `output/`; `__pycache__/`; `*.py[cod]`; `.venv/`; `build/`;
 `dist/`; `*.egg-info/`; `.claude/settings.local.json`; `.ruff_cache/`; `.mypy_cache/`;
 `.pytest_cache/`; `docs/_build/`.
 
@@ -209,7 +209,7 @@ data/simulated/*
 !data/simulated/*.json
 
 # Outputs: artifacts are too large to track; run manifests are committed by hand
-outputs/
+output/
 
 # OS
 .DS_Store

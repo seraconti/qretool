@@ -160,7 +160,7 @@ def test_the_check_catches_a_resampled_input_behind_a_dataset_suffix() -> None:
     job.job_file = REPO_ROOT / "jobs" / "active" / "__init__.py"
     # Loaded, so `stem` really is an allowed suffix for this job - without this the
     # control would pass for the trivial reason that no suffix is allowed at all.
-    loaded = job.load(Dataset(path=f"tool/datasets/6D2S/{stem}.pickle", qubit=1))
+    loaded = job.load(Dataset(path=f"data/real_private/6D2S/{stem}.pickle", qubit=1))
     filtered = job.step(_passthrough, loaded, name=f"filter_{stem}")
     resampled = job.step(_passthrough, filtered, name=f"interpolate_{stem}")
     job.step(_passthrough, resampled, name=f"windows_{stem}")

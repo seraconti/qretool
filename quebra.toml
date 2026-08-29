@@ -9,5 +9,8 @@
 # So the checkout keeps behaving as it always did, but through a route that is declared,
 # inspectable and overridable rather than inferred from where a .py file happens to sit.
 # Anyone else sets QUEBRA_DATA_ROOT or writes their own quebra.toml.
+#
+# SPEC 0003 R3.2 moved the datasets INTO the checkout under data/, split by
+# redistribution status, so the root is now this directory rather than its parent.
 [tool.quebra]
-data_root = ".."
+data_root = "."

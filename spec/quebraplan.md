@@ -115,7 +115,7 @@ data/                        <- outside src/, never packaged
   simulated/                 <- generated; only seeds + manifests committed
   real_private/              <- gitignored entirely
     MANIFEST.toml            <- COMMITTED: filename, sha256, provenance, embargo status
-outputs/                     <- gitignored entirely
+output/                     <- gitignored entirely
   <job-id>/<identity>/
     run.json                 <- COMMITTED for published figures only
 src/quebra/
@@ -128,7 +128,7 @@ src/quebra/
 | 1B.2 | `data/real_private/MANIFEST.toml`, committed, listing filename, sha256, provenance, embargo status | 1 | This is the single highest-value small artifact in the whole plan. A reviewer sees exactly what was used without receiving it; you can verify a collaborator sent the same file twice; and the sha256 is already what your identity scheme folds in, so the manifest is a human-readable view of a hash you compute anyway. | `[INFERRED]`; aligned with `[DOCUMENTED]` ACM guidance on documenting proprietary dependencies | `[PRACTICE]` | ACM/ICSE: this is what "document the dependency" means concretely |
 | 1B.3 | Data root resolution order: `QUEBRA_DATA_ROOT` env var, then `quebra.toml` at repo root, then a `platformdirs` user data dir | 2-3 | Replaces "one directory above the git root". Env var first so CI and a reviewer's machine can both work without editing files. Not `importlib.resources`, which cannot reach outside the wheel. | `[INFERRED]` | `[PRACTICE]` | JOSS: Functionality checkbox - a reviewer must be able to point the tool at their own data |
 | 1B.4 | Presence detection, not failure: a loader for a missing private dataset raises a named `DataUnavailable` carrying what was expected and where it was looked for | 1 | Anyone without your pickles should get a legible message and a working simulated path, not a stack trace. Same pattern as the R degradation in 6.3. | `[INFERRED]` | `[PRACTICE]` | JOSS: reviewer will hit this on day one |
-| 1B.5 | `outputs/` gitignored entirely; commit `run.json` only for figures that appear in a paper | 1-2 | Correct, outputs are too big. But an ungitignored `outputs/` with nothing committed means published figures have no auditable trail. The manifest is kilobytes and carries node IDs, input hashes, artifact IDs, software version, timings and cache status. Commit those and the figure is reproducible without the artifacts. | `[INFERRED]` | `[PRACTICE]` | JOSS: reproducible execution of paper figures |
+| 1B.5 | `output/` gitignored entirely; commit `run.json` only for figures that appear in a paper | 1-2 | Correct, outputs are too big. But an ungitignored `output/` with nothing committed means published figures have no auditable trail. The manifest is kilobytes and carries node IDs, input hashes, artifact IDs, software version, timings and cache status. Commit those and the figure is reproducible without the artifacts. | `[INFERRED]` | `[PRACTICE]` | JOSS: reproducible execution of paper figures |
 | 1B.6 | `src/quebra/_fixtures/` for the tiny packaged synthetic fixtures, reached via `importlib.resources` | 1 | These ship in the wheel so that `pip install quebra && pytest --pyargs quebra` works for a reviewer with no repository checkout. | `[DOCUMENTED]` stdlib | `[PRACTICE]` | JOSS: reviewer verification path |
 
 ---
@@ -460,7 +460,7 @@ in `deny`. `[DOCUMENTED]`
     ],
     "deny": [
       "Edit(data/**)",
-      "Edit(outputs/**)"
+      "Edit(output/**)"
     ]
   }
 }
@@ -472,7 +472,7 @@ it; it is designed to short-circuit the settings file. `[DOCUMENTED]`
 
 Note the two data rules. The agent **can read** everything under `data/`, including
 `real_private/`, because it cannot debug a loader against data it cannot see. What it cannot do is
-`Edit(data/**)` or `Edit(outputs/**)`: it may change the machinery, never the evidence. A dataset
+`Edit(data/**)` or `Edit(output/**)`: it may change the machinery, never the evidence. A dataset
 or a materialised artifact modified by an agent mid-session is a silent scientific error with no
 diff to catch it. The exfiltration risk is handled one layer up, by the `git push` and `curl`
 denies in user scope, not by blinding the agent. `[INFERRED]`

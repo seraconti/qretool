@@ -97,7 +97,7 @@ def _compare(*curves: KaplanMeierCurve, threshold_label: str) -> KaplanMeierComp
 _curves = []
 for stem, qubit, display in DATASETS:
     dataset = Dataset(
-        path=f"tool/datasets/6D2S/{stem}.pickle",
+        path=f"data/real_private/6D2S/{stem}.pickle",
         schema=track912Schema,
         qubit=qubit,
         device="6D2S",

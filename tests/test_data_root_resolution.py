@@ -108,7 +108,19 @@ def test_a_nonexistent_explicit_root_falls_through_rather_than_being_returned(
 
 
 def test_the_repository_resolves_through_its_own_quebra_toml(monkeypatch, in_repo):
-    """The checkout keeps working, and through mechanism 3 rather than `__file__`."""
+    """The checkout keeps working, and through mechanism 3 rather than `__file__`.
+
+    The declared value changed in SPEC 0003 - `data_root` moved from `".."` to `"."` when the
+    datasets came inside the checkout under `data/` - so this asserts the checkout resolves
+    to what its own `quebra.toml` SAYS, read from the file, rather than to a hardcoded
+    relationship. That is the property mechanism 3 is supposed to have; pinning the literal
+    would have to be rewritten every time the value moves.
+    """
+    import tomllib
+
     monkeypatch.delenv(QUEBRA_DATA_ROOT_ENV, raising=False)
+    declared = tomllib.loads((in_repo / "quebra.toml").read_text())["tool"]["quebra"][
+        "data_root"
+    ]
     # `in_repo` has already chdir'd here; repo_root() is only meaningful once it has.
-    assert resolve_data_root() == in_repo.parent
+    assert resolve_data_root() == (in_repo / declared).resolve()

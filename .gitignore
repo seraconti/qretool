@@ -33,10 +33,9 @@ data/simulated/*
 !data/simulated/*.json
 
 # Outputs: artifacts are too large to track; run manifests are committed by hand.
-# `outputs/` is the name SPEC 0002 moves to; `output/` and the two backups are what this
-# repository writes today (305M, 33M and 23M). All four are listed so the rename cannot
-# silently un-ignore 361M of evidence.
-outputs/
+# `output/` is what the tool writes and the one name the specs use; the two backups are
+# what this repository already holds (305M, 33M and 23M), listed so none of the 361M can
+# be un-ignored by accident.
 output/
 output_backup/
 output_backup2/

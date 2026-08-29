@@ -21,14 +21,14 @@ PREFIX = "q1_13h_1004_dataset"
 
 job = Job("ramsey_q1_100423")
 main_ds = Dataset(
-    path="tool/datasets/6D2S/100423_6D2S_qubit1.pickle",
+    path="data/real_private/6D2S/100423_6D2S_qubit1.pickle",
     schema=track912Schema,
     qubit=1,
     device="6D2S",
     duration_h=13,
     extra={"run_name": PREFIX},
 )
-comp_ds = Dataset(path="FOR ZENODO/Main/Fig 2/qubit1.pickle", schema=None)
+comp_ds = Dataset(path="data/real_private/companion/qubit1.pickle", schema=None)
 
 main_node = job.load(main_ds)
 comp_node = job.load_df(comp_ds)

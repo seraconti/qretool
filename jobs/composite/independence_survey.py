@@ -223,7 +223,7 @@ _ledgers = []
 for _filename in DATASET_FILES:
     _name = _label(_filename).replace(" ", "_")
     _ds = Dataset(
-        path=f"tool/datasets/6D2S/{_filename}",
+        path=f"data/real_private/6D2S/{_filename}",
         schema=track912Schema,
         qubit=_qubit(_filename),
         device="6D2S",

@@ -1,9 +1,14 @@
 """`resolve_dataset_path` resolves against two roots, in a fixed order.
 
-The dataset root (912days/, one level above the repo) is where the published read-only
-pickles live. The repo-root fallback was added for tracked in-repo tables that are genuine
-data inputs - `jobs/bench/results/size_table.csv`, which a figure job declares as a Dataset so
-its sha256 enters provenance and the run identity.
+The dataset root is wherever `--data-root` / `QUEBRA_DATA_ROOT` / `quebra.toml` point; the
+repo-root fallback was added for tracked in-repo tables that are genuine data inputs -
+`jobs/bench/results/size_table.csv`, which a figure job declares as a Dataset so its sha256
+enters provenance and the run identity.
+
+SPEC 0003 moved this checkout's data under `data/`, so its declared root is now the repo
+itself and the two candidates coincide HERE. That is a property of one configuration, not of
+the resolver, which is why the control below drives an explicit root rather than reading this
+checkout's.
 
 Order is the load-bearing part: dataset root FIRST, so an external dataset can never be
 shadowed by a same-named file that happens to exist inside the repo.
@@ -25,17 +30,19 @@ def test_a_tracked_in_repo_table_resolves(in_repo):
     assert resolved.exists()
 
 
-def test_without_the_fallback_that_path_would_not_exist(in_repo):
-    """Positive control: the dataset root really is the wrong place to look for it.
+def test_without_the_fallback_that_path_would_not_exist(tmp_path, in_repo):
+    """Positive control: with a dataset root that lacks the file, only the fallback finds it.
 
-    Without this, the test above could pass because the dataset root happens to contain a
-    copy, and the fallback would be untested.
+    Driven from an explicit empty root rather than `default_dataset_root()`. The earlier
+    version asserted that THIS checkout's dataset root lacked the table, which held only
+    while the root was the repo's parent; SPEC 0003 made it the repo itself, and the control
+    started failing for a configuration reason rather than a resolver one. Using `tmp_path`
+    tests the fallback itself, under every configuration.
     """
-    assert not (
-        default_dataset_root() / "jobs/bench/results/size_table.csv"
-    ).exists(), (
-        "the dataset root now contains a bench table; the fallback test is no longer "
-        "exercising the fallback"
+    assert not (tmp_path / "jobs/bench/results/size_table.csv").exists()
+    resolved = resolve_dataset_path("jobs/bench/results/size_table.csv", tmp_path)
+    assert resolved == (repo_root() / "jobs/bench/results/size_table.csv").resolve(), (
+        "the repo-root fallback did not fire for a table absent from the dataset root"
     )
 
 

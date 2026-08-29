@@ -71,13 +71,13 @@ hypothesis, import-linter, deptry) and `r` (empty for now, a placeholder for SPE
 `addopts = "--strict-markers"` and the four markers `slow`, `heavy`, `real`, `r`, and
 `[tool.hatch.build.targets.wheel]` with `packages = ["src/quebra"]`.
 
-**R1.2.5** Exclude from the wheel: `spec/`, `docs/adr/`, `tests/`, `data/`, `outputs/`.
+**R1.2.5** Exclude from the wheel: `spec/`, `docs/adr/`, `tests/`, `data/`, `output/`.
 
 **R1.2.6** Do not add an `[tool.importlinter]` section. That is SPEC 0004.
 
 **Acceptance**
 - `python -m build` succeeds and produces both an sdist and a wheel.
-- `python -c "import zipfile,glob; z=zipfile.ZipFile(glob.glob('dist/*.whl')[0]); assert not [n for n in z.namelist() if n.startswith(('spec/','data/','outputs/','tests/'))]"`
+- `python -c "import zipfile,glob; z=zipfile.ZipFile(glob.glob('dist/*.whl')[0]); assert not [n for n in z.namelist() if n.startswith(('spec/','data/','output/','tests/'))]"`
   exits 0.
 - `pytest --strict-markers -m "not slow"` runs without an unknown-marker error.
 
