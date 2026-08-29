@@ -67,7 +67,7 @@ def test_a_config_file_is_found_by_walking_UP_from_the_cwd(isolated, tmp_path):
 def test_a_relative_data_root_anchors_on_the_file_that_declares_it(isolated, tmp_path):
     """Not on the process cwd.
 
-    This repository's own `quebra.toml` says `data_root = ".."`. If that resolved against
+    This repository's own `quebra.toml` says `data_root`. If that resolved against
     the cwd, running a job from a subdirectory would silently point at a different tree.
     """
     root = tmp_path / "sibling"

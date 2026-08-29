@@ -51,7 +51,7 @@ test-real:
 promote:
 	@test -n "$(RUN)" || { echo "usage: make promote RUN=output/<run-dir> NOTE=\"where it appears\""; exit 2; }
 	@test -n "$(NOTE)" || { echo "NOTE is required: say where the figure appears"; exit 2; }
-	python scripts/promote_run.py "$(RUN)" --note "$(NOTE)" $(PROMOTE_FLAGS)
+	python3 scripts/promote_run.py "$(RUN)" --note "$(NOTE)" $(PROMOTE_FLAGS)
 
 ## Phase 8 onward.
 docs:

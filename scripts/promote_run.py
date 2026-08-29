@@ -26,8 +26,31 @@ from pathlib import Path
 PUBLISHED = Path("published")
 
 
+# TOML basic-string escapes. Escaping only `\\` and `"` was not enough: a note containing a
+# newline wrote a raw control character inside a quoted string, which `tomllib` rejects with
+# `Illegal character`. The failure was silent - the script exited 0 having written an audit
+# record that cannot be read back.
+_TOML_ESCAPES = {
+    "\\": "\\\\",
+    '"': '\\"',
+    "\b": "\\b",
+    "\t": "\\t",
+    "\n": "\\n",
+    "\f": "\\f",
+    "\r": "\\r",
+}
+
+
 def _quote(value: str) -> str:
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    out = []
+    for char in value:
+        if char in _TOML_ESCAPES:
+            out.append(_TOML_ESCAPES[char])
+        elif ord(char) < 0x20 or ord(char) == 0x7F:
+            out.append(f"\\u{ord(char):04X}")
+        else:
+            out.append(char)
+    return '"' + "".join(out) + '"'
 
 
 def _load_records(run_dir: Path) -> list[tuple[Path, dict]]:
@@ -64,9 +87,29 @@ def promote(
             f"that fact recorded."
         )
 
-    identity = records[0][1].get("identity", "")[:6] or "unknown"
+    # `or ""` not `get(..., "")`: `build_prov_record`'s `identity` parameter defaults to
+    # None, so a record can carry an explicit null, which the default form would subscript.
+    full_identity = records[0][1].get("identity") or ""
+    identity = full_identity[:6] or "unknown"
     job = Path(records[0][1].get("job_file", run_dir.name)).stem
     destination = root / PUBLISHED / f"{job}_{identity}"
+
+    # Two runs can share a six-character identity prefix. Without this guard the second
+    # promotion writes into the first's directory: same-named records are overwritten,
+    # differently-named ones accumulate, and PROMOTED.toml is rewritten to describe only the
+    # second run - so the directory silently misdescribes what it holds. Measured: two runs
+    # produced one directory whose manifest said `record_count = 1` beside two records.
+    existing = destination / "PROMOTED.toml"
+    if existing.is_file():
+        previous = existing.read_text()
+        marker = f'identity = "{full_identity}"'
+        if full_identity and marker not in previous:
+            raise SystemExit(
+                f"{destination} already holds a promotion with a different identity. Two runs "
+                f"share the six-character prefix '{identity}'. Remove the existing directory "
+                f"if it is stale, or promote under a longer prefix."
+            )
+
     (destination / "provenance").mkdir(parents=True, exist_ok=True)
 
     for path, _ in records:

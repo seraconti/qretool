@@ -21,9 +21,10 @@ docs/_build/
 .claude/settings.local.json
 
 # Data: private data never leaves this machine, but its manifest does.
-# These two trees do not exist yet - the dataset root is currently one level ABOVE the
-# repository (see core/paths.py). The rules are written now so the layout move in SPEC
-# 0002 lands inside them rather than needing a second ignore commit.
+# SPEC 0003 created these trees and made the dataset root the checkout itself, so the
+# embargoed records now live inside the repository and these rules are what keep them out
+# of it. MANIFEST.toml is the deliberate exception: it inventories the records by sha256 so
+# a result can be audited by someone who will never receive them.
 data/real_private/*
 !data/real_private/MANIFEST.toml
 
@@ -33,9 +34,9 @@ data/simulated/*
 !data/simulated/*.json
 
 # Outputs: artifacts are too large to track; run manifests are committed by hand.
-# `output/` is what the tool writes and the one name the specs use; the two backups are
-# what this repository already holds (305M, 33M and 23M), listed so none of the 361M can
-# be un-ignored by accident.
+# `output/` is what the tool writes and the one name the specs use. It measures 309M here.
+# The two backup names are kept listed so that restoring either from elsewhere cannot
+# un-ignore it by accident; neither directory exists at present.
 output/
 output_backup/
 output_backup2/

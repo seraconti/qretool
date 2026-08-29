@@ -7,6 +7,8 @@ pipeline - rather than the numbers in it.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -26,14 +28,26 @@ def test_an_unknown_fixture_is_refused_by_name():
         fixture_path("no_such_file.csv")
 
 
-def test_the_fixture_path_is_not_computed_from_the_source_tree():
-    """It must come from the imported package, wherever that was installed."""
+def test_the_fixture_path_comes_from_importlib_resources():
+    """It must come from the imported package, wherever that was installed.
+
+    The previous version compared `fixture_path(...)` with `module.fixture_path(...)` - the
+    same function object, the second call served from the module's cache - so it asserted
+    `x == x` and would have passed for `Path(__file__).parent / name`, the implementation it
+    exists to forbid. It is compared against `importlib.resources` directly now.
+    """
+    from importlib import resources
+
+    expected = Path(str(resources.files("quebra._fixtures") / "ramsey_synthetic.csv"))
+    assert fixture_path("ramsey_synthetic.csv") == expected
+
+
+def test_the_fixture_sits_inside_the_imported_package():
+    """Stronger form: wherever quebra was installed, the fixture is under that directory."""
     import quebra._fixtures as module
 
-    assert (
-        fixture_path("ramsey_synthetic.csv").parent
-        == module.fixture_path("ramsey_synthetic.csv").parent
-    )
+    package_dir = Path(module.__file__).parent.resolve()
+    assert fixture_path("ramsey_synthetic.csv").resolve().parent == package_dir
 
 
 def test_the_ramsey_fixture_loads_through_the_default_normaliser():

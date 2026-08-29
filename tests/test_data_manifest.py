@@ -12,6 +12,7 @@ A failure here would punish a reviewer for the one thing they cannot fix.
 from __future__ import annotations
 
 import hashlib
+import sys
 import tomllib
 from pathlib import Path
 
@@ -86,20 +87,56 @@ def test_the_declared_count_matches_the_entries():
     assert manifest["manifest"]["file_count"] == len(manifest.get("record", []))
 
 
-def test_a_corrupted_record_would_be_caught(tmp_path):
-    """A positive control on the check above, run against a synthetic tree.
+def test_a_corrupted_record_would_be_caught(tmp_path, monkeypatch):
+    """A positive control that exercises the CHECK, not hashlib.
 
-    Without this, `test_every_manifest_entry_matches_the_file_on_disk` passing proves only
-    that nothing is currently wrong - not that it would notice if something were.
+    The previous version hashed a literal and asserted the digest changed when a byte was
+    appended. That is a property of sha256; it touched no project code and would have passed
+    with the manifest check deleted. This builds a synthetic private tree, runs the same
+    comparison the real test runs, and asserts it catches a flipped byte.
     """
-    payload = b"not really a pickle"
-    good = hashlib.sha256(payload).hexdigest()
-    corrupted = hashlib.sha256(payload + b"!").hexdigest()
-    assert good != corrupted
+    import quebra.core.paths as paths_module
 
-    target = tmp_path / "record.pickle"
-    target.write_bytes(payload)
-    assert hashlib.sha256(target.read_bytes()).hexdigest() == good
+    private = tmp_path / "data" / "real_private"
+    (private / "6D2S").mkdir(parents=True)
+    record = private / "6D2S" / "rec.pickle"
+    record.write_bytes(b"payload")
+    digest = hashlib.sha256(record.read_bytes()).hexdigest()
+    (private / "MANIFEST.toml").write_text(
+        f"[manifest]\nfile_count = 1\n\n[[record]]\n"
+        f'path = "6D2S/rec.pickle"\nsha256 = "{digest}"\nbytes = {len(b"payload")}\n'
+        f'embargo = "embargoed"\n'
+    )
+    monkeypatch.setattr(paths_module, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(sys.modules[__name__], "PRIVATE_ROOT", private)
+    monkeypatch.setattr(sys.modules[__name__], "MANIFEST", private / "MANIFEST.toml")
 
-    target.write_bytes(payload + b"!")
-    assert hashlib.sha256(target.read_bytes()).hexdigest() != good
+    # Intact: the check passes.
+    test_every_manifest_entry_matches_the_file_on_disk()
+
+    # One byte flipped: the check must fail.
+    record.write_bytes(b"payloae")
+    with pytest.raises(AssertionError, match="manifest says"):
+        test_every_manifest_entry_matches_the_file_on_disk()
+
+
+def test_the_completeness_check_catches_an_unmanifested_file(tmp_path, monkeypatch):
+    """The other direction: a record that arrived without being listed."""
+    import quebra.core.paths as paths_module
+
+    private = tmp_path / "data" / "real_private"
+    (private / "6D2S").mkdir(parents=True)
+    (private / "6D2S" / "listed.pickle").write_bytes(b"a")
+    (private / "MANIFEST.toml").write_text(
+        "[manifest]\nfile_count = 1\n\n[[record]]\n"
+        'path = "6D2S/listed.pickle"\nsha256 = "x"\nbytes = 1\nembargo = "embargoed"\n'
+    )
+    monkeypatch.setattr(paths_module, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(sys.modules[__name__], "PRIVATE_ROOT", private)
+    monkeypatch.setattr(sys.modules[__name__], "MANIFEST", private / "MANIFEST.toml")
+
+    test_every_present_file_has_an_entry()
+
+    (private / "6D2S" / "smuggled.pickle").write_bytes(b"b")
+    with pytest.raises(AssertionError, match="present but unmanifested"):
+        test_every_present_file_has_an_entry()

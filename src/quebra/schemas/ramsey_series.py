@@ -101,7 +101,10 @@ class RamseySeriesSchema:
                         f"the previous day may be selected incorrectly. "
                         f"Provide Dataset.extra['run_start_unix_s'] for precision.",
                         UserWarning,
-                        stacklevel=2,
+                        # 3, not 2: after the move out of `_load_dataset` there is one more
+                        # frame between here and the caller, and `stacklevel=2` attributed
+                        # every one of these warnings to `core/job.py`, a library line.
+                        stacklevel=3,
                     )
                 except Exception as exc:
                     raise ValueError(

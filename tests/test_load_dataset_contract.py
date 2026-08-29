@@ -124,8 +124,10 @@ def test_qubit_is_optional_and_is_not_injected_when_absent(semicolon_csv):
 def test_the_default_normaliser_still_applies_when_no_schema_is_given(tmp_path):
     """`schema=None` means the DEFAULT normaliser, not "no normalisation".
 
-    Pinning this matters both ways: it is the behaviour ten in-repo call sites rely on,
-    and it is the behaviour the docs must not describe as "no validation".
+    Pinning this matters because the docs must not describe it as "no validation". It is NOT
+    relied on by ten call sites, as an earlier version of this docstring said: every
+    `job.load` in `jobs/` names a schema, and `tests/test_windows_not_interpolated.py` is the
+    only site that reaches the default.
     """
     path = tmp_path / "070423_run.csv"
     path.write_text("timestamp,frequency\n0,5.1\n1,5.3\n2,5.2\n")
@@ -197,3 +199,73 @@ def test_null_schema_refuses_a_column_that_would_shadow_meta(tmp_path):
     path.write_text("meta,value\nx,3.1\n")
     with pytest.raises(ValueError, match="column named 'meta'"):
         _load_dataset(Dataset(path=path, schema=NullSchema))
+
+
+# ------------------------------------------------------------------ the `validate` branch
+# Six of the eight real `job.load` sites take this branch: `track912Schema` cleans the frame
+# and `RamseySeriesSchema` then produces the Norm. It had no test anywhere - the dispatch
+# docstring's middle claim was the only statement of it.
+
+
+class _RenamingSchema:
+    """A `validate` schema of the shape `track912Schema` has: clean, rename, hand back."""
+
+    validated: list[str] = []
+
+    @classmethod
+    def validate(cls, frame: pd.DataFrame, dataset: Dataset) -> pd.DataFrame:
+        cls.validated.append(str(dataset.path))
+        return frame.rename(columns={"when": "timestamp", "freq": "frequency"})
+
+
+def test_a_validate_schema_is_called_and_then_the_default_normaliser_runs(tmp_path):
+    """Both halves: the schema really runs, AND the fallthrough really follows it."""
+    path = tmp_path / "070423_run.csv"
+    path.write_text("when,freq\n0,5.1\n1,5.3\n2,5.2\n")
+    _RenamingSchema.validated.clear()
+
+    norm = _load_dataset(Dataset(path=path, schema=_RenamingSchema, qubit=1))
+
+    assert _RenamingSchema.validated == [str(path)], (
+        "the validate schema was not called"
+    )
+    # Columns the schema produced, normalised by the default that ran after it.
+    assert np.array_equal(norm["t_rel_s"], [0.0, 1.0, 2.0])
+    assert "delta_hz" in norm and "raw_frequency_hz" in norm
+
+
+def test_a_validate_schema_that_does_not_produce_the_columns_fails_loudly(tmp_path):
+    """The fallthrough must not silently accept a frame the normaliser cannot use."""
+
+    class _Useless:
+        @classmethod
+        def validate(cls, frame, dataset):
+            return frame
+
+    path = tmp_path / "070423_run.csv"
+    path.write_text("when,freq\n0,5.1\n")
+    with pytest.raises(KeyError, match="RamseySeriesSchema"):
+        _load_dataset(Dataset(path=path, schema=_Useless, qubit=1))
+
+
+def test_to_norm_wins_when_a_schema_carries_both_methods(tmp_path):
+    """Dispatch order is a contract: `to_norm` short-circuits and `validate` never runs."""
+
+    class _Both:
+        called: list[str] = []
+
+        @classmethod
+        def to_norm(cls, frame, dataset):
+            cls.called.append("to_norm")
+            return Norm({"value": frame["v"].to_numpy(dtype=float), "meta": {}})
+
+        @classmethod
+        def validate(cls, frame, dataset):
+            cls.called.append("validate")
+            return frame
+
+    path = tmp_path / "d.csv"
+    path.write_text("v\n1.5\n")
+    norm = _load_dataset(Dataset(path=path, schema=_Both))
+    assert _Both.called == ["to_norm"]
+    assert np.array_equal(norm["value"], [1.5])

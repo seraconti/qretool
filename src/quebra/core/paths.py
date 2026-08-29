@@ -76,14 +76,28 @@ def _is_manifested(raw: Path) -> bool:
     manifest = repo_root() / _MANIFEST_RELATIVE
     if not manifest.is_file():
         return False
+    # `Exception`, not a named tuple: this runs only while another error is being raised, and
+    # a diagnostic helper that can itself raise replaces "your dataset is missing" with a
+    # traceback from the code trying to explain it. Measured shapes that reached here -
+    # `[record]` written for `[[record]]`, `record = "hello"`, `record = [1, 2]` - all raised
+    # AttributeError past an `(OSError, TOMLDecodeError)` guard, and a non-UTF-8 locale raised
+    # UnicodeDecodeError.
     try:
-        records = tomllib.loads(manifest.read_text()).get("record", [])
-    except (OSError, tomllib.TOMLDecodeError):
+        parsed = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        records = parsed.get("record", [])
+        listed = {
+            record["path"]
+            for record in records
+            if isinstance(record, dict) and isinstance(record.get("path"), str)
+        }
+    except Exception:
         return False
-    # Match on the tail, because a job writes `data/real_private/6D2S/x.pickle` while the
-    # manifest keys on `6D2S/x.pickle` - relative to the private root.
+    # Match on whole path COMPONENTS. A bare `endswith` crossed component boundaries, so
+    # `/elsewhere/mine2x2/030723_2x2_qubit1.pickle` matched the record `2x2/030723_2x2_qubit1.pickle`
+    # and a plainly wrong path was reported as an embargoed one - the exact inversion this
+    # function exists to prevent.
     text = raw.as_posix()
-    return any(text.endswith(str(record.get("path", "\0"))) for record in records)
+    return any(text == entry or text.endswith("/" + entry) for entry in listed)
 
 
 def resolve_dataset_path(path: str | Path, dataset_root: Path) -> Path:

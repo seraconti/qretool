@@ -1524,6 +1524,12 @@ COMMIT: 2f1bd95 (working tree; nearly all files in scope are untracked)
 - [ ] claim sweep for a fifth failed edit
 
 ### Reviewed
+- [x] src/quebra/core/job.py (_load_dataset, _load_dataframe_raw)
+- [x] src/quebra/core/dataset.py
+- [x] src/quebra/schemas/ramsey_series.py
+- [x] src/quebra/schemas/null.py
+- [x] tests/test_load_dataset_contract.py
+- [x] docs/WRITING_A_SCHEMA.md
 - [x] G1 .gitignore / Makefile / pytest.ini  (R0.1, R0.2 acceptance: all 5 criteria PASS)
 - [x] G2 jobs/{reference,rscripts,bench} move
 - [x] G3 spec/ledger/ (R0.3)
@@ -2164,3 +2170,171 @@ VERIFIED PASS | .github/workflows/ci.yml:16-18 | The 3.11 claim checks out: `ast
 MINOR | pyproject.toml:84-85 | "Measured on this tree, `select = ["E","F","I","UP","B"]` reports 1193 findings, 1116 of them line-too-long." Measured now: **1212 findings, 1138 E501**. The numbers were taken before the phase finished adding files. AGENTS.md 4 names this exact defect class ("a measured number in a docstring must come from the artifact it cites, in the state it ships"). The argument is unaffected; the numbers are wrong. | 1212 / 1138, or drop the counts and keep the reasoning.
 
 MINOR | AGENTS.md:213 | "`monoliths/`, `scripts/` and `jobs_old/` were deleted and no longer exist." This phase CREATED `scripts/`, and `scripts/acceptance.sh` is R1.4.1's deliverable. Same half-applied-edit class as the `main.py` lines. The layout section also never gained `pyproject.toml`, `quebra.toml`, `conftest.py`, `scripts/` or `.github/`. | Drop `scripts/` from that sentence and add the five new root files to the layout.
+
+---
+
+## db61799 slice review - generic loading path / schema dispatch
+
+SCOPE: src/quebra/core/job.py (_load_dataset + _load_dataframe_raw only), src/quebra/core/dataset.py, src/quebra/schemas/ramsey_series.py, src/quebra/schemas/null.py, tests/test_load_dataset_contract.py, docs/WRITING_A_SCHEMA.md
+COMMIT: db61799 (reviewed at HEAD b14bbc7)
+
+NOTE: a second reviewer was appending to this ledger concurrently, so this slice's
+entries sit at the file tail interleaved with theirs rather than under the heading
+below. Every entry of mine names one of the six scoped paths above; grep those.
+STATUS: complete, all six files reviewed.
+
+### Manifest
+(empty - all reviewed)
+
+### Reviewed
+
+### Findings
+
+---
+
+## b14bbc7 slice review - DataUnavailable / packaged fixtures / data manifest
+
+SCOPE: src/quebra/core/paths.py (new parts only: DataUnavailable, _is_manifested,
+_MANIFEST_RELATIVE, hoisted tomllib, changed raise in resolve_dataset_path),
+src/quebra/_fixtures/__init__.py, scripts/make_fixtures.py, scripts/make_data_manifest.py,
+tests/test_data_unavailable.py, tests/test_packaged_fixtures.py, tests/test_data_manifest.py
+COMMIT: b14bbc7
+
+### Manifest
+(reviewed) src/quebra/core/paths.py
+(reviewed) src/quebra/_fixtures/__init__.py
+(reviewed) scripts/make_fixtures.py
+(reviewed) scripts/make_data_manifest.py
+(reviewed) tests/test_data_unavailable.py
+(reviewed) tests/test_packaged_fixtures.py
+(reviewed) tests/test_data_manifest.py
+
+### Reviewed
+
+### Findings
+
+IMPORTANT | src/quebra/core/paths.py:86 | `text.endswith(str(record.get("path","\0")))` is a raw STRING suffix match, so it matches across a path component boundary. Measured: with record `path = "6D2S/x.pickle"`, `_is_manifested` returns True for `data/other/evil_6D2S/x.pickle` AND for `/tmp/zzz6D2S/x.pickle`. Both are wrong paths that the new message will call "an EMBARGOED record rather than a wrong path" - the exact inversion the class exists to prevent. | Anchor on a separator: `text == p or text.endswith("/" + p)`.
+
+IMPORTANT | src/quebra/core/paths.py:79-86 | The docstring promises the manifest read "must degrade to 'not manifested' rather than replace a missing-dataset message with a manifest-parsing one", but `except (OSError, tomllib.TOMLDecodeError)` does not cover the shapes that actually occur. Measured, all RAISING out of the error path: `[record]` written as a table instead of `[[record]]` (a one-bracket typo) -> AttributeError 'str' has no attribute 'get'; `record = "hello"` or `record = [1,2]` -> AttributeError; a manifest containing a non-ASCII filename read under `LC_ALL=C` -> UnicodeDecodeError (a ValueError, not OSError). Any of these replaces the useful FileNotFoundError with a traceback from the diagnostic helper. | `records = ...` then `if not isinstance(records, list): return False`, keep only `isinstance(r, dict) and isinstance(r.get("path"), str)`, and read with `manifest.read_bytes()` + `tomllib.loads(... .decode("utf-8"))` or `tomllib.load(open(...,"rb"))`.
+
+MINOR | src/quebra/core/paths.py:86 | The `"\0"` sentinel does work (no POSIX path can contain NUL, so a record with no `path` never matches) but it is load-bearing obscurity, and `str()` around it silently accepts a non-string `path`: measured, `path = 5` makes `_is_manifested(Path("foo5"))` return True. | Drop the sentinel in favour of the isinstance filter above.
+
+MINOR | src/quebra/core/paths.py:127-171 | `DataUnavailable.__init__` takes four required positional args but calls `super().__init__(one_string)`, so `self.args == (msg,)`. OSError's `__reduce__` reconstructs as `type(self)(*self.args)`, which raises TypeError - the exception cannot be pickled or copied, and multiprocessing/joblib propagation would surface a TypeError instead of the real error. | `self.args = (raw, candidates, dataset_root, manifested)` is wrong for str(); simplest is to accept defaults for the last three params.
+
+MINOR | src/quebra/core/paths.py:69 | `_is_manifested` reads the manifest from `repo_root()`, not from `dataset_root`, so a reviewer running with `--data-root` pointed at a private tree that carries its own MANIFEST.toml gets "not in data/real_private/MANIFEST.toml" for a record that is in one. Defensible (the manifest is committed repo metadata) but undocumented. | One sentence in the docstring saying the manifest is always the checkout's.
+
+IMPORTANT | tests/test_packaged_fixtures.py:29-36 | `test_the_fixture_path_is_not_computed_from_the_source_tree` compares `fixture_path(name).parent` with `module.fixture_path(name).parent` - the SAME function object called twice, second call served from `_RESOLVED`. It asserts `x == x` and cannot fail for any implementation, including one written as `Path(__file__).parent / name`. The claim in its own docstring ("it must come from the imported package") is unguarded, and this is the bug class `repo_root()` was already burned by. | Assert the path is under `resources.files("quebra._fixtures")`, or that it survives with `quebra` imported from a copied install tree.
+
+MINOR | src/quebra/_fixtures/__init__.py:3-5 | "point a `Dataset` at `fixture_path(...)` and the whole pipeline runs" is not true as shipped: `ramsey_synthetic.csv` carries no `DDMMYY_` prefix and its timestamps start at 0, so `RamseySeriesSchema.to_norm` reaches level 3 of the run-start resolution and RAISES `ValueError: Cannot determine run start time`. All four tests in tests/test_packaged_fixtures.py pass `extra={"run_start_unix_s": 1.7e9}`; the docstring does not mention it. | Add the required `extra` to the docstring recipe (renaming the fixture to a DDMMYY_ prefix would instead buy the midnight UserWarning).
+
+MINOR | src/quebra/_fixtures/__init__.py:41-44 | The `_RESOLVED` cache returns the path unconditionally on a hit, and the temp file's lifetime is `_STACK`'s. The leak itself is fine and documented (a wheel install is a directory, so `as_file` is a no-op), but the cache has no guard if anything ever closes the stack, and two threads racing the first call each `enter_context`, leaking one extraction. | `if name not in _RESOLVED or not _RESOLVED[name].is_file():` costs one stat on the error-free path.
+
+MINOR | scripts/make_fixtures.py:26-27, 72 | "A rerun must reproduce the committed bytes" is TRUE here - regenerated into a clean tree, the CSV is byte-identical to the committed one (numpy 2.4.4, pandas 2.3.3, `cmp` clean) - but nothing enforces it and one dependency default breaks it off-platform: `DataFrame.to_csv` defaults `lineterminator` to `os.linesep`, so the same script on Windows writes CRLF and every byte after the first line differs. | Pass `lineterminator="\n"`, and add a test that regenerates into tmp_path and compares.
+
+MINOR | scripts/make_fixtures.py:70-71 | "`%.9g` keeps ... the round-trip exact enough for a fixture" is correctly hedged - 9 significant digits is NOT a lossless float64 round-trip (17 are needed) - but the module docstring one screen above says the script exists "so the committed files are reproducible", which reads as value-exact. Measured, the loss is immaterial: 1 Hz quantisation against a 5 kHz noise sigma, and ~1e-13 s against a 4 us sigma. | Say "byte-reproducible; values are stored to 9 significant digits" once, at the top.
+
+GREEN | scripts/make_fixtures.py:27-31 | Seed is a written-out constant, not derived from a clock or a hash, and every physical constant carries its unit suffix (`CADENCE_S`, `QUBIT_FREQUENCY_HZ`, `T2STAR_MEAN_S`, `t_s`, `drift_hz`, `t2star_error_s`). The unsuffixed CSV column names (`timestamp`, `frequency`, `T2star`) are imposed by `RamseySeriesSchema`, not chosen here.
+GREEN | pyproject.toml:72-73 + .gitignore | The fixture really does ship: hatchling's wheel target takes all of `src/quebra`, and `git check-ignore` does not match `src/quebra/_fixtures/ramsey_synthetic.csv`, so the "inside the wheel" claim holds.
+
+IMPORTANT | src/quebra/schemas/null.py:6-8 | Docstring: "`Dataset.schema=None` runs `RamseySeriesSchema`, which ten in-repo jobs depend on; `NullSchema` has to be asked for by name." The ten is real but it counts the wrong thing. There are exactly ten `schema=None` Datasets in `jobs/` (check_calibration 2, instrument_validation 5, ramsey_q1_100423 1, check_ledger_q1 1, independence_survey 1) and exactly ten `job.load_df()` calls, 1:1 - every one of those ten is a raw-DataFrame load, and `load_df` never consults `dataset.schema`. NOT ONE in-repo `job.load()` call site passes `schema=None`: all 8 pass `track912Schema` or `CalibrationLogSchema`. So changing the default tomorrow would alter the behaviour of zero jobs, not ten. What 7 job files actually depend on is `RamseySeriesSchema` running as the FALLTHROUGH after a `validate` schema (the track912 path), which is a different guarantee and the one worth stating. | Replace with the true statement: "seven in-repo jobs reach it as the fallthrough after `track912Schema.validate`; no in-repo caller relies on `schema=None`."
+
+IMPORTANT | src/quebra/schemas/null.py:45-47 | Duplicate column labels silently produce a 2-D array. `frame[column]` on a duplicated label returns a DataFrame, so `.to_numpy()` is 2-D, and the loop then assigns the same key twice. Measured: `pd.DataFrame([[1,2,3],[4,5,6]], columns=["a","a","b"])` -> `norm["a"]` has shape `(2, 2)`, no error, no warning. Every step downstream expects 1-D under a Norm key. The `meta` collision two lines up proves the author was thinking about key collisions; this is the same class, unguarded. | Raise on `frame.columns.duplicated().any()` alongside the `meta` check.
+
+MINOR | src/quebra/schemas/null.py:46 | `str(column)` can map two distinct labels onto one key. Measured: `pd.DataFrame({0: [1,2], "0": [3,4]})` -> a single key `"0"` holding `[3 4]`; the integer-labelled column is gone with no error. | Fold into the duplicate-label guard: check for collisions after `str()`, not before.
+
+MINOR | src/quebra/schemas/null.py:37-44 | The `meta` it builds is `dataset_id` plus `**dataset.extra`, in that order, so a caller's `extra={"dataset_id": ...}` silently overrides the computed value. `RamseySeriesSchema` has the opposite precedence (`dict(extra)` then `.update({...})`, computed wins). Two schemas in one package disagreeing on who wins is a trap. Also absent here: `run_name`, `qubit`, `device`, `duration_h`, `n_points` - so a NullSchema Norm cannot say which qubit it came from even though the Dataset declared one. | Match RamseySeriesSchema's precedence, and carry qubit/device/n_points into meta.
+
+MINOR | src/quebra/schemas/null.py:1 | "Every column of the file" is not what it returns. `_load_dataset` injects `qubit_id` and `device` into the frame before dispatch, so a NullSchema Norm carries up to two keys that are not columns of the file. | "Every column of the frame handed to it, including the qubit_id/device columns job.load injects."
+
+MINOR | src/quebra/schemas/ramsey_series.py:103 | `stacklevel=2` was correct one frame out; the move added a frame and it was not re-counted. Measured: the DDMMYY warning is now attributed to `src/quebra/core/job.py:183` - the `return RamseySeriesSchema.to_norm(...)` line inside the library - where before it pointed at `_load_dataset`'s caller. Every such warning now blames the same library line regardless of which job triggered it. | `stacklevel=3`.
+
+VERIFIED PASS | src/quebra/schemas/ramsey_series.py:50-145 vs 9057803:core/job.py:161-258 | The move is behaviour-preserving. Textual diff of the two bodies (indentation normalised) shows ONLY black re-wrapping of two `pd.to_numeric(...)` calls plus the relocated `timestamp`/`frequency` KeyError. The `[valid][order]` index chain is intact and identical on all three passthrough columns (`normalised chi-square`, `T2star`, `T2star error`), the meta dict construction order is unchanged, and the three-level run-start resolution including the no-`t_raw[0]`-fallback comment is verbatim. Live check on a synthetic `010423_demo.csv` gives `run_start_resolution='date_only_midnight'`, `run_start_unix_s=1680307200.0`, keys `t_rel_s/delta_hz/raw_frequency_hz/meta`.
+
+VERIFIED PASS | src/quebra/core/job.py:140-190 | Dispatch is correct and total: `to_norm` before `validate` (same precedence as before), and the third branch is a raised `TypeError` naming both required methods and the doc - no silent passthrough. `import warnings`, `import numpy as np` and `check_unix_s` were removed from job.py and nothing there still references them. No import cycle: `transforms/lookup_prior.py` imports only numpy/pandas/typing.
+
+VERIFIED PASS | src/quebra/core/job.py:150-155 | The conditional `qubit_id`/`device` injection is a real behaviour change but not a silent one. Old: `int(dataset.qubit)` on `qubit=None` raised `int() argument must be...`, naming neither field. New: the column is simply absent, and `BaseQubitSchema` declares `qubit_id` required, so the track912 path still fails - now with a pandera SchemaError that names the column. All 8 in-repo `job.load` datasets declare both fields, so nothing in-repo changes.
+
+VERIFIED PASS | src/quebra/core/dataset.py:12-30 + loaders/registry.py | The `loader_kwargs`/`extra` split is complete. All four registered loaders audited: `_load_csv` does `pd.read_csv(path, **meta)`, `_load_hdf` reads `meta.get("key")`, `_load_yaml` and `_load_pickle` both `del meta`. Both `_load_dataset` and `_load_dataframe_raw` now pass `dict(dataset.loader_kwargs)`; `git grep` finds no remaining site that forwards `extra` to a reader. Every in-repo `extra=` is `{"run_name": ...}` on a `.pickle`, whose loader discarded it, so the split is a no-op for existing jobs - the docstring's account of why it was a defect is accurate.
+
+IMPORTANT | tests/test_load_dataset_contract.py:128 | Same false claim as null.py, restated in a test docstring that presents it as the reason the test exists: "it is the behaviour ten in-repo call sites rely on". Zero in-repo `job.load` call sites pass `schema=None`. The ten `schema=None` Datasets are all `load_df` inputs and never touch a schema. | Same correction as the null.py entry.
+
+IMPORTANT | tests/test_load_dataset_contract.py (whole file) | The contract file never tests the `validate` branch, which is the one every real job takes. All 8 in-repo `job.load` sites pass `track912Schema` (validate-shaped, 6 sites) or `CalibrationLogSchema` (to_norm-shaped, 2). The file tests `to_norm`, `schema=None`, and the neither-method TypeError - but the docstring's own middle claim, "a schema with `validate` cleans a frame and then the default normaliser runs on the result", has no test here and none anywhere else (`git grep` for `track912|_load_dataset|CalibrationLogSchema` over `tests/` returns only this file and `test_reference_model.py`). Also untested: a schema carrying BOTH methods, where the code silently prefers `to_norm`. | Add a two-line fake `validate` schema that renames a column, and assert the resulting Norm has `t_rel_s` - that pins the fallthrough the 6 track912 jobs live on.
+
+MINOR | tests/test_load_dataset_contract.py:86-94 | `test_loader_kwargs_do_reach_the_file_reader` asserts only the NEGATIVE: that omitting `sep` raises KeyError. It never asserts anything about a run that supplies `loader_kwargs`, so the name overstates it, and a `KeyError` raised for any unrelated reason would satisfy it. The positive half exists but is in a different test. | `pytest.raises(KeyError, match="day")`, or assert the frame width with `sep` supplied.
+
+MINOR | tests/test_load_dataset_contract.py:17-19 | "checked separately on four real 6D2S records (three `Norm` shapes, 7 keys each, arrays compared elementwise)". Three distinct shapes that all have exactly 7 keys is at best odd phrasing, and the harness is not in the repo, so no reader can re-derive the claim or re-run it after the next edit to `RamseySeriesSchema`. A number nobody can check is the class of claim AGENTS.md 4 exists to stop. | Either commit the comparison as a `@pytest.mark.real` test, or drop the parenthetical and say only that it was checked out of band.
+
+VERIFIED PASS | tests/test_load_dataset_contract.py | 11 passed locally. No `filterwarnings = error` in `[tool.pytest.ini_options]`, so the two unasserted DDMMYY UserWarnings do not fail the gate - and their pytest output independently confirms the stacklevel finding above, printing `src/quebra/core/job.py:183` as the warning site.
+
+IMPORTANT | tests/test_data_manifest.py:89-105 | `test_a_corrupted_record_would_be_caught` is declared "a positive control on the check above", but it never touches the check above, or any project code: it hashes a literal with `hashlib` and asserts the digest changes when a byte is appended. It is a test of `hashlib.sha256`, and it would still pass if `test_every_manifest_entry_matches_the_file_on_disk` were deleted, or if its assertion were inverted. The repo's own standard is that a positive control must FAIL when the thing it guards is broken. | Build a synthetic private root + manifest under `tmp_path`, run the SAME comparison (extract it into a helper), and assert it raises when the digest is wrong.
+
+MINOR | scripts/make_data_manifest.py:67-68 | `_quote` escapes only `\` and `"`, but TOML basic strings forbid raw control characters. Measured through `tomllib`: a filename containing a newline or `\x07` produces a manifest that FAILS to parse (`Illegal character`), and since `_is_manifested` then degrades to False, the affected record silently stops being recognised as embargoed. Non-ASCII and tab are fine. | Escape the control range (`\n` -> `\\n`, else `\\u%04X`), or use `tomli_w`.
+
+MINOR | scripts/make_data_manifest.py:99, 111 | `str(rel)` writes the OS separator, so a manifest generated on Windows records `2x2\030723_....pickle` while `paths._is_manifested` compares against `raw.as_posix()` - no record would ever match. `MANIFEST.write_text(...)` also uses the locale encoding, and TOML is defined as UTF-8. | `rel.as_posix()` and `write_text(..., encoding="utf-8")`.
+
+MINOR | scripts/make_data_manifest.py:90 | `generated = date.today()` makes the output non-reproducible: rerunning on any later day produces a diff even when not one record changed, which is exactly what erodes trust in a "do not hand-edit" generated file. There is also no `--check` mode, so nothing detects a manifest that has drifted from `build()`. | Drop the date (git already dates the commit), or add `--check` comparing `build()` to the committed text.
+
+MINOR | tests/test_data_manifest.py:7-9 + :26-39 | "These tests skip rather than fail when `data/real_private/` is absent" - the skips are correct where they exist (`_records`, `_present_files`, the `checked == 0` guard, and the conditional-expression `pytest.skip` at :80-85, which does work because `skip()` raises before the assignment). But the premise is wrong for a checkout: `MANIFEST.toml` is COMMITTED inside `data/real_private/`, so the directory always exists and the guards fire only for a wheel install. Verified in a synthetic checkout carrying only MANIFEST.toml: 4 passed, 1 skipped (`no manifested file is present to verify`) - nothing fails, which is the requirement. | Restate as "skip when the RECORDS are absent"; nothing to change in the code.
+
+MINOR | tests/test_data_manifest.py | Nothing checks `manifest.total_bytes`, nothing checks the sha256 fields are 64 hex chars (`:46` only tests truthiness), and nothing checks the committed manifest still equals `scripts/make_data_manifest.build()`. The last is the one that would catch a hand-edit of a file whose header forbids hand-editing. | Add a skip-guarded regeneration test.
+
+MINOR | src/quebra/core/paths.py:106 + quebra.toml:16 | SPEC 0003 set `data_root = "."`, so `dataset_root == repo_root()` for every in-checkout run and `candidates` holds the same resolved path twice. Every message now reads `Tried '/…/x.pickle' or '/…/x.pickle'` (measured, verbatim). `test_the_error_names_every_location_it_tried` passes trivially on the duplicate. | Dedupe candidates while preserving order before constructing the message.
+
+MINOR | tests/test_data_unavailable.py | The suite covers absent, unparseable, manifested and unmanifested, but not the two shapes that actually break `_is_manifested`: a `[record]` table instead of `[[record]]` (raises AttributeError) and a path that matches only as a mid-component suffix (`/elsewhere/mine2x2/030723_2x2_qubit1.pickle` is reported True against the REAL manifest). Both are one-line additions to `fake_repo`. | Add the two cases alongside the fixes to paths.py.
+
+GREEN | src/quebra/core/paths.py:110 + tests/test_data_unavailable.py | The intended distinction works end to end on the real manifest: a job's declared `data/real_private/6D2S/070423_6D2S_qubit1.pickle` is recognised as manifested, a sibling typo is not, `DataUnavailable` is still a `FileNotFoundError`, and the embargoed branch names the fixtures as the way forward. Nothing is swallowed - the raise is unconditional and only the WORDING depends on the manifest.
+GREEN | tests/test_data_manifest.py:49-77 | The two checks that matter both run and are correctly directional: an unmanifested file present on disk fails, and a manifested file present on disk must match digest AND byte count, skipping per-entry only for records that are genuinely absent.
+
+---
+
+# SPEC 0003 Phase 1B review
+
+SCOPE: scripts/promote_run.py, tests/test_promote_run.py, Makefile (promote target),
+tests/test_data_root_resolution.py, tests/test_path_resolution.py,
+tests/test_paths_dataset_fallback.py, tests/test_windows_not_interpolated.py,
+quebra.toml, .gitignore, the nine jobs/ dataset repoints
+COMMIT: b14bbc7
+
+## Reviewed
+- quebra.toml, .gitignore, Makefile, jobs/ (9 files), scripts/promote_run.py,
+  tests/test_promote_run.py, and the four modified tests. Manifest empty.
+
+## Findings
+
+IMPORTANT | scripts/promote_run.py:29 | `_quote` escapes only `\` and `"`. A --note containing a newline or any control character writes a PROMOTED.toml that is not valid TOML; measured: note="line one\nline two" produces `note = "line one\nline two"` with a raw newline and `tomllib.loads` fails with "Illegal character '\n'". The script exits 0, so the committed audit record is silently unparseable. | Escape the TOML basic-string set (\b \t \n \f \r plus \uXXXX for other control chars), or refuse a note with control characters.
+
+IMPORTANT | scripts/promote_run.py:69-71 | Destination is `published/{job_stem}_{identity[:6]}` with `mkdir(exist_ok=True)` and `shutil.copy2` on top. Measured: two DIFFERENT runs (identities abcdef1111 and abcdef2222) of the same job write into one directory - run A's `node_0.prov.json` is OVERWRITTEN, run A's other records survive alongside run B's, and PROMOTED.toml then says identity=abcdef2222, record_count=1 while six files sit in provenance/. A committed provenance record is destroyed and the manifest misdescribes what is there, silently. | Refuse to write into an existing destination unless the manifest's identity matches exactly, or use the full identity in the directory name.
+
+IMPORTANT | scripts/promote_run.py:67 | `records[0][1].get("identity", "")[:6] or "unknown"` raises `TypeError: 'NoneType' object is not subscriptable` when the record has `"identity": null`, which `build_prov_record` (src/quebra/provenance.py:78) produces by default and which 142 of 400 sampled records under output/ actually carry. The `or "unknown"` branch is dead for the representation that occurs. Not reachable on a clean run in this checkout today (all clean runs have an identity), but reachable via --allow-dirty. | `(records[0][1].get("identity") or "")[:6] or "unknown"`.
+
+MINOR | .gitignore:34-36 | The new comment says the two backups "are what this repository already holds (305M, 33M and 23M)". Measured today: `output_backup/` and `output_backup2/` do not exist, and `output/` is 309M, not 305M. A measured claim in a comment that is false as shipped. | State that the backup names are kept as a guard against re-creation, and drop or refresh the sizes.
+
+MINOR | .gitignore:22-25 | The private-data comment still reads "These two trees do not exist yet - the dataset root is currently one level ABOVE the repository" and cites SPEC 0002. This commit is precisely what made both sentences false: data/real_private/ exists and data_root is ".". | Update the comment to SPEC 0003 and the present tense.
+
+MINOR | tests/test_data_root_resolution.py:70 | Docstring of `test_a_relative_data_root_anchors_on_the_file_that_declares_it` still says "This repository's own `quebra.toml` says `data_root = \"..\"`". It now says ".". The test body is synthetic and unaffected, but the stated motivation is false. | Update the sentence.
+
+MINOR | tests/test_data_root_resolution.py:111-126 and tests/test_path_resolution.py:38-50 | Both rewrites are honest re-expressions, not weakenings - but with declared `data_root = "."` the assertion collapses to `resolve_data_root() == repo_root()`, so a resolver that ignored quebra.toml entirely and returned the repo root would still pass. The docstring claim "through mechanism 3 rather than `__file__`" is not what the assertion demonstrates. Mechanism 3 itself is still properly covered by the synthetic-toml tests at lines 55-77. | Also assert the resolver reacts to a CHANGED declared value (write a temp quebra.toml with a different root), or soften the docstring claim to what is asserted.
+
+MINOR | Makefile:54 | `python scripts/promote_run.py` uses bare `python`; the `arch` target three rules above uses `python3`. On a distro without the unversioned alias (this is Fedora) `make promote` fails with "python: command not found". | Use `python3`, or a `PYTHON ?= python3` variable.
+
+MINOR | Makefile:54 | `"$(NOTE)"` is inside double quotes, so a note containing a backtick, `$(...)` or a `"` is interpreted by the shell rather than passed through; `$(PROMOTE_FLAGS)` is unquoted and reaches the shell whole. Self-inflicted only, but the guard rails above suggest care was intended. | Single-quote the expansions, or document PROMOTE_FLAGS as trusted input.
+
+MINOR | scripts/promote_run.py:50 | `root: Path = Path(".")` makes the published tree cwd-relative, so running the script from a subdirectory silently creates a second `published/` there. The Makefile always runs from the repo root, so this only bites direct invocation. | Default to the repo root, or refuse when `root/PUBLISHED` is not under the checkout.
+
+GREEN | scripts/promote_run.py:73-77 | `path.with_suffix("").with_suffix(".prov.md")` traced for `node_0.prov.json`, and for node names containing dots (`filter_0.5`, `a.1.5`, `a.prov`), a trailing dot, and multi-dot stems: it yields the matching `.prov.md` in every case and can never name a file outside `provenance/*.prov.md`. Copying is restricted to the `*.prov.json` glob plus that sibling, so no artifact can travel. | none
+
+GREEN | scripts/promote_run.py:57 | `r.get("tree_clean", False)` (missing key = dirty) is the right default and matches src/quebra/core/runner.py:147, which uses the identical expression for reuse eligibility. 198 of 400 sampled legacy records lack the key and are correctly refused. | none
+
+GREEN | tests/test_paths_dataset_fallback.py:33-46 | `test_without_the_fallback_that_path_would_not_exist` is STRONGER than what it replaced. The old form asserted only that a file was absent from this checkout's dataset root and never called the resolver; the new form drives an empty tmp_path root and asserts the resolver returns the repo-root path. Not tautological - it fails if the fallback is removed. | none
+
+GREEN | jobs/ (9 files, 10 path lines) | All ten repoints resolve: every path exists under data/real_private/, and all 34 filenames in independence_survey.DATASET_FILES are present under data/real_private/6D2S/. `grep -rn "tool/datasets\|FOR ZENODO" jobs/ src/` returns 0. The survey's carve parameters were untouched, so tests/test_independence_survey.py's equality with the active T2* jobs is unaffected. Stale references remain only in AGENTS.md, docs/TIME_SEMANTICS.md and docs/WRITING_A_JOB.md - outside this slice. | none
+
+GREEN | tests/ (all five) | `pytest` on the five files: 45 passed. No test was deleted and no assertion count dropped. | none
+
+IMPORTANT | docs/WRITING_A_SCHEMA.md:77-78 | "It is also the schema `job.load` uses when `Dataset.schema` is `None`, which is why the jobs in `jobs/active/` that load Ramsey records do not name a schema at all." The second half is flatly false and a reader will act on it. EVERY Ramsey-record job in `jobs/active/` names a schema explicitly: `ramsey_2x2_q1_030723.py:24`, `ramsey_q1_100423.py:25`, `t2star_q1_070423.py:32`, `t2star_q1_100423.py:32` and `km_poster_6d2s.py` all pass `schema=track912Schema`; `mtbf_q1.py:32` and `mtbc_q6.py:35` pass `CalibrationLogSchema`. They reach `RamseySeriesSchema` as the fallthrough AFTER `track912Schema.validate`, which is the interesting mechanism and the one the doc should show. This is the third restatement of one wrong belief (see null.py and the test docstring). | Delete the clause, or replace with: "the six track912 jobs reach it as the fallthrough after their `validate` schema returns."
+
+MINOR | docs/WRITING_A_SCHEMA.md:14-18 | The first code block does not run: it imports `NullSchema` and then uses `Dataset`, which is never imported. Measured - `exec` of the block verbatim raises `NameError: name 'Dataset' is not defined`. It is the first thing a new user copies. | Add `from quebra.core.dataset import Dataset`.
+
+MINOR | docs/WRITING_A_SCHEMA.md:89 | "`duration_h=None,  # optional; run length, copied into meta`" is presented as a property of `Dataset`, but only `RamseySeriesSchema` and `CalibrationLogSchema` copy it; `NullSchema` - the schema the same document tells you to start with - drops it, along with `qubit` and `device`. A reader who follows the page top to bottom loses all three without notice. | Say "copied into meta by the shipped schemas; your own `to_norm` must do it itself."
+
+VERIFIED PASS | docs/WRITING_A_SCHEMA.md | Every other runnable or measurable claim checks out. The `ReadingsSchema` block executes as written through `_load_dataset` and yields `{'t_rel_s': ..., 'value': ..., 'meta': {'dataset_id': 'r'}}` - `dataset.path.stem` works because `__post_init__` coerces `path` to `Path`. The `Dataset(...)` field list matches the dataclass in order and defaults, all seven fields. "Longest schema in the repo": ramsey_series 144 lines vs track912 83, null 48, calibration_log 46, base 11 - true. `t2star.make_inputs_from_norm` exists at `analyzers/t2star.py:46` (and in fidelity/mtbf/windows, so "and friends" holds). `calibration_log.py` does build `CalibrationEvent` objects. `pd.read_csv(path, **loader_kwargs)` and "an HDF5 key is loader_kwargs" both match `loaders/registry.py`. "Runs in about a second": measured 1.19 s for the 11 tests. The doc is 129 lines for a new public extension point - proportionate, not a dumped essay.

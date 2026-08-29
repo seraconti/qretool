@@ -12,6 +12,7 @@ name, so any class with the right method is a schema.
 `NullSchema` copies every column into the `Norm` under its own name:
 
 ```python
+from quebra.core.dataset import Dataset
 from quebra.schemas.null import NullSchema
 
 Dataset(path="my_data.csv", schema=NullSchema)
@@ -76,8 +77,11 @@ Three things in it are worth copying:
 - **Everything the run depends on lands in `meta`.** That is what makes the artifact
   reproducible later.
 
-It is also the schema `job.load` uses when `Dataset.schema` is `None`, which is why the jobs
-in `jobs/active/` that load Ramsey records do not name a schema at all.
+It is also the schema `job.load` falls through to once a `validate` schema has run, which is
+the route every Ramsey job in `jobs/active/` actually takes: they name `track912Schema`, it
+renames this group's columns onto `timestamp`/`frequency`, and `RamseySeriesSchema` turns the
+result into a `Norm`. It is the default for `Dataset.schema=None` too, but no shipped job
+relies on that.
 
 ## What `Dataset` carries
 
@@ -87,7 +91,8 @@ Dataset(
     schema=None,         # your schema class
     qubit=None,          # optional; added to the frame as a qubit_id column
     device=None,         # optional; added to the frame as a device column
-    duration_h=None,     # optional; run length, copied into meta
+    duration_h=None,     # optional; run length - carried into meta by the shipped
+                         #   schemas, though NullSchema does not copy it
     extra={},            # run metadata: reaches your schema and provenance
     loader_kwargs={},    # options for the file reader, e.g. {"sep": ";"}
 )
