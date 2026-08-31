@@ -16,6 +16,19 @@ set -u
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SANDBOX="$(mktemp -d)"
+# Remove the sandbox on exit, including on failure. Without this every run leaks a ~620 MB
+# venv into /tmp: twenty accumulated during one working session and filled a 12 GB tmpfs,
+# at which point `pip install` inside the NEXT run died with ENOSPC and the script reported
+# a packaging failure that was really a disk failure. Keep it with SANDBOX_KEEP=1 when a
+# failure needs inspecting.
+cleanup() {
+  if [ -n "${SANDBOX_KEEP:-}" ]; then
+    echo "sandbox kept at ${SANDBOX}"
+  else
+    rm -rf "${SANDBOX}"
+  fi
+}
+trap cleanup EXIT
 VENV="${SANDBOX}/venv"
 # Somewhere that is emphatically not the repository, and has no project marker of its own.
 OUTSIDE="${SANDBOX}/elsewhere"

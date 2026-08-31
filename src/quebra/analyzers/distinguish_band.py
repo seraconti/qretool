@@ -25,7 +25,7 @@ from quebra.analyzers.windows import (
     STATE_OUT_OF_SPEC,
     STATE_OUT_OF_SPEC_UNCERTAIN,
 )
-from quebra.panels._artifact_guard import StaleArtifactGuard
+from quebra.core._artifact_guard import StaleArtifactGuard
 
 # A shape statistic computed over a handful of windows is not a measurement. Thresholds with
 # fewer surviving complete windows than this are reported as unsupported rather than

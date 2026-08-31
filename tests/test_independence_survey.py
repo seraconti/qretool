@@ -68,34 +68,62 @@ def _module_constants(relative: str) -> dict[str, object]:
 
 
 SURVEY = _module_constants("jobs/composite/independence_survey.py")
-T2STAR_JOB = _module_constants("jobs/active/t2star_q1_070423.py")
 LEDGER_JOB = _module_constants("jobs/composite/check_ledger_q1.py")
 
 
 # ------------------------------------------------------------------ the carve matches
 
 
-@pytest.mark.parametrize("name", ["GAP_MULT", "K", "USE_UNCERTAINTY"])
-def test_the_survey_carves_windows_the_same_way_the_t2star_job_does(name):
-    """These three define the carve. A difference here means different windows.
+def _effective_t2star_carve() -> dict[str, object]:
+    """The carve the T2* job ACTUALLY uses: a job override if present, else the recipe default.
 
-    The T2* job declares them inline on its `windows` step rather than as module
-    constants, so they are read out of the step call.
+    SPEC 0005 R5.3 collapsed the two T2* jobs onto `recipes.configure_t2star_job`, so these
+    three moved from inline step kwargs into the recipe's signature. Reading only the job file
+    would now find nothing and this control would pass vacuously; reading only the recipe
+    would miss a job that overrides it. The effective value is the one that decides the
+    windows, so the effective value is what must match.
     """
+    import inspect
+
+    from quebra.recipes import configure_t2star_job
+
+    effective = {
+        name.upper(): param.default
+        for name, param in inspect.signature(configure_t2star_job).parameters.items()
+        if name in ("gap_mult", "k", "use_uncertainty")
+    }
+    # A job passing its own value wins over the default. An override we cannot READ must
+    # FAIL, not fall back to the default: pre-seeding the defaults and then swallowing an
+    # unreadable override made this control weaker than the form it replaced. Measured -
+    # `gap_mult=MY_GAP` in the job left the scan reporting the default 10.0 and the test
+    # passing while the job carved with 99.0, where the pre-collapse form raised on the
+    # missing key. That is precisely the "survey and panel describe different windows"
+    # defect this module exists to catch.
     tree = ast.parse((REPO / "jobs/active/t2star_q1_070423.py").read_text())
-    found: dict[str, object] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             for kw in node.keywords:
                 if kw.arg in ("gap_mult", "k", "use_uncertainty"):
                     try:
-                        found[kw.arg.upper()] = ast.literal_eval(kw.value)
+                        effective[kw.arg.upper()] = ast.literal_eval(kw.value)
                     except (ValueError, SyntaxError):
-                        pass
-    assert name in found, f"{name} not found in the T2* job's step kwargs"
+                        pytest.fail(
+                            f"the T2* job overrides {kw.arg} with a non-literal, so this "
+                            f"control cannot tell what it carves with. Make it a literal, or "
+                            f"teach this scan to evaluate it - do not let it read as the "
+                            f"recipe default."
+                        )
+    return effective
+
+
+@pytest.mark.parametrize("name", ["GAP_MULT", "K", "USE_UNCERTAINTY"])
+def test_the_survey_carves_windows_the_same_way_the_t2star_job_does(name):
+    """These three define the carve. A difference here means different windows."""
+    found = _effective_t2star_carve()
+    assert name in found, f"{name} is neither a recipe default nor a job override"
     assert SURVEY[name] == found[name], (
-        f"survey {name}={SURVEY[name]} but the T2* job uses {found[name]}; the survey "
-        "would describe different windows from the panel"
+        f"survey {name}={SURVEY[name]} but the T2* job effectively uses {found[name]}; the "
+        "survey would describe different windows from the panel"
     )
 
 
@@ -148,7 +176,11 @@ def test_the_survey_scores_the_same_threshold_ladder():
             "jobs/composite/independence_survey.py", "THRESHOLDS"
         )
     ]
-    panel_ladder = [tuple(row) for row in T2STAR_JOB["_T2STAR_THRESHOLDS"]]
+    # The ladder moved to `recipes.T2STAR_THRESHOLDS` when SPEC 0005 R5.3 collapsed the
+    # family. Read it from there, which is where the T2* job now gets it.
+    from quebra.recipes import T2STAR_THRESHOLDS
+
+    panel_ladder = [tuple(row) for row in T2STAR_THRESHOLDS]
     assert len(survey_ladder) == 10
     # Exact equality, including the float. `k * 1e-6` fails this at k = 5 and k = 10,
     # which is how the discrepancy was found; `k / 1e6` reproduces the literals exactly.

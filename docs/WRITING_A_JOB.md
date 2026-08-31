@@ -95,7 +95,7 @@ import quebra.analyzers.t2star as t2star
 job = Job("my_first_job")
 
 reads = Dataset(
-    path="tool/datasets/6D2S/070423_6D2S_qubit1.pickle",
+    path="data/real_private/6D2S/070423_6D2S_qubit1.pickle",
     schema=track912Schema,
     qubit=1,
     device="6D2S",
@@ -170,9 +170,13 @@ standing.
 materialised artifacts, and `provenance/` with a record in both JSON and Markdown. Use
 `--output-root` to write elsewhere.
 
-The `<identity>` is a content hash of the job file's source, the datasets it loaded, and the
-identities of any sub-jobs. Two runs with the same identity computed the same thing. Change
-a kwarg and the identity changes, which is the point.
+The `<identity>` is a content hash of the job file's source, **the library code its steps
+reach**, the resolved arguments those steps were called with, the datasets it loaded, and the
+identities of any sub-jobs. Two runs with the same identity computed the same thing.
+
+The library half matters: editing an analyzer your job calls moves the identity, because it
+changed what produced the numbers. Editing a module your job does not reach does not — the
+hash covers the static import closure of your steps, not the whole package.
 
 ### Publishing a figure
 
@@ -182,7 +186,7 @@ pipeline steps, which is everything needed to say what produced a figure without
 of it. When a figure appears in a paper, commit that:
 
 ```bash
-make promote RUN=output/t2star_q1_070423_43e8d4_20260829_141549 NOTE="thesis ch4 fig 3"
+make promote RUN=output/t2star_q1_070423_<identity>_<timestamp> NOTE="thesis ch4 fig 3"
 ```
 
 It writes `published/<job>_<identity>/` with the provenance records and a `PROMOTED.toml`
@@ -214,10 +218,10 @@ that returns it.
 
 ## Composing jobs
 
-A job can include another and reference its results:
+A job can include another and reference its results, naming it by its `JOB_ID`:
 
 ```python
-sub = job.include("other_job.py", alias="upstream")
+sub = job.include("other_job", alias="upstream")
 node = job.step(combine, sub.ref("some_node"), name="combined")
 ```
 
@@ -225,5 +229,24 @@ The included job runs through the normal runner, so its datasets and provenance 
 exactly as they would standalone. Its identity is consumed by the parent, so the parent's
 identity changes when the child's does.
 
-Composites live in `jobs/composite/` in this repository rather than `jobs/active/`, because
-`quebra run --all` sweeps `jobs/active` and would otherwise re-run every sub-job.
+Composites declare `JOB_SWEEP = False`, so a bare `quebra run --all` skips them — sweeping a
+composite re-runs every sub-job. They live in `jobs/composite/` for readability, but the
+directory no longer decides anything; the declaration does.
+
+## What a job file declares
+
+Three module-level constants, read statically — discovery never imports your job, because
+importing one builds its graph:
+
+```python
+JOB_ID = "my_first_job"     # the logical name `job.include` resolves. Move the file freely.
+JOB_FAMILY = "t2star"       # the subject. `quebra run --all --family t2star` selects it.
+JOB_SWEEP = True            # default. False keeps it out of a bare `run --all`.
+```
+
+`JOB_ID` is what makes a job's location stop being part of its identity: a composite naming
+`"t2star_q1_070423"` keeps working when that file moves. A job with no `JOB_ID` is not
+discovered, so `run --all` will not find it.
+
+`docs/JOBS.md` is the generated table of every declared job and the parameters that
+distinguish it — regenerate with `python scripts/make_job_manifest.py`.

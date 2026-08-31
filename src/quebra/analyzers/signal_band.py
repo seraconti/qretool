@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from quebra.panels._artifact_guard import StaleArtifactGuard
+from quebra.core._artifact_guard import StaleArtifactGuard
 
 
 @dataclass
@@ -122,7 +122,7 @@ def make_inputs_from_windows(
 
 
 def run(inputs: SignalBandInputs) -> SignalBand:
-    from quebra.panels._within_calibration_compute import (
+    from quebra.analyzers.within_calibration_compute import (
         _compute_cv,
         _finite_stat,
         _hist_view_limit,

@@ -6,17 +6,25 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    # Annotation-only (`_FigureSink.plot_class`, `Job.figure`'s PlotClass). Importing it at
+    # runtime pulled `plots.base`, which imports matplotlib AND plotly at module scope, into
+    # every `import quebra.core.job` - 813 modules against 648. The graph runtime has no
+    # business loading a rendering stack. SPEC 0004 R4.1.4.
+    from quebra.plots.base import BasePlot
 
 import pandas as pd
 
 from quebra.loaders.registry import load as load_dataframe
+from quebra.core.closure import code_closure, parameter_row
+from quebra.core import discovery
 from quebra.core.dataset import Dataset
 from quebra.core.identity import Identity, content_hash
 from quebra.core.paths import repo_root, resolve_dataset_path, resolve_repo_path
 from quebra.core.reference import ArtifactRef, LocalRef, Reference
 from quebra.core.types import Norm
-from quebra.plots.base import BasePlot
 from quebra.provenance import hash_string
 from quebra.schemas.ramsey_series import RamseySeriesSchema
 
@@ -212,16 +220,33 @@ class Job:
         self._identity_root: Path | None = None
 
     def code_hash(self) -> str:
-        """Hash of this job's source file (the identity's `code` contribution).
+        """The identity's `code` contribution: this job's source AND the library code it runs.
 
-        Memoized so a composite and its own run don't re-read/re-hash the same
-        source file."""
+        The job file alone is not the code that produced the result. Before SPEC 0005 R5.1
+        this hashed only the file, so appending a line to `analyzers/t2star.py` left
+        `t2star_q1_070423`'s identity byte-identical - the analyzer could change completely
+        while the digest asserted nothing had.
+
+        Now it folds the static import closure of the step functions the job calls, keyed by
+        dotted `quebra.*` module name and hashed from file bytes. See
+        `quebra.core.closure` for why it is a closure rather than the whole package (blast
+        radius) and rather than `sys.modules` (`run --all` would give job N the union of
+        jobs 1..N).
+
+        Memoized so a composite and its own run don't re-read/re-hash the same source."""
         if self._code_hash is None:
             if self.job_file is None:
                 raise ValueError("Job.code_hash() requires job_file to be set")
-            self._code_hash = hash_string(
-                Path(self.job_file).read_text(encoding="utf-8")
-            )
+            parts = [Path(self.job_file).read_text(encoding="utf-8")]
+            # Sorted by module name inside `code_closure`, so the fold order is a property of
+            # the graph and not of DAG iteration order.
+            nodes = list(self.dag.values())
+            for name, digest in code_closure([n.fn for n in nodes]).items():
+                parts.append(f"{name}={digest}")
+            # R5.1.7: what each step was CALLED WITH. Without this, two family members
+            # sharing a definition file and differing only by a parameter collide.
+            parts.extend(parameter_row(nodes))
+            self._code_hash = hash_string("\n".join(parts))
         return self._code_hash
 
     def build_identity(self, dataset_root: Path) -> Identity:
@@ -245,6 +270,18 @@ class Job:
             ds = node.kwargs.get("dataset")
             if ds is None:
                 continue
+            # `_DAGNode.kwargs` is `dict[str, object]` by design - the DAG stores arbitrary
+            # step arguments - so this needs narrowing. It RAISES rather than skipping: a
+            # skipped load node would drop that dataset's content hash from `data` silently,
+            # and an identity that quietly stops covering an input is the one failure this
+            # whole scheme exists to prevent. Before the type fix a non-Dataset reached
+            # `ds.path` and raised AttributeError; this keeps that loudness and names the
+            # cause. Matches `runner._dataset_of`.
+            if not isinstance(ds, Dataset):
+                raise TypeError(
+                    f"load node {node.node_id!r} carries a non-Dataset 'dataset' kwarg: "
+                    f"{type(ds).__name__}. Its content hash cannot enter the identity."
+                )
             path = resolve_dataset_path(ds.path, dataset_root)
             try:
                 key = str(path.relative_to(dataset_root))
@@ -275,14 +312,24 @@ class Job:
         sink's input is always persisted for `ref`, and `figures` only controls
         whether a fresh nested run also renders the figure sinks' PDFs.
         """
-        # Resolve BEFORE _import_job so the import works from any CWD, and store the
-        # absolute path on the _IncludedJob (the runner's locator resolves reuse by
-        # the sub-job's identity, not by re-reading this path).
-        sub_path = resolve_repo_path(path)
+        # SPEC 0005 R5.2: a logical JOB_ID first, a path only as a fallback. The ID names the
+        # graph node and content hashes determine identity; where the file sits is neither.
+        # Resolve BEFORE _import_job so the import works from any CWD, and store the absolute
+        # path on the _IncludedJob (the runner's locator resolves reuse by the sub-job's
+        # identity, not by re-reading this path).
+        text = str(path)
+        sub_path: Path | None = None
+        if "/" not in text and not text.endswith(".py"):
+            jobs_root = repo_root() / "jobs"
+            if jobs_root.is_dir():
+                sub_path = discovery.resolve(text, jobs_root)
+        if sub_path is None:
+            sub_path = resolve_repo_path(path)
         if not sub_path.exists():
             raise FileNotFoundError(
                 f"include not found: '{path}' resolved to '{sub_path}'. "
-                "Include paths are repo-root-relative (e.g. 'jobs/active/<job>.py')."
+                "Prefer a logical JOB_ID (e.g. 't2star_q1_070423'); a repo-root-relative "
+                "path still works."
             )
         sub_job = _import_job(sub_path)  # raises on an include cycle / self-include
         included = _IncludedJob(
@@ -375,7 +422,7 @@ class Job:
                 f"nodes by fn.__name__, so a user step with this name would be "
                 f"silently misclassified. Rename the function."
             )
-        step_name = name or getattr(fn, "__name__", fn.__class__.__name__)
+        step_name: str = name or str(getattr(fn, "__name__", fn.__class__.__name__))
         return self._register_node(
             fn=fn, inputs=list(inputs), kwargs=dict(kwargs), base_name=step_name
         )

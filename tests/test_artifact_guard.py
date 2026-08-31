@@ -20,7 +20,7 @@ import pytest
 matplotlib.use("Agg")
 
 from quebra.analyzers import windows
-from quebra.panels._within_calibration_compute import (
+from quebra.analyzers.within_calibration_compute import (
     build_within_calibration_panel_data,
 )
 from quebra.panels._across_calibration_compute import (
@@ -247,12 +247,15 @@ def test_real_pre_split_artifact_raises() -> None:
     `ValueError` is the guard working as designed: the artifact loaded, its field names
     did not match the current contract, and `StaleArtifactGuard` said so.
 
-    `ModuleNotFoundError` is a rename. TWO have now landed: the vocabulary rename of
-    2026-08-23 (`panels.non_repairable` -> `panels.within_calibration`) and the SPEC 0002
-    src-layout move (`panels.*` -> `quebra.panels.*`). A pickle stores the fully qualified
-    module path, so either one is enough to make an artifact unloadable, and after the
-    second every artifact written before this phase is out of reach regardless of its
-    vocabulary. 77 pickles under `output/` and `output_backup*/` are affected,
+    `ModuleNotFoundError` is a rename. THREE have now landed: the vocabulary rename of
+    2026-08-23 (`panels.non_repairable` -> `panels.within_calibration`), the SPEC 0002
+    src-layout move (`panels.*` -> `quebra.panels.*`), and the SPEC 0005 R5.0.4 move of the
+    within-calibration COMPUTE out of the render package
+    (`panels._within_calibration_{data,compute}` -> `analyzers.within_calibration_{data,compute}`),
+    which is where `WithinCalibrationPanelData` is defined and therefore what a pickle names.
+    A pickle stores the fully qualified module path, so any one of them is enough to make an
+    artifact unloadable, and after the second every artifact written before that phase was
+    already out of reach regardless of its vocabulary. 77 pickles under `output/` and `output_backup*/` are affected,
     plus 5 naming `panels.repairable`. A compatibility shim would not have helped: the
     MODULE is gone, not just the symbol, so `pickle.load` fails before any re-export could
     be consulted. Recovering them means re-running the jobs that wrote them.

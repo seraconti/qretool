@@ -54,6 +54,15 @@ from quebra.plots.independence_survey_plot import (
 )
 from quebra.schemas.track912 import track912Schema
 
+# SPEC 0005 R5.2/R5.4: the logical name and category. `include` resolves JOB_ID, so this
+# file can move without breaking any composite; recategorising costs one string edit.
+JOB_ID = "independence_survey"
+JOB_FAMILY = "independence"
+# Not swept by a bare `run --all`: it re-runs sub-jobs and/or is long. Selectable
+# with `--family independence` or by path. This is the declaration that replaced the old
+# "jobs/composite/ is not swept" directory rule.
+JOB_SWEEP = False
+
 PREFIX = "independence_survey"
 
 # The same ladder every T2* job uses. Repeated rather than imported so the ladder this

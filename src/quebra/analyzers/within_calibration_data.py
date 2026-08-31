@@ -29,14 +29,14 @@ import numpy as np
 from quebra.analyzers.distinguish_band import DistinguishBand
 from quebra.analyzers.reliability_band import ReliabilityBand
 from quebra.analyzers.signal_band import SignalBand
-from quebra.panels._artifact_guard import StaleArtifactGuard
+from quebra.core._artifact_guard import StaleArtifactGuard
 
 
 @dataclass
 class WithinCalibrationPanelData(StaleArtifactGuard):
     """Complete typed contract for WithinCalibrationPanel.
 
-    Built by build_within_calibration_panel_data (panels/_within_calibration_compute.py), the
+    Built by build_within_calibration_panel_data (analyzers/within_calibration_compute.py), the
     sole constructor path. Constructing with thresholds present but a band's
     per-threshold maps unpopulated raises, so an incomplete artifact never materializes.
 

@@ -30,6 +30,11 @@ from quebra.plots.instrument_validation_plot import (
     TieExperimentPlot,
 )
 
+# SPEC 0005 R5.2/R5.4: the logical name and category. `include` resolves JOB_ID, so this
+# file can move without breaking any composite; recategorising costs one string edit.
+JOB_ID = "instrument_validation"
+JOB_FAMILY = "validation"
+
 PREFIX = "instrument_validation"
 
 # Declared here, not defaulted in the builder, so both reach the provenance label.

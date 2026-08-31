@@ -2338,3 +2338,318 @@ MINOR | docs/WRITING_A_SCHEMA.md:14-18 | The first code block does not run: it i
 MINOR | docs/WRITING_A_SCHEMA.md:89 | "`duration_h=None,  # optional; run length, copied into meta`" is presented as a property of `Dataset`, but only `RamseySeriesSchema` and `CalibrationLogSchema` copy it; `NullSchema` - the schema the same document tells you to start with - drops it, along with `qubit` and `device`. A reader who follows the page top to bottom loses all three without notice. | Say "copied into meta by the shipped schemas; your own `to_norm` must do it itself."
 
 VERIFIED PASS | docs/WRITING_A_SCHEMA.md | Every other runnable or measurable claim checks out. The `ReadingsSchema` block executes as written through `_load_dataset` and yields `{'t_rel_s': ..., 'value': ..., 'meta': {'dataset_id': 'r'}}` - `dataset.path.stem` works because `__post_init__` coerces `path` to `Path`. The `Dataset(...)` field list matches the dataclass in order and defaults, all seven fields. "Longest schema in the repo": ramsey_series 144 lines vs track912 83, null 48, calibration_log 46, base 11 - true. `t2star.make_inputs_from_norm` exists at `analyzers/t2star.py:46` (and in fidelity/mtbf/windows, so "and friends" holds). `calibration_log.py` does build `CalibrationEvent` objects. `pd.read_csv(path, **loader_kwargs)` and "an HDF5 key is loader_kwargs" both match `loaders/registry.py`. "Runs in about a second": measured 1.19 s for the 11 tests. The doc is 129 lines for a new public extension point - proportionate, not a dumped essay.
+
+---
+
+SCOPE: SPEC 0004 Phase 2 "Boundaries" - pyproject.toml, Makefile, .github/workflows/ci.yml,
+src/quebra/core/job.py, src/quebra/core/runner.py, src/quebra/core/_artifact_guard.py (untracked),
+src/quebra/panels/_artifact_guard.py (deleted), 7 repointed import files, spec/specboundaries04.md (untracked)
+COMMIT: 1f58d37
+
+## Manifest
+- [ ] pyproject.toml (+71/-?)
+- [ ] Makefile (+/-10)
+- [ ] .github/workflows/ci.yml (+/-18)
+- [ ] src/quebra/core/job.py (+17)
+- [ ] src/quebra/core/runner.py (+47)
+- [ ] src/quebra/core/_artifact_guard.py (untracked)
+- [ ] src/quebra/panels/_artifact_guard.py (deleted)
+- [ ] 7 repointed import files
+- [ ] spec/specboundaries04.md (untracked)
+
+## Reviewed
+- [x] pyproject.toml
+- [x] Makefile
+- [x] .github/workflows/ci.yml
+- [x] src/quebra/core/job.py
+- [x] src/quebra/core/runner.py
+- [x] src/quebra/core/_artifact_guard.py
+- [x] src/quebra/panels/_artifact_guard.py (deleted)
+- [x] 7 repointed import files
+
+## Findings
+
+IMPORTANT | pyproject.toml:178-181 | The comment justifying `follow_imports = "silent"` states a measurement that does not reproduce: "At the default (normal), mypy reports errors in followed modules too - plots/base.py, loaders/registry.py, schemas/ramsey_series.py, provenance.py". Measured today with a fresh cache and `--no-incremental` on three configs (shipped, `normal`, and a minimal `[tool.mypy]` with only python_version+normal+ignore_missing_imports): `mypy src/quebra/core` reports **0 errors / 9 source files in every case**, and `-v` shows **zero `followed=True` sources**. The real mechanism scoping errors to core is mypy's DEFAULT silencing of site-packages: `quebra` is an editable install (`_editable_impl_quebra.pth`) with no `py.typed`, so followed `quebra.*` modules are silenced regardless of `follow_imports`. Proof: adding `--no-silence-site-packages` turns the same run into "Found 628 errors in 36 files". So `follow_imports = "silent"` is a no-op for the shipped gate, and it is a global setting that will suppress real errors the moment `py.typed` is added or the scope widens. | Correct the comment to the measured behaviour, or drop `follow_imports` and state that site-packages silencing is what scopes the gate.
+
+IMPORTANT | src/quebra/core/job.py:252-256 | The new comment says "a load node carrying a non-Dataset here would be a real defect worth failing on" - but the code `if not isinstance(ds, Dataset): continue` SKIPS it, silently omitting that dataset's content hash from `build_identity`'s `data` tuple. Before the change a non-Dataset reached `ds.path` and raised AttributeError. runner.py's `_dataset_of` (same condition, same phase) correctly RAISES. Comment contradicts code, and the direction is loud->silent in the identity computation. | Raise (reuse `_dataset_of`-style TypeError), or change the comment to say it is skipped.
+
+MINOR | src/quebra/core/runner.py:44 | `_dataset_of(node: object)` uses `getattr(node, "kwargs", {})` - a silent `{}` fallback for a node with no `kwargs` - when `_DAGNode` is already imported in this module and the two call sites both pass a `_DAGNode`. | Type the parameter `_DAGNode` and use `node.kwargs.get("dataset")`.
+
+MINOR | src/quebra/core/runner.py:216-221 | The comment says "they are always populated (run_job sets all three)" but FOUR fields are read here; `job_out_dir` is deliberately left un-`_require`d. If it were None the `job_out_dir not in d.parents` self-read guard silently disables (None is a legal `in` operand) - the one case where a None would produce a wrong reuse rather than a crash, and it is the one not guarded. | `_require` `job_out_dir` too, or say in the comment why it alone is exempt.
+
+MINOR | pyproject.toml:189-190 | `[tool.deptry]`'s comment still opens "Scope the scan to the distributed package." With `deptry .` in the Makefile the scan is now repo-wide (107 files, was `src/quebra`); `known_first_party` declares first-party-ness, it does not scope. | Reword to "declare `quebra` first-party; the scan is repo-wide".
+
+MINOR | pyproject.toml:129-133 | The layer comment says `cli`, `recipes` and `provenance` "are listed explicitly. Omitted, they sit outside every layer and are unconstrained in both directions" - but `quebra._fixtures` is a fourth top-level module and IS omitted, so it is unconstrained in exactly the way the comment warns against. (Harmless today: it imports nothing from quebra.) | Add `quebra._fixtures` at the bottom of `layers`, or say why it is exempt.
+
+MINOR | .github/workflows/ci.yml:38-39 | "The `real` marker is what keeps those tests out; CI never sees the tree they need." Measured: `grep @pytest.mark` over tests/ yields only `parametrize` - ZERO tests carry `real`, `slow`, `heavy` or `r`, so `FAST` excludes nothing and the marker keeps nothing out. What actually keeps CI green without the private tree is per-test `pytest.skip` in `tests/test_data_manifest.py` (4 sites) and `tests/test_artifact_guard.py:305`. The claim is inherited from the deleted step, but it is now the sole stated safety argument for a step that runs the WHOLE suite. | Say that the guard is the per-test `pytest.skip` on an absent `data/real_private/`, and that the markers are currently unused.
+
+VERIFIED | pyproject.toml [tool.importlinter] | `lint-imports` exits 0 (79 files, 159 deps, 1 contract kept). Exactly 10 `ignore_imports`. Ratchet is load-bearing both ways, measured on copies via `--config` (pyproject.toml left untouched, `git diff --stat` still 70 insertions): deleting `quebra.core.job -> quebra.loaders.registry` gives "Layered architecture BROKEN ... quebra.core.job -> quebra.loaders.registry (l.20)"; adding a fabricated `quebra.core.job -> quebra.loaders.fabricated` exits 1 with "No matches for ignored import". `unmatched_ignore_imports_alerting = "error"` is stated explicitly as claimed. All 10 entries match real imports (implied by the unmatched=error pass).
+
+VERIFIED | src/quebra/core/job.py TYPE_CHECKING | `import quebra.core.job` loads no matplotlib/plotly/pylab module (measured over `sys.modules`). `_FigureSink` is still a dataclass with fields `plot_class, input, targets, name`; nothing calls `typing.get_type_hints` on it (`grep get_type_hints src/` is empty), so the string annotation `type[BasePlot]` is never resolved at runtime. `@dataclass(slots=True)` is unaffected - slots are built from `__annotations__` keys, not resolved types.
+
+VERIFIED | src/quebra/core/runner.py `_require`/`_dataset_of` | Not a converted working path. `ResolutionContext(` is constructed at exactly ONE site repo-wide (runner.py:480, `grep` over src/ jobs/ tests/ scripts/), and it sets `subjobs_dir`, `job_out_dir`, `pool_root` and `dataset_root` unconditionally; `dataset_root = Path(data_root).resolve() if data_root else default_dataset_root()` can never be None. Both `load()` and `load_df()` always put a `Dataset` in `kwargs["dataset"]`. The `kwargs["dataset"]` -> `_dataset_of(node)` substitution at line 503 is equivalent: `kwargs` is still `node.kwargs` at that point.
+
+VERIFIED | src/quebra/core/_artifact_guard.py | Move is byte-identical apart from the TYPE_CHECKING import and the cast. `from _typeshed import DataclassInstance` is under `if TYPE_CHECKING` and the cast target is a STRING literal, so nothing resolves at runtime. The cast is honest: all 10 concrete subclasses (SizeVsN, PowerVsDependence, ValidationCurve, ReadDependence, CheckLedger, SignalBand, ReliabilityBand, DistinguishBand, WithinCalibrationPanelData, AcrossCalibrationPanelData) are `dataclasses.is_dataclass() == True` and non-slots. No stale reference to `quebra.panels._artifact_guard` anywhere in src/, jobs/, tests/, docs/, AGENTS.md or spec/. 666 `.pkl` files under `output/`: 0 contain the string `_artifact_guard`, so the guard is never named in stored state (pickle records the concrete class's module).
+
+VERIFIED | Makefile | `PKGROOT` has no remaining reference in the repo (only two prose mentions in spec/specboundaries04.md). `deptry .` exits 0, "Scanning 107 files... Success!".
+
+VERIFIED | test suite | `pytest -m "not slow and not heavy and not real and not r"` = 378 passed, 2 skipped in 25s. The 4 tests that would flip without `data/real_private/` are all `pytest.skip` sites in `tests/test_data_manifest.py`, none ERROR: 378/2 -> 374/6 is arithmetically the reported figure. `testpaths = ["tests"]` so the pathless `pytest $(FAST)` in `make test` collects the same set the old CI line did.
+
+
+--- SECOND PASS (fix layer + spec/specboundaries04.md), appended 2026-08-30 ---
+
+## Reviewed (second pass)
+- [x] spec/specboundaries04.md (untracked, 324 lines) - NEVER REVIEWED before this pass
+- [x] pyproject.toml (fix layer: follow_imports dropped, deptry comment, _fixtures layer)
+- [x] src/quebra/core/job.py (fix layer: isinstance -> raise)
+- [x] src/quebra/core/runner.py (fix layer: _dataset_of typed, job_out_dir _require)
+- [x] .github/workflows/ci.yml (fix layer: real-marker comment rewritten)
+
+## Findings (second pass)
+
+IMPORTANT | Makefile:22 (`arch:` -> `lint-imports`) | `.import_linter_cache/` can serve a STALE dependency graph across exactly the kind of file move R4.2.1 performed, and `make arch` reads it. Reproduced: `lint-imports --config <copy>` reports "Analyzed 80 files, 160 dependencies" and five violations naming `quebra.analyzers.* -> quebra.panels._artifact_guard` - a module deleted in this diff, at pre-move line numbers - while `--no-cache` on the identical config reports "79 files, 161 dependencies" and none of them. The stale entry (`.import_linter_cache/fa73d0*.data.json`, mtime 2026-08-30 00:32) is NEWER than the sources it misdescribes (`analyzers/reliability_band.py`, mtime 2026-08-29 15:31), so it survived both the edits and a rewrite; repeat cached runs keep returning it. The shipped contract is currently correct (79/159/KEPT with AND without the cache) and CI is unaffected (fresh checkout, and grimp self-ignores the dir via its own `.gitignore`), so this is a local-gate reliability defect, not a wrong result today. But the phase's whole claim is that direction is a build failure, and a build failure computed from a graph containing a deleted module is not one. | `arch: lint-imports --no-cache`, or add `rm -rf .import_linter_cache` to `make clean`.
+
+MINOR | pyproject.toml:167 | Measured number in a shipped comment is wrong: "a mixin appearing in zero of 400 archived .pkl files". There are 666 `.pkl` files under `output/`, which is the figure `spec/specboundaries04.md` R4.2.1 uses. Zero is right (`find output -name '*.pkl' -print0 | xargs -0 grep -l _artifact_guard` = 0 of 666); 400 is not. Note `grep -rl --include='*.pkl' output` silently returns nothing here - it also reports 0 for `panels`, which 151 files do contain - so anyone re-measuring must use find|xargs. | s/400/666/.
+
+MINOR | .github/workflows/ci.yml:44-47 | The rewritten comment fixes the marker claim but misattributes one of its two guards. `tests/test_artifact_guard.py:305` does NOT skip on an absent `data/real_private/`; it globs `output/*/subjobs_output/*/t2star_panel_data.pkl` and skips "no pre-split artifact present on this machine" - an absent `output/`, which is gitignored and therefore always absent in CI. The four `data/real_private/` skips are all in `tests/test_data_manifest.py`. Relatedly, "378 passed / 2 skipped becomes 374 passed / 6 skipped" is the local rename experiment, not what CI will print: a fresh runner also has no `output/` (one more skip) and no Rscript, which makes `tests/test_checks_c3_bridge.py:63` RUN rather than skip (it skips locally *because* Rscript is present). | Say `test_data_manifest.py` guards the private tree and `test_artifact_guard.py` guards an absent `output/`; label 374/6 as the local measurement, not the expected CI line.
+
+MINOR | spec/specboundaries04.md:125 | "The move is a file move plus import-line edits in ten modules." Measured: seven modules carry the import (`analyzers/{calibration_summary,check_ledger,distinguish_band,reliability_band,signal_band}.py`, `panels/{_within_calibration_data,across_calibration}.py`), which is also what the first-pass reviewer scoped as "7 repointed import files". Nine files change in total if you count the added and deleted module. | s/ten modules/seven modules/.
+
+MINOR | spec/specboundaries04.md:216-219 (R4.3.4) | The `.prov.json` re-run comparison is called "the only thing protecting the phase's behaviour-neutrality claim", yet R4.3 is marked **DONE 2026-08-29** and neither the requirement, the Acceptance block nor the Review outcome records that it was performed. Every other load-bearing claim in this document carries "MEASURED", "Verified before writing this requirement" or a re-measurable command. Behaviour neutrality does hold by inspection (`kwargs["dataset"]` -> `_dataset_of(node)` is value-identical, and `_require` only narrows a field that is unconditionally set), but the doc's own acceptance criterion is unrecorded. | Record the comparison, or downgrade R4.3.4 to "argued by inspection" and say so.
+
+MINOR | spec/specboundaries04.md:275 | "The reviewer covered 8 of 9 scoped files before its session ended; the ninth was this spec, checked separately." Written by the document's own author before any independent check of it existed. As of this pass the statement is true; when committed it was an assertion about a review that had not happened. | Attribute the check ("second review pass, 2026-08-30") rather than asserting it in the passive.
+
+MINOR | spec/specboundaries04.md:106, 185, 217 | Line citations are anchored to three different revisions. `job.py:35`/`job.py:385` and `runner.py:65`/`runner.py:365` are correct at `1f58d37`; `job.py:249` is correct in the CURRENT file; `job.py:254 narrows by isinstance` is now `job.py:261` (the fix layer inserted a 7-line comment) and `runner.py:362-366` is now `_emit_prov`'s signature, not the `fn.__name__` test. | State the revision each citation is against, or cite symbols instead of lines.
+
+VERIFIED | spec/specboundaries04.md R4.0 "16 illegal imports in 6 rule violations" + the per-pair table | Reconstructed from `1f58d37` source, not from the tool: analyzers->panels 10 (5 `_artifact_guard` in calibration_summary/check_ledger/distinguish_band/reliability_band/signal_band, 4 `_within_calibration_compute` in fidelity/reliability_band/signal_band/t2star, 1 `within_calibration` in t2star), analyzers->plots 1 (fidelity->plots.theme), core->plots 2 (job->plots.base, runner->plots.targets), core->loaders 1, core->schemas 1, schemas->transforms 1. Sum 16 across 6 ordered pairs, and 16 - 1 (R4.1.4) - 5 (R4.2.1) = the 10 frozen entries. Table is exact.
+
+VERIFIED | spec/specboundaries04.md:96 "813 modules against 648" | Exact, both figures. `python -c "import sys, quebra.core.job; print(len(sys.modules))"` = 648 with `matplotlib`/`plotly` both absent; adding `quebra.plots.base` = 813 with both present.
+
+VERIFIED | spec/specboundaries04.md:123 "all 666 archived .pkl files, zero contain the string _artifact_guard" | 666 `.pkl` under `output/`; 0 match `_artifact_guard` (find|xargs, since `grep -r --include` is unreliable on this tree). Corroborated by what the archive DOES contain: 151 files name a `panels.*` module, and the recorded module paths are pre-src-layout (`analyzers.fidelity`, `panels.non_repairable`), so pickle really does record the concrete class's module and never the mixin.
+
+VERIFIED | spec/specboundaries04.md:49-53 "242 errors in 51 files" at 1f58d37 vs "208 errors in 41 files" now | BOTH figures re-measured without checking out the old commit: `git archive HEAD src/quebra | tar -x -C <scratch>` then `mypy --config-file <bare> <scratch>/src/quebra` gives exactly "Found 242 errors in 51 files (checked 79 source files)"; `mypy src/quebra` on the working tree gives exactly "208 errors in 41 files". Presenting both is honest AND the stated reason for the drift is exact, checked file by file: under a bare config the working tree is 232/49, i.e. HEAD minus 7 errors in `core/runner.py`, 2 in `core/job.py` and 1 in `panels/_artifact_guard.py` (10 errors, 2 files - `job.py` stays on the list because its pandas `import-untyped` survives a bare config); the `[tool.mypy]` pandas override then removes exactly 24 `import-untyped` errors, one per module that imports pandas, of which 8 modules had no other error. 232-24 = 208, 49-8 = 41. R4.0's category breakdown for the 10 core errors is also exact: 4 arg-type, 2 attr-defined, 2 union-attr, 1 type-var, 1 import-untyped.
+
+VERIFIED | spec/specboundaries04.md:128 "MEASURED: 10 entries" | Exactly 10 `ignore_imports`; `lint-imports` KEPT with and without `--no-cache` (79 files, 159 dependencies).
+
+VERIFIED | spec/specboundaries04.md:55-65, the three tool behaviours | All three reproduced. (1) Moving `exclude_type_checking_imports` into the contract block makes the TYPE_CHECKING `job.py -> plots.base` import a violation again (161 deps vs 159), so it is top-level-only; a deliberately bogus `totally_bogus_option = "banana"` in the same block drew no complaint - unknown contract options ARE silently accepted. (2) `"quebra.core : quebra.provenance"` KEPT, `"quebra.core | quebra.provenance"` BROKEN naming `quebra.core.identity -> quebra.provenance (l.32)` - exactly the stated example. (3) With `unmatched_ignore_imports_alerting` deleted, a fabricated entry still fails: "No matches for ignored import ...", exit 1. R4.2.3's explicitness is belt-and-braces, as the text claims.
+
+VERIFIED | spec/specboundaries04.md:141-146 (R4.2.4) | `panels/_within_calibration_data.py:36` does define `WithinCalibrationPanelData`, and 2 of the 666 archived pickles contain `quebra.panels._within_calibration_data`, `within_calibration` and the class name - so the move really would break them, unlike `_artifact_guard` (0 of 666). The four frozen `_within_calibration_compute` imports point at a module that appears in 0 pickles, but that module imports `_within_calibration_data` at its top level (and imports three analyzers back), so the argument transfers rather than failing. The rejected alternative reason is correctly labelled false: `Identity.code` is `hash_string(job_file.read_text())`, job file only.
+
+VERIFIED | spec/specboundaries04.md "Not in this phase" | Honest on all four. No `jobs/validation|survey|comparison` exists (`jobs/` is active, bench, composite, reference, rscripts), so `acyclic_siblings` really would assert over absent packages. `grep @pytest.mark tests/` yields only `parametrize` and there is no `pytestmark` anywhere - zero tests carry slow/heavy/real/r. `tests/test_bench_isolation.py` is genuinely not subsumed: its `PIPELINE_PACKAGES` includes `"jobs"`, which `root_package = "quebra"` cannot see. The quote of quebraplan 2.1 is verbatim (quebraplan.md:140) and 2.3 does condition `acyclic_siblings` on the jobs/ split.
+
+VERIFIED | spec/specboundaries04.md "Review outcome" vs the fixes actually present | Accurate. It reports 2 IMPORTANT + 5 MINOR, which is exactly what the first pass recorded, and all seven fixes are in the tree: `follow_imports` gone with a comment stating the measured no-op; `build_identity` raises `TypeError`; `_dataset_of(node: _DAGNode)` with no `getattr` fallback; `job_out_dir` inside `_require`; the deptry comment now says "the scan itself is repo-wide"; `quebra._fixtures` in `layers`; the CI marker comment rewritten (with the residual misattribution above). Its "verified and unchanged" list also still holds: one `ResolutionContext(` construction site (runner.py:483) setting all four fields.
+
+VERIFIED | src/quebra/core/job.py:249-266 | The skip->raise change adds no failure mode any legitimate DAG can reach. A load node exists only via `Job.load`/`Job.load_df`, both annotated `dataset: Dataset` and both the only writers of `kwargs["dataset"]`; `Job.step` refuses any fn named `_load_dataset`/`_load_dataframe_raw`, so a user cannot forge one. `if ds is None: continue` is correctly restored AHEAD of the isinstance, and it agrees with `runner._dataset_load_nodes`, which filters `kwargs.get("dataset") is not None` - so the two modules treat a None-dataset load node identically (ignored) and a wrong-typed one identically (raise). Pre-change the same input raised `AttributeError` on `ds.path`, so this is loud->loud with a better message.
+
+VERIFIED | src/quebra/core/runner.py:213-232, 443, 507 | `_require(context.job_out_dir, ...)` breaks no path that previously tolerated None. `ResolutionContext(` is constructed at exactly one site repo-wide (runner.py:483) and `job_out_dir` is already dereferenced two lines earlier (`job_out_dir.relative_to(out_dir)` at line 470), so it cannot be None there; `_locate_artifact` has exactly one caller, the `locate=` injection at that same site. `_dataset_of(node: _DAGNode)` is only ever called on members of `_dataset_load_nodes(job)` (line 443) or on a node whose id is in `resolved_datasets` (line 507), both of which already exclude a missing/None dataset, so its `TypeError` is unreachable from a valid DAG - it is a type narrowing, not a new gate.
+
+VERIFIED | pyproject.toml layers - `quebra._fixtures` at the bottom | Correct for the stated purpose. `_fixtures` is a data package (`FIXTURES`, `fixture_path`, one CSV) importing nothing from `quebra`; bottom placement is what forbids that changing, which is exactly what the comment claims and what R4.1.3 exists to close. Worth knowing that it constrains one direction only: nothing now stops a production module importing packaged fixtures, since everything sits above it. Today only `tests/test_packaged_fixtures.py` imports it, and tests are outside `root_package` either way.
+
+VERIFIED | gates | `make lint`, `make types`, `make arch`, `make deps` and `make check` each exit 0; `pytest -q` = 378 passed, 2 skipped (380 collected), matching P2 and "Done when". `mypy src/quebra/core` = "Success: no issues found in 9 source files". The `dev` extra carries ruff, mypy, import-linter>=2.13 and deptry, so CI's `make check` + `make deps` are installable; `requires-python = ">=3.11"` matches the 3.11/3.12 matrix and `[tool.mypy] python_version = "3.11"`.
+
+---
+
+# SPEC 0005 / Phase 3 review (identity closure)
+
+SCOPE: src/quebra/core/closure.py, src/quebra/core/job.py (Job.code_hash only),
+src/quebra/recipes.py (T2STAR_THRESHOLDS + configure_t2star_job only),
+jobs/active/t2star_q1_070423.py, jobs/active/t2star_q1_100423.py,
+src/quebra/analyzers/within_calibration_data.py,
+src/quebra/analyzers/within_calibration_compute.py,
+tests/test_identity_closure.py, tests/test_independence_survey.py
+COMMIT: 1f58d37 (working tree, uncommitted)
+
+## Manifest
+
+- [ ] src/quebra/core/job.py (+75/-?)
+- [ ] src/quebra/recipes.py (+113)
+- [ ] jobs/active/t2star_q1_070423.py (-132)
+- [ ] jobs/active/t2star_q1_100423.py (-132)
+- [ ] src/quebra/analyzers/within_calibration_data.py (moved, 70)
+- [ ] src/quebra/analyzers/within_calibration_compute.py (moved, 492)
+- [ ] tests/test_identity_closure.py (new, 207)
+- [ ] tests/test_independence_survey.py (+46/-?)
+
+## Reviewed
+- [x] src/quebra/core/closure.py
+
+## Findings
+
+---
+
+## SPEC 0005 / Phase 3 review (identity + discovery slice)
+
+SCOPE: src/quebra/core/discovery.py, src/quebra/core/job.py (Job.include only),
+src/quebra/cli.py, JOB_ID/JOB_FAMILY in 12 jobs/active+jobs/composite files,
+scripts/make_job_manifest.py, docs/JOBS.md, tests/test_job_discovery.py,
+tests/test_job_manifest.py, spec/specidentity05.md
+COMMIT: 1f58d37 (working tree, uncommitted)
+
+### Manifest
+- [ ] src/quebra/core/discovery.py (new, 125)
+- [ ] src/quebra/core/job.py (Job.include only)
+- [ ] src/quebra/cli.py (+33/-?)
+- [ ] jobs/active/*.py x9 + jobs/composite/*.py x3 (JOB_ID/JOB_FAMILY)
+- [ ] scripts/make_job_manifest.py (new, 134)
+- [ ] docs/JOBS.md (new, 52)
+- [ ] tests/test_job_discovery.py (new, 115)
+- [ ] tests/test_job_manifest.py (new, 71)
+- [ ] spec/specidentity05.md (new, 486)
+
+### Reviewed
+
+### Findings
+
+### src/quebra/core/closure.py
+
+CRITICAL | src/quebra/core/closure.py:1-25 (docstring) + effect on every job | The closure MISSES the pandera schema class that actually validates and cleans the loaded frame. `_load_dataset` (core/job.py:148) dispatches on `dataset.schema`, a class object carried on the `Dataset` at runtime; `Dataset` kwargs are skipped by `parameter_row` and grimp never sees the edge. Measured in an isolated copy of the tree: appending a line to `src/quebra/schemas/track912.py` left `t2star_q1_070423`'s code_hash byte-identical at `320f903b...` (whereas the same mutation to `analyzers/t2star.py` moved it). `track912Schema.validate` filters and coerces the frame, so this is code that changes the numbers while the identity asserts nothing changed - the exact defect the module was written to fix, one layer down. | Seed the traversal with `type(value).__module__` for every `Dataset` kwarg's `schema` (and, generally, for any kwarg whose value is a class or instance defined in `quebra.*`).
+
+IMPORTANT | src/quebra/core/closure.py:6-11 ("keeps the radius narrow") and pyproject/spec claim R5.0.4 | The claim that the closure excludes render modules is FALSE as shipped. Measured closure of `t2star_q1_070423` (35 modules) contains `quebra.panels._within_calibration_render`, `quebra.plots.base`, `quebra.plots.theme`, `quebra.plots.allan_plot`, `quebra.plots.tlf_plot`, `quebra.plots.fidelity_helpers`. Mutation-verified: appending a line to `plots/theme.py` moves the digest (`b4192242...`), and to `panels/_within_calibration_render.py` moves it (`fe3e3996...`). Cause: the step functions now live in `quebra.recipes`, which function-locally imports `quebra.panels.within_calibration`, which imports the render module. So the recipe collapse (R5.3) re-created precisely the blast radius the docstring says was avoided. | Either drop the "narrow radius" claim from the docstring and the spec, or exclude `quebra.plots.*` / `*_render` from `_reachable`.
+
+IMPORTANT | src/quebra/core/closure.py:120-127 `_reachable` seeded per-module | Seeding at MODULE granularity, not function granularity, means the whole of `quebra.recipes` seeds every t2star job. The measured closure therefore also contains `analyzers.allan`, `analyzers.tlf`, `transforms.interpolate`, `transforms.lookup_prior` - modules the T2* graph provably never executes (the docstring itself says it "adds NO interpolate node"). Editing the Ramsey/Allan path moves the T2* identity. Over-claiming is safer than under-claiming, but the docstring's "keeps the radius narrow" is not what the code does. | Say what it is (module-level, coarse), or seed from `fn.__code__.co_names`.
+
+IMPORTANT | src/quebra/core/closure.py:178-184 `parameter_row` repr guard | A `set` kwarg breaks the cross-process determinism claim outright. Measured, three separate processes: `a(labels={'qq','y','ab','x','zz'})`, `a(labels={'y','zz','ab','x','qq'})`, `a(labels={'y','ab','zz','qq','x'})` - three different rows, three different digests, same job. String hashing is randomised per process and no ` at 0x` appears, so the guard never fires. | Render containers canonically: `sorted(repr(v) for v in value)` for `set`/`frozenset`, and reject anything else that is not a scalar/str/tuple/list/dict of scalars.
+
+IMPORTANT | src/quebra/core/closure.py:178-184 | A `pathlib.Path` kwarg renders as `PosixPath('/home/sera/x/y.csv')` - an ABSOLUTE path with no ` at 0x` - so it enters the identity and breaks install-independence exactly as this module's own docstring (hazard 4) forbids. Realistic today: any future `rscript_path=` / sidecar-file kwarg. | Reject `Path` kwargs, or store them repo-relative.
+
+IMPORTANT | src/quebra/core/closure.py:178-184 | A numpy array kwarg longer than the print threshold renders truncated: measured `array([   0,    1,    2, ..., 1997, 1998, 1999], shape=(2000,))`. Two arrays differing only in the elided middle produce an identical row and an identical identity - a silent collision, which is the failure `parameter_row` was added to close. | Hash array bytes rather than repr, or reject `ndarray`.
+
+MINOR | src/quebra/core/closure.py:180 | `if "0x" in rendered and " at 0x" in rendered` - the first conjunct is subsumed by the second and can never change the outcome. | Drop it.
+
+MINOR | src/quebra/core/closure.py:180 | The guard catches only the CPython default `<... at 0x...>` form. `functools.partial(len)` renders `functools.partial(<built-in function len>)` and passes; any custom `__repr__` embedding `id()`, a timestamp or a hostname without the literal " at 0x" also passes. The guard is a heuristic presented as a contract. | Allowlist accepted types instead of denylisting one repr shape.
+
+GREEN | src/quebra/core/closure.py | Headline claim VERIFIED by mutation in an isolated tree copy: `analyzers/t2star.py` +1 line moves the digest 320f903b -> 2b8d8ab5 and restores exactly; `analyzers/kaplan_meier.py` (unreached) +1 line leaves it byte-identical. Repo left untouched (`git status` unchanged).
+GREEN | src/quebra/loaders/registry.py | The runtime loader dispatch is NOT a closure hole: `_LOADER_REGISTRY` is populated by decorators inside `registry.py` itself, no `importlib`/entry points, and `registry` is in the measured closure.
+
+### src/quebra/core/closure.py (second pass: `_graph()` and grimp)
+
+CRITICAL | src/quebra/core/closure.py:51-59 `_graph()` | `grimp.build_graph(PACKAGE)` uses grimp's DEFAULT `cache_dir`, i.e. `.grimp_cache/` in the process CWD, and that cache is keyed on MTIME, not content. Measured in an isolated tree copy: append `import quebra.analyzers.kaplan_meier` to `analyzers/t2star.py` and restore its mtime (size changed 6894 -> 6940) and the closure stays at 35 modules with kaplan_meier ABSENT; the identical run with `cache_dir=None` gives 36 modules with kaplan_meier PRESENT. So any workflow that preserves mtime while changing content (`cp -p`, `rsync --times`, `tar -x`, a container layer restore, some `git` operations) yields a wrong import graph and therefore an identity that silently stops covering a module. That is the exact failure this module exists to prevent, reintroduced by a default argument. | `grimp.build_graph(PACKAGE, cache_dir=None)`.
+
+IMPORTANT | src/quebra/core/closure.py:51-59 | Computing an identity now has a filesystem SIDE EFFECT and a hard failure mode. Measured: running `Job.code_hash()` from an empty scratch directory creates `.grimp_cache/` there; running it from a read-only CWD dies with `PermissionError: Permission denied (os error 13)` out of `grimp/adaptors/caching.py:229`, with no quebra-level message. Identity computation writing to CWD is I/O in the graph runtime, and read-only CWDs are normal in CI containers. | Same fix: `cache_dir=None`.
+
+IMPORTANT | src/quebra/core/closure.py:61-75 `_quebra_imports_of_file` | `except (OSError, SyntaxError): return set()` SWALLOWS the error and returns an EMPTY seed set, which makes the closure empty and silently restores the pre-SPEC-0005 behaviour (job file text only). Project rule is errors raised, not swallowed - and this module's own `_seed_modules` raises for the analogous "cannot resolve a module" case two functions below, so the file is internally inconsistent about it. | Re-raise with the job path named.
+
+IMPORTANT | src/quebra/core/closure.py:122-124 `_reachable` | `stack = [s for s in seeds if s in known]` silently discards any seed grimp does not know. It is needed because `_quebra_imports_of_file` deliberately emits attribute names (`quebra.recipes.RAMSEY_CONFIG`) alongside real modules, but the filter cannot tell "that was an attribute" from "that module is missing from the graph". A stale cache or a package-layout change therefore drops coverage with no signal. | Resolve `from X import y` candidates against `graph.modules` explicitly and raise if NEITHER the module nor the attribute parent is known.
+
+MEASURED | cost | `import grimp` 27 ms, `build_graph("quebra")` 3 ms warm / 81 modules; per-job `code_hash()` 1.4-4 ms for simple jobs. Not a hot path. `instrument_validation` 545 ms and `independence_survey` 141 ms are dominated by job import, not by the closure. Cost is not a finding.
+
+VERIFIED | determinism | Claim 3 parts 1 and 3 hold. Twelve jobs hashed all-in-one-process twice: byte-identical. The same twelve hashed one-per-subprocess: byte-identical to the all-in-one-process run, so `run --all` does not contaminate. Running from a copied tree at a different absolute path reproduced `320f903b...` exactly, which is the install-independence claim for the tree location.
+
+IMPORTANT | src/quebra/core/discovery.py:72-75 | `read_declaration` swallows `OSError` and `SyntaxError` and returns None, so a job file that does not parse becomes INVISIBLE to discovery. Measured: a dir with `good.py` and a syntactically broken `broken.py` both declaring `JOB_ID = "dup"` returns `{'dup': good.py}` with NO `DuplicateJobId`. Consequence for `run --all`: the old code globbed `jobs/active/*.py` and let the import raise into the `failures` list (exit 1); the new code drops the file before anything can raise, so a broken job is skipped with exit 0. Loudness regression. | Re-raise (or collect) parse/read errors instead of returning None; at minimum let `discover` fail on a `*.py` under `jobs/active|composite` that will not parse.
+IMPORTANT | src/quebra/core/discovery.py:87-88 + tests/test_job_discovery.py:100 | A job file that simply forgets `JOB_ID` is silently excluded from `run --all` forever, and no test catches it: `test_every_in_repo_job_declares_an_id_and_a_family` iterates over what discovery already FOUND, so a file with no `JOB_ID` cannot fail it. | Add a test asserting every non-`__init__` `.py` under `jobs/active/` and `jobs/composite/` yields a declaration.
+MINOR | src/quebra/core/discovery.py:50-67 | `_string_constant` silently ignores a non-literal `JOB_ID` (`JOB_ID = "pre"+"fix"` -> job vanishes). Documented and tested as intended, but the failure mode is invisibility, not a message. | Raise when the name is assigned but not a plain string literal.
+GREEN | src/quebra/core/discovery.py | No-import rule holds: `ast.parse` only, no `import`/`importlib`/`exec` anywhere in the module, and a file whose body is `raise RuntimeError(...)` is discovered fine (measured). | none
+GREEN | src/quebra/core/discovery.py:97-104 | Duplicate `JOB_ID` raises `DuplicateJobId` and the message names BOTH paths (measured on two well-formed files). | none
+
+IMPORTANT | src/quebra/cli.py:105-106 | `--family` help says "see `quebra jobs`". There is no `jobs` subcommand: `quebra --help` lists `{run,inspect,schema-wizard}`. Shipped help text pointing at a command that does not exist. | Point at `docs/JOBS.md`.
+IMPORTANT | src/quebra/cli.py:136-154 | `--all` silently changed meaning. Old: `jobs/active/*.py` = 9 jobs. New (measured with `run_job` mocked): 12 jobs, newly including the three composites `check_ledger_q1`, `compare_t2star_0704_vs_1004`, `independence_survey`. Composites re-run their own sub-jobs, so `run --all` now executes the two t2star jobs three times over. Neither the spec's R5.4 section nor the CLI comment mentions the widening. | Either keep composites out of a bare `--all` (e.g. require `--family composite`) or state the widening in the spec and the help.
+IMPORTANT | src/quebra/cli.py:103-107,136 | `--family` is accepted and silently ignored when `--all` is absent. Measured: `quebra run jobs/active/mtbf_q1.py --family totally-bogus` runs the job and exits 0. A mistyped selector silently does the wrong thing. | `parser.error` when `--family` is given without `--all`.
+MINOR | src/quebra/cli.py:142-143 | `declared = discovery.discover(jobs_root) if jobs_root.is_dir() else {}` -> from a cwd with no `jobs/`, `quebra run --all` prints nothing, runs nothing and exits 0 (measured, RC=0). Same shape as the old dead glob, but `--all` is now the only selection route. | Error when `--all` selects zero jobs.
+MINOR | src/quebra/cli.py:142 vs src/quebra/core/job.py:324 | Two different roots for the same tree: the CLI uses `Path.cwd()/"jobs"`, `Job.include` uses `repo_root()/"jobs"`. From a subdirectory the CLI finds nothing while `include` still resolves. | Use `repo_root()` in both.
+GREEN | src/quebra/cli.py | `--include-archived` removal is clean: `jobs/archived/` does not exist, and no reference to the flag survives in tests, Makefile, CI, README, AGENTS.md or docs (grepped). `--all --family t2star` -> exactly the 2 t2star jobs; `--family composite` -> exactly the 3 composites; an unknown family calls `parser.error` and lists the declared families. | none
+
+GREEN | src/quebra/core/job.py:312-333 | ID-first/path-second dispatch verified end to end: with `t2star_q1_070423.py` COPIED to `jobs/some/deep/place/renamed_file.py` in a throwaway project root, `quebra inspect jobs/cmp.py` still wires `t2star_q1_070423:t2star_panel_data`. (Done in a sandbox; the tracked tree was never moved.) Edge cases all loud: `''` -> ValueError listing declared IDs; `bare.py` -> path branch, resolves; `jobs\a\b.py` -> FileNotFoundError naming the resolved path; `/abs/x.py` -> FileNotFoundError; an ID containing a dot (`sub.dotted`) resolves as an ID. | none
+MINOR | src/quebra/core/job.py:322-326 | When `jobs/` is absent, an argument that was meant as an ID falls through to `resolve_repo_path` and reports a path-not-found error naming a path the caller never wrote. | Mention "no jobs/ directory found" in that branch.
+
+IMPORTANT | scripts/make_job_manifest.py:26-37 | `INTERESTING` omits parameters that decide what a run means, including two seeds: `VALIDATION_SEED=20260811`/`VALIDATION_REPLICATES=4000`/`VALIDATION_N` (check_calibration), `ASYMPTOTIC_SIZE_SEED=777`/`N_PERM_IN_TIE_STUDY=999`/`DIVERGENCE_THRESHOLD=0.02` (instrument_validation), `TIE_CUTOFF_DISTINCT=5` (check_ledger_q1, independence_survey), `C3_N_NULL_SIM=200`. Measured: editing `VALIDATION_SEED` leaves `build()` byte-identical, so the manifest and its staleness gate are both blind to it. The docstring claims the list is "the ones that decide what a run MEANS". | Surface every UPPER_CASE module-level literal, or subtract an explicit `BORING` set so a new constant is included by default.
+IMPORTANT | tests/test_job_manifest.py:60-70 | `test_regenerating_is_idempotent` SHELLS OUT to the generator, whose `main()` writes `docs/JOBS.md`. Measured: `pytest tests/test_job_manifest.py` changes the file's mtime. The staleness gate therefore self-heals - the run that reports "JOBS.md is stale" also rewrites it, so the next run is green with nothing fixed. | Have the test call `build()` twice, or run the generator against a tmp copy; never let the suite write a committed artifact.
+IMPORTANT | tests/test_job_manifest.py:40-52 | `test_the_generator_does_not_import_the_jobs` does not test the generator. It writes an explosive job into `tmp_path`, then asserts `discover(tmp_path)` (the wrong function) and `assert gen.build` (truthiness of a function object). `gen.build()` is never called, and cannot be pointed at `tmp_path` because `JOBS` is a module constant. A test asserting coverage it does not have. | Make `build(jobs_root=JOBS)` take the root and call it on `tmp_path`.
+MINOR | scripts/make_job_manifest.py:53-56 | `except (ValueError, TypeError): pass` drops a non-literal INTERESTING constant from the row with no marker, so the reader sees an absent parameter rather than "computed". | Render `<computed>`.
+MINOR | tests/test_job_manifest.py:20 | Docstring "Fails when a job changed without regeneration" overclaims: measured, appending a module-level constant or changing `VALIDATION_SEED` leaves `build()` identical. It fails only when JOB_ID/JOB_FAMILY/Dataset literals/include literals/an INTERESTING constant change. | Say what it actually covers.
+MINOR | tests/test_job_discovery.py:24-26 | `pytest.importorskip("pathlib")` to obtain `Path` - stdlib, cannot be missing; if it ever were, the whole module would skip silently. | `from pathlib import Path`.
+
+IMPORTANT | jobs/composite/independence_survey.py:60 | `JOB_FAMILY = "composite"` on a job that contains NO `job.include` at all - its own docstring (line 14) says "this one loads its datasets directly rather than through `job.include`". The family was copied from the directory, which is precisely what R5.4 claims to have stopped. | Give it a subject family (e.g. `validation` or `independence`), or drop "composite" as a family.
+MINOR | jobs/ (all 12) | "composite" is a mechanism, not a subject; the other five families (t2star, ramsey, survival, interval, validation) are subjects. A reader cannot predict where a new job goes - `check_ledger_q1` is as much "validation" as `check_calibration` is. | Either make family purely subject-matter and expose "has includes" from the manifest, or document the rule in docs/JOBS.md.
+MINOR | jobs/active/ramsey_q1_100423.py, jobs/active/t2star_q1_100423.py | Both declare `PREFIX = 'q1_13h_1004_dataset'` (visible in docs/JOBS.md rows). Distinct JOB_IDs now, but the shared PREFIX is what names node/artifact labels. | Confirm the two cannot collide in `output/`.
+
+### Reviewed
+- [x] src/quebra/core/discovery.py
+- [x] src/quebra/core/job.py (Job.include)
+- [x] src/quebra/cli.py
+- [x] jobs/active + jobs/composite JOB_ID/JOB_FAMILY (12 files)
+- [x] scripts/make_job_manifest.py
+- [x] docs/JOBS.md
+- [x] tests/test_job_discovery.py
+- [x] tests/test_job_manifest.py
+
+CRITICAL | src/quebra/cli.py:136-154 vs docs/WRITING_A_JOB.md:229 and AGENTS.md:200 | The committed docs state the invariant this change breaks. WRITING_A_JOB.md:229: "`quebra run --all` sweeps `jobs/active` and would otherwise re-run every sub-job" - given as the REASON composites live in `jobs/composite/`. AGENTS.md:200: "`jobs/composite/` ... NOT swept by `run --all`". Measured, `run --all` now selects all 12 including the composites, so it re-runs every sub-job and additionally launches `independence_survey`, which this spec's own budget section calls "~6.5 h wall-clock at INCLUDE_C3=True over 415 cells". Neither doc was updated and the spec never mentions the widening. | Exclude family `composite` from a bare `--all`, or update both docs and say so in R5.4.
+IMPORTANT | docs/WRITING_A_JOB.md:210-232 | The job-authoring guide never mentions `JOB_ID` or `JOB_FAMILY`, and still teaches `job.include("other_job.py")`. A job written by following the guide declares no `JOB_ID` and is therefore silently invisible to `run --all` forever. | Add the two constants to the guide and switch the include example to an ID.
+IMPORTANT | docs/WRITING_A_JOB.md:173,185 | R5.1.6 required a `docs/` sweep and it did not happen. Line 173 still says the identity is "a content hash of the job file's source, the datasets it loaded, and the identities of any sub-jobs" - R5.1 added the step-source closure and the parameter row. Line 185's example run directory is `output/t2star_q1_070423_43e8d4_...`, the exact stale prefix R5.1.6 named; the spec's own R5.3 outcome says that digest is now `ffba1a`. | Sweep both.
+MINOR | src/quebra/cli.py:145 | `quebra run --all --family ""` - empty string is falsy, so the guard is skipped and all 12 jobs run instead of erroring. | Test `args.family is not None`.
+
+IMPORTANT | spec/specidentity05.md:346 | "the two **133-line** files were byte-identical". Measured at HEAD: both `jobs/active/t2star_q1_0{7,10}0423.py` are **128** lines, which is also what this same spec says at R5.0.2 line ~80 ("128 lines each"). The document contradicts itself and the artifact. | Say 128.
+IMPORTANT | spec/specidentity05.md:347 | "They are 34 lines each now — **198 lines removed**". Measured: 34 lines each is correct; the removal count is not. `git diff --numstat` gives 113 removed + 19 added per file = 226 removed / 38 added, net 188 fewer lines in the two job files, against 113 lines ADDED to `recipes.py` (net -75 repo-wide). 198 corresponds to no measurement. | Quote 188 (net, two files) or 226/38 and the +113 in recipes.
+IMPORTANT | spec/specidentity05.md:150-152 (R5.0.4 acceptance) vs pyproject.toml:163,166-177 | Acceptance says "no entry names a phase that will not remove it". All five surviving `ignore_imports` entries name SPEC 0005, and the spec's own "Not in this phase" section defers them. The comment above the list also still reads "The frozen baseline: **10** imports" over a list of 5, and an orphaned comment block about `panels/_within_calibration_data.py` survives with a dangling "# SPEC 0005." and no entry. Measured numbers in a shipped comment that are false. | Fix the comment and retarget the five entries at the spec that will remove them.
+MINOR | spec/specidentity05.md:296-299 (R5.2 acceptance) / :338-348 | R5.2 has no `**Outcome.**` section; the paragraph that opens R5.3's Outcome ("`core/discovery.py` reads `JOB_ID` and `JOB_FAMILY` statically ... the acceptance holds") is R5.2's outcome pasted under R5.3. Same shift puts R5.4's outcome inside R5.5. A reader checking R5.2 or R5.4 finds no record. | Move each Outcome under its own requirement.
+MINOR | spec/specidentity05.md:290-294 (R5.2.4) vs src/quebra/core/job.py:322-333 | R5.2.4 says "No deprecation window ... If an external caller ever appears, add the compatibility path then, against a real case." The shipped `include` keeps the path branch permanently and the `FileNotFoundError` text advertises it ("a repo-root-relative path still works"). Reasonable engineering, but the spec asserts the opposite of what was built. | Reword R5.2.4 to state that the path form is retained as a fallback, and why.
+MINOR | spec/specidentity05.md:411 (R5.5 acceptance) | "its test fails when a job changes without regeneration" is false in general. Measured against a copy of `jobs/`: changing `ALPHA` moves `build()`; changing `VALIDATION_SEED` or adding a module-level constant does not. The gate covers JOB_ID, JOB_FAMILY, `Dataset(path=...)` literals, `include` literals and the ten `INTERESTING` names only. | State the covered surface.
+MINOR | spec/specidentity05.md:430-435 ("Done when") | "The collect count is recorded with its delta explained." R5.1's outcome records 380 -> 393; the tree as shipped collects **408** (`406 passed, 2 skipped`) and no line of the spec records that number or its delta. | Record 408 and the +15 from R5.4/R5.5's tests.
+MINOR | spec/specidentity05.md:382-384 (R5.4 acceptance) | "A job with no `JOB_FAMILY` is reported, not silently skipped" is satisfied by a test over the repo, not by the tool: at runtime a family-less job is silently omitted from every `--family` selection and nothing prints. | Have `--family` (or a `quebra jobs` listing) name the uncategorised jobs.
+GREEN | spec/specidentity05.md:75-79 (R5.0.2) | "20 non-`__init__` files — 9 active, 3 composite, 8 bench" - counted, exact. The "byte-identical once the date and the run duration were normalised" claim also holds: normalising `070423`/`100423`, `27h`/`13h`, `duration_h`, `0704`/`1004` makes the two HEAD files `diff`-clean. | none
+GREEN | spec/specidentity05.md:140-144 (R5.0.4 outcome) | "`analyzers.t2star`'s transitive closure went from 14 quebra modules with 4 render to **9 with 0**" - re-measured with `grimp.build_graph("quebra").find_upstream_modules("quebra.analyzers.t2star")`: 9 modules, zero `plots.*` or `*_render`. | none
+GREEN | spec/specidentity05.md:296 | "All 4 in-repo `include` sites use `JOB_ID`" - grepped: exactly 4, in `check_ledger_q1.py` and `compare_t2star_0704_vs_1004.py`, all IDs. The remaining `.include(` calls are tests passing tmp_path absolutes. | none
+NOT VERIFIED | spec/specidentity05.md:326-335, 349-353 | The digests `5c35194470316077`, `43e8d4 -> ffba1a`, the "byte-identical `q1_27h_0704_dataset_windows.pkl`" and the "2 bytes" `t2star_panel_data.pkl` delta all require running the T2* jobs over `data/real_private/`, which this review is forbidden to touch. Unchecked, and they are the spec's load-bearing numbers. | Another reviewer with data access must confirm.
+
+- [x] spec/specidentity05.md
+
+---
+
+SCOPE: src/quebra/recipes.py (T2* family section only), jobs/active/t2star_q1_070423.py,
+jobs/active/t2star_q1_100423.py, tests/test_independence_survey.py (diff vs HEAD).
+COMMIT: 1f58d37
+
+## Manifest
+- [ ] src/quebra/recipes.py (T2* section)
+- [ ] jobs/active/t2star_q1_070423.py (+19/-113)
+- [ ] jobs/active/t2star_q1_100423.py (+19/-113)
+- [ ] tests/test_independence_survey.py (+34/-12)
+
+## Reviewed
+
+## Findings
+
+### Verified by measurement (behaviour preservation, claim 1)
+
+GREEN | recipes.py + both jobs | DAG is byte-for-byte the same shape as HEAD. Built HEAD's two job files (from `git show`) and the new two in-process and dumped `dag`: identical node ids in identical order (`load`, `t2star_filter`, `t2star_final_filter_stage`, `t2star`, `windows`, `t2star_panel_data`), identical `inputs` edges (`t2star_panel_data <- [t2star, windows]`), identical sinks in identical order (`_MaterializeSink q1_..._windows` then `_FigureSink q1_..._t2star` with `targets=['static','academic']`, `WithinCalibrationPanel`). `quebra inspect` agrees. | none
+
+GREEN | claim 2, provenance visibility | All five land in `node.kwargs`, measured not read: `windows` -> `{'gap_mult': 10.0, 'k': 1.0, 'use_uncertainty': True}`; `t2star_panel_data` -> `{'shape_min_reads': 5, 'use_uncertainty': True, 'xi_seed': 20260813}`. Identical dicts at HEAD. `runner._label` builds from `node.kwargs`, so the label is unchanged. | none
+
+GREEN | claim 3, threshold ladder | `[(f"{k} µs", k / 1e6, True) for k in range(1, 11)]` reproduces the ten old literals EXACTLY, compared by IEEE-754 bit pattern (`struct.pack('>d')`) on all ten rungs, labels included. `k * 1e-6` would have differed at k=5 (`4.9999999999999996e-06`) and k=10 (`9.999999999999999e-06`); the shipped form does not. | none
+
+GREEN | claim 4, the two jobs still differ | They differ in exactly path / PREFIX / duration_h and nothing else; the two DAGs differ only in those three places, and `Job(name)` differs, so identities differ. | none
+
+### Findings
+
+IMPORTANT | tests/test_independence_survey.py:88-105 | The rewritten `_effective_t2star_carve` is NOT strictly stronger; it is weaker on one axis and the weakening is silent. It pre-seeds `effective` with the recipe defaults and then overwrites from the job file inside `try: ... except (ValueError, SyntaxError): pass`. A job that overrides with anything non-literal keeps the swallowed exception AND keeps the recipe default, so the test compares the survey against a value the job does not use. MEASURED: injecting `gap_mult=MY_GAP` into the job file yields `{'GAP_MULT': 10.0, ...}` and the test PASSES while the job carves with `MY_GAP`; `k=2.0 * 1.5` likewise yields `K: 1.0` and passes. At HEAD the same mutation left `found` without the key and `assert name in found` fired loudly. That is precisely the "survey and panel describe different windows" defect the module docstring says this file exists to catch. | Re-raise instead of `pass`: on `ast.literal_eval` failure, fail the test naming the kwarg, e.g. `pytest.fail(f"{kw.arg} is overridden with a non-literal; the control cannot read it")`.
+
+IMPORTANT | src/quebra/recipes.py:297-302 vs src/quebra/analyzers/t2star.py:117-128 | The new comment claims "One ladder, one place". False as shipped: `analyzers/t2star.py` still holds `T2STAR_DEFAULT_LADDER`, the same ten rungs as explicit literals. The count went from 3 copies to 2, not to 1, and nothing pins the two equal - no test compares `recipes.T2STAR_THRESHOLDS` to `T2STAR_DEFAULT_LADDER` (grepped). Project rule: a claim in a shipped comment must be true as shipped. | Either import the analyzer ladder, or say "two ladders" and add an equality assertion.
+
+IMPORTANT | src/quebra/recipes.py:319, jobs/active/t2star_q1_070423.py:5, jobs/active/t2star_q1_100423.py:5 | "two 133-line job files" / "these two files were 133 lines each". MEASURED: `git show HEAD:jobs/active/t2star_q1_070423.py | wc -l` = 128, same for 100423. The same wrong number is already logged against spec/specidentity05.md:346 and has now been copied into three shipped source files. | Say 128.
+
+IMPORTANT | src/quebra/recipes.py:311, 338 | `thresholds` is the one parameter of `configure_t2star_job` that does NOT reach provenance: `ladder` is a closure capture of `_windows_run`/`_t2star_panel_data`, never a step kwarg. The function's own docstring states the rule it breaks - "an argument left to its default would be invisible to provenance" - and applies it to the other five. The ladder is the most meaning-bearing parameter in the graph (it defines every rung of the panel); a job that passes `thresholds=` gets no record of it on the node label. | Forward `thresholds=ladder` as a step kwarg on `windows` and `t2star_panel_data`, as the other five are.
+
+MINOR | src/quebra/recipes.py:338 | `thresholds=[]` is accepted silently: `[] is not None`, so the empty ladder is used, the panel scores zero rungs and nothing raises. Repo rule is errors raised, not silent degradation. | `if thresholds is not None and not thresholds: raise ValueError(...)`.
+
+MINOR | src/quebra/recipes.py:311 vs :271 | `gap_mult: float = 10.0` hardcodes a number that is already imported into this module as `DEFAULT_GAP_MULT` (line 16) and used by `configure_ramsey_job` at line 271. Equal today (`windows.DEFAULT_GAP_MULT = 10.0`, checked); if the constant moves, ramsey follows and t2star silently does not. | `gap_mult: float = DEFAULT_GAP_MULT`.
+
+MINOR | src/quebra/recipes.py:334-336 | The three function-body imports are cargo-cult, not cycle-breaking. MEASURED: `import quebra.analyzers.t2star` does not pull in `quebra.recipes` (no cycle); `WithinCalibrationPanel` is ALREADY imported at module scope (recipes.py:19-22), so that line is dead; and `recipes` sits above `panels`/`analyzers` in the import-linter layer list (pyproject.toml:147-152), so a module-level import is permitted. Function-level imports are also visible to grimp, so they buy nothing from the contract either. | Move all three to module scope alongside the existing `windows`/`WithinCalibrationPanel` imports.
+
+MINOR | src/quebra/recipes.py:305-311 vs :204-215 | Inconsistent with `configure_ramsey_job` directly above: ramsey takes `dataset` POSITIONALLY and annotates `job: Job` bare; t2star makes `dataset` keyword-only and quotes `"Job"` / `"Dataset"` even though both are module-level imports and `from __future__ import annotations` is in force. Two sibling recipes with two conventions. | Match the neighbour.
+
+MINOR | src/quebra/recipes.py:300 | `T2STAR_THRESHOLDS` holds SI seconds and carries no unit suffix, against the project's unit-suffix rule; the comment carries the unit instead. (Same defect in `T2STAR_DEFAULT_LADDER`, pre-existing.) | `T2STAR_THRESHOLDS_S`.
+
+MINOR | tests/test_independence_survey.py:71 | `T2STAR_JOB = _module_constants(...)` is now dead - its only consumer was the `_T2STAR_THRESHOLDS` lookup this diff removed (grepped: one occurrence, the assignment). | Delete it.
+
+MINOR | tests/test_independence_survey.py:166-176 | The ladder control lost its anchor. At HEAD it compared the survey's `k / 1e6` comprehension against the job's ten explicit LITERALS - a genuine cross-form check. It now compares the survey comprehension against `recipes.T2STAR_THRESHOLDS`, which is the character-for-character identical expression, so the surviving comment "`k * 1e-6` fails this at k = 5 and k = 10 ... `k / 1e6` reproduces the literals exactly" describes a comparison the test no longer performs. The only remaining explicit-literal ladder, `T2STAR_DEFAULT_LADDER`, is now pinned by nothing. | Compare the survey ladder against `analyzers.t2star.T2STAR_DEFAULT_LADDER` (the literals) as well, or drop the claim.
+
+MINOR | tests/test_independence_survey.py:96 | The override scan reads only `jobs/active/t2star_q1_070423.py`. There are now two declared members of the `t2star` family and the recipe makes per-job overrides a first-class feature, so an override in `t2star_q1_100423.py` alone is invisible to every carve control. (Pre-existing narrowness, newly load-bearing.) | Loop over both `jobs/active/t2star_*.py`.
+
+MINOR | jobs/composite/independence_survey.py:70-76 | Stale as shipped after this diff: "the literal `5e-6` the T2* jobs write". The T2* jobs write no literal any more; the ladder lives in `recipes.T2STAR_THRESHOLDS` as the same comprehension. | Retarget the comment at `recipes.T2STAR_THRESHOLDS` / `T2STAR_DEFAULT_LADDER`.
+
+MINOR | jobs/bench/probe_unresolved.py:17 | "Every job file declares a ladder byte-identical to T2STAR_DEFAULT_LADDER" is false after the collapse - no job file declares a ladder. | Reword.
+
+## Reviewed
+- [x] src/quebra/recipes.py (T2* section)
+- [x] jobs/active/t2star_q1_070423.py
+- [x] jobs/active/t2star_q1_100423.py
+- [x] tests/test_independence_survey.py

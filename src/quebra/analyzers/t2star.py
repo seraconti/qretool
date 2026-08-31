@@ -22,10 +22,10 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
-from quebra.panels._within_calibration_compute import (
+from quebra.analyzers.within_calibration_compute import (
     build_within_calibration_panel_data,
 )
-from quebra.panels.within_calibration import WithinCalibrationPanelData
+from quebra.analyzers.within_calibration_data import WithinCalibrationPanelData
 
 
 @dataclass(slots=True)

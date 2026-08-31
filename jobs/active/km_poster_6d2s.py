@@ -35,6 +35,11 @@ from quebra.recipes import RAMSEY_CONFIG, _filter_step, _final_stage
 from quebra.plots.km_survival_plot import KMSurvivalPlot
 from quebra.schemas.track912 import track912Schema
 
+# SPEC 0005 R5.2/R5.4: the logical name and category. `include` resolves JOB_ID, so this
+# file can move without breaking any composite; recategorising costs one string edit.
+JOB_ID = "km_poster_6d2s"
+JOB_FAMILY = "survival"
+
 PREFIX = "km_poster_6d2s"
 
 # The one rung every curve is carved at. SI seconds, like every threshold in this repo;

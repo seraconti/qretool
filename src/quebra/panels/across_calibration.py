@@ -38,7 +38,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from quebra.analyzers.mtbf import MtbfResult
-from quebra.panels._artifact_guard import StaleArtifactGuard
+from quebra.core._artifact_guard import StaleArtifactGuard
 from quebra.plots.base import BasePlot
 from quebra.plots.fidelity_helpers import apply_common_style
 from quebra.plots.theme import qubit_color, style_context

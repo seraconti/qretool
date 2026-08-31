@@ -7,11 +7,13 @@ from typing import Callable
 import pandas as pd
 
 import quebra.analyzers.fidelity as fidelity
+import quebra.analyzers.t2star as t2star
 import quebra.analyzers.windows as windows
 from quebra.analyzers.allan import run as run_allan
 from quebra.analyzers.fidelity import FidelityResult
 from quebra.analyzers.fidelity import make_inputs_from_norm as _fidelity_make_inputs
 from quebra.analyzers.fidelity import run as _run_fidelity
+from quebra.analyzers.t2star import T2STAR_DEFAULT_LADDER, T2StarResult
 from quebra.analyzers.tlf import run as run_tlf
 from quebra.analyzers.windows import DEFAULT_GAP_MULT, WindowsResult
 from quebra.core.dataset import Dataset
@@ -290,3 +292,127 @@ def configure_ramsey_job(
         tlf = job.step(_tlf_step(), final_filtered, name="tlf")
         job.figure(TLFPlot, tlf, targets=["static", "academic"], title=f"{prefix} TLF")
         job.materialize(tlf, name=f"{prefix}_tlf")
+
+
+# ---------------------------------------------------------------- the T2* family (SPEC 0005 R5.3)
+
+# The T2* family's threshold ladder, in SI seconds.
+#
+# DERIVED from the analyzer's own default rather than retyped. A first version of this
+# declared its own comprehension under the comment "one ladder, one place", which was false:
+# `analyzers.t2star.T2STAR_DEFAULT_LADDER` already held the same ten rungs, so three copies
+# became two and nothing pinned them equal. They coincide today, and a silent divergence
+# would put the survey's columns out of correspondence with the panel's.
+#
+# A family that needs a different ladder passes `thresholds=` - which is what the analyzer's
+# own docstring asks production jobs to do, and what keeps this a default rather than a rule.
+T2STAR_THRESHOLDS: list[tuple[str, float, bool]] = list(T2STAR_DEFAULT_LADDER)
+
+
+def configure_t2star_job(
+    job: "Job",
+    *,
+    dataset: "Dataset",
+    prefix: str,
+    thresholds: list[tuple[str, float, bool]] | None = None,
+    gap_mult: float = 10.0,
+    k: float = 1.0,
+    use_uncertainty: bool = True,
+    shape_min_reads: int = 5,
+    xi_seed: int = XI_SEED,
+) -> None:
+    """Wire the whole T2* within-calibration graph onto `job`.
+
+    Collapses the family SPEC 0005 R5.3 identified: two 128-line job files that were
+    byte-identical once the date and the run duration were normalised. What is left in each
+    job file is its parameter row, which is the part a reader should actually diff.
+
+    Deliberately does NOT call `configure_ramsey_job` and adds NO interpolate node. Windows
+    are carved from the filtered reads: the gap policy is meaningless on a uniform grid, and
+    an interpolated point is not an observation, so a window must never be built from one.
+    `tests/test_windows_not_interpolated.py` pins that as a property of the DAG.
+
+    `gap_mult`, `k`, `use_uncertainty`, `shape_min_reads` and `xi_seed` are passed as step
+    KWARGS rather than captured, so they reach the provenance label - the `allan` pattern,
+    not the `filter` pattern. `runner` builds that label from `node.kwargs`, so an argument
+    left to its default would be invisible to provenance; they are therefore passed
+    explicitly below even where the value equals the default.
+    """
+    ladder = T2STAR_THRESHOLDS if thresholds is None else thresholds
+
+    def _t2star_run(norm: object) -> T2StarResult:
+        return t2star.run(t2star.make_inputs_from_norm(norm))  # type: ignore[arg-type]
+
+    def _windows_run(
+        result: T2StarResult,
+        gap_mult: float,
+        k: float,
+        use_uncertainty: bool,
+        thresholds: list[tuple[str, float, bool]],
+    ) -> WindowsResult:
+        return windows.run(
+            windows.make_inputs_from_frame(
+                result.frame,
+                time_col="t_rel_s",
+                value_col="t2star_s",
+                sigma_col="t2star_error_s" if use_uncertainty else None,
+                thresholds=thresholds,
+                dataset_id=str(result.meta.get("dataset_id", "")),
+                gap_mult=gap_mult,
+                k=k,
+                use_uncertainty=use_uncertainty,
+            )
+        )
+
+    def _t2star_panel_data(
+        result: T2StarResult,
+        window_result: WindowsResult,
+        shape_min_reads: int,
+        use_uncertainty: bool,
+        xi_seed: int,
+        thresholds: list[tuple[str, float, bool]],
+    ) -> WithinCalibrationPanelData:
+        return t2star.make_panel_data(
+            result,
+            windows=window_result.windows,
+            reads=window_result.reads,
+            gap_spans_s=window_result.diagnostics.get("gap_spans_s"),
+            thresholds=thresholds,
+            shape_min_reads=shape_min_reads,
+            use_uncertainty=use_uncertainty,
+            xi_seed=xi_seed,
+        )
+
+    main_node = job.load(dataset)
+    filtered = job.step(_filter_step(RAMSEY_CONFIG), main_node, name="t2star_filter")
+    final = job.step(_final_stage, filtered, name="t2star_final_filter_stage")
+    result = job.step(_t2star_run, final, name="t2star")
+    window_node = job.step(
+        _windows_run,
+        result,
+        name="windows",
+        gap_mult=gap_mult,
+        k=k,
+        use_uncertainty=use_uncertainty,
+        # A kwarg, not the closure capture it was: the ladder defines every rung of the
+        # panel, and this function's own docstring says an argument left out of node.kwargs
+        # is invisible to the provenance label. It was the one parameter breaking that rule.
+        thresholds=ladder,
+    )
+    panel = job.step(
+        _t2star_panel_data,
+        result,
+        window_node,
+        name="t2star_panel_data",
+        shape_min_reads=shape_min_reads,
+        use_uncertainty=use_uncertainty,
+        xi_seed=xi_seed,
+        thresholds=ladder,
+    )
+    job.materialize(window_node, name=f"{prefix}_windows")
+    job.figure(
+        WithinCalibrationPanel,
+        panel,
+        targets=["static", "academic"],
+        title=f"{prefix}_t2star",
+    )

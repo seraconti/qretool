@@ -4,7 +4,7 @@ This is a STEP: pure compute, no I/O, no matplotlib. It consumes the window tabl
 `analyzers/windows.py` produces and nothing else, so the gap policy, the censoring and
 the window identity are the same facts here as in every other consumer of that table.
 
-Two decisions separate this from `panels/_within_calibration_compute._window_survival`, the
+Two decisions separate this from `analyzers/within_calibration_compute._window_survival`, the
 crude estimator the within-calibration panel still ships:
 
 - **Right-censored windows are kept, not dropped.** A window that died at a read gap or

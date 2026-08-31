@@ -18,7 +18,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from quebra.panels._within_calibration_data import WithinCalibrationPanelData
+from quebra.analyzers.within_calibration_data import WithinCalibrationPanelData
 
 
 def draw_decade_guides(ax: plt.Axes, values: np.ndarray) -> None:

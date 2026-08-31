@@ -26,6 +26,11 @@ from quebra.core.types import Norm
 from quebra.plots.mtbc_hist_plot import MTBCHistogramPlot
 from quebra.schemas.calibration_log import CalibrationLogSchema
 
+# SPEC 0005 R5.2/R5.4: the logical name and category. `include` resolves JOB_ID, so this
+# file can move without breaking any composite; recategorising costs one string edit.
+JOB_ID = "mtbc_q6"
+JOB_FAMILY = "interval"
+
 PREFIX = "mtbc_q6"
 
 job = Job(PREFIX)

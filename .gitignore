@@ -41,5 +41,11 @@ output/
 output_backup/
 output_backup2/
 
+# Tool caches. `quebra.core.closure` passes `cache_dir=None` so grimp never writes this,
+# but grimp is a runtime dependency now and a default-argument call would recreate it - and
+# the cache is keyed on MTIME, so a stale one produces a wrong import graph and an identity
+# that silently stops covering a module.
+.grimp_cache/
+
 # OS
 .DS_Store

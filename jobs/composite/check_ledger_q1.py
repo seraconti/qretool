@@ -22,6 +22,15 @@ from quebra.core.dataset import Dataset
 from quebra.core.job import Job
 from quebra.panels.check_ledger import CheckLedgerPanel
 
+# SPEC 0005 R5.2/R5.4: the logical name and category. `include` resolves JOB_ID, so this
+# file can move without breaking any composite; recategorising costs one string edit.
+JOB_ID = "check_ledger_q1"
+JOB_FAMILY = "independence"
+# Not swept by a bare `run --all`: it re-runs sub-jobs and/or is long. Selectable
+# with `--family independence` or by path. This is the declaration that replaced the old
+# "jobs/composite/ is not swept" directory rule.
+JOB_SWEEP = False
+
 # The T2* ladder, repeated from the datasets' own jobs. Kept literal rather than imported
 # so the ladder this ledger scored is visible in this file and lands on the label.
 # `k / 1e6`, NOT `k * 1e-6`. The two differ: 1e-6 is not exactly representable, so
@@ -54,8 +63,8 @@ BENCH_SIZE_TABLE = Dataset(path="jobs/bench/results/size_table.csv", schema=None
 job = Job("check_ledger_q1")
 
 _bench = job.load_df(BENCH_SIZE_TABLE)
-_d0704 = job.include("jobs/active/t2star_q1_070423.py", alias="d0704")
-_d1004 = job.include("jobs/active/t2star_q1_100423.py", alias="d1004")
+_d0704 = job.include("t2star_q1_070423", alias="d0704")
+_d1004 = job.include("t2star_q1_100423", alias="d1004")
 
 
 def _ledger(

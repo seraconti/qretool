@@ -30,10 +30,31 @@ jobs:
           python -m pip install --upgrade pip
           pip install ".[dev]"
 
-      - name: Lint
-        run: ruff check .
+      # SPEC 0004 R4.4.1: CI runs the SAME command the local gate does, rather than a
+      # hand-copied subset. They had already drifted three ways - `make lint` ran
+      # `ruff format --check` and CI did not, `make check` omitted `deps`, and CI had no
+      # mypy step at all, so the type errors R4.3.2 fixed had nothing stopping an eleventh.
+      # `make check` = lint (ruff check + format), types (mypy), arch (lint-imports), test.
+      #
+      # R1.4.3 still holds: no step fetches data/real_private/, and none may be added.
+      #
+      # What keeps this green without that tree is NOT the marker selector, despite what an
+      # earlier version of this comment said. `make test` runs `pytest -m "not slow and not
+      # heavy and not real and not r"`, but ZERO tests carry any of those four markers, so
+      # the selector excludes nothing and CI runs the whole suite. The guards are per-test
+      # `pytest.skip` calls, and they are guarding DIFFERENT absences:
+      #   - tests/test_data_manifest.py (4 sites) skips on an absent `data/real_private/`
+      #   - tests/test_artifact_guard.py skips on an absent pre-split artifact under `output/`
+      #   - tests/test_checks_c3_bridge.py and test_r_cross_implementation.py turn on Rscript
+      # Locally, renaming `data/real_private/` away moves 378 passed / 2 skipped to
+      # 374 passed / 6 skipped, exit 0 - nothing errors. That is the LOCAL experiment, not a
+      # prediction of CI's line: a runner also lacks `output/` and lacks Rscript, so its
+      # skip set differs. The claim being made here is only that nothing ERRORS on absence.
+      #
+      # The unused markers are a known gap, recorded in spec/specboundaries04.md under
+      # "Not in this phase". If they are ever applied, this comment must be re-measured.
+      - name: make check
+        run: make check
 
-      # R1.4.3: no step fetches data/real_private/, and none may be added. The `real`
-      # marker is what keeps those tests out; CI never sees the tree they need.
-      - name: Fast test selector
-        run: pytest -m "not slow and not heavy and not real and not r" -q tests/
+      - name: make deps
+        run: make deps

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from quebra.core import discovery
 from quebra.core.runner import run_job
 from quebra.loaders.registry import _LOADER_REGISTRY, load
 from quebra.plots.targets import RENDER_TARGETS
@@ -100,7 +101,10 @@ def main() -> None:
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("path", nargs="?")
     run_parser.add_argument("--all", action="store_true")
-    run_parser.add_argument("--include-archived", action="store_true")
+    run_parser.add_argument(
+        "--family",
+        help="with --all, run every job declaring this JOB_FAMILY, sweep opt-out included",
+    )
     run_parser.add_argument("--force", action="store_true")
     run_parser.add_argument(
         "--output-root",
@@ -131,18 +135,35 @@ def main() -> None:
             Path(args.data_root).expanduser().resolve() if args.data_root else None
         )
         out_root = _output_root(args.output_root)
+        if args.family is not None and not args.all:
+            parser.error("--family selects among discovered jobs and requires --all")
         if args.all:
-            job_files = [
-                job_file
-                for job_file in sorted(_jobs_dir("active").glob("*.py"))
-                if job_file.name != "__init__.py"
-            ]
-            if args.include_archived:
-                job_files.extend(
-                    job_file
-                    for job_file in sorted(_jobs_dir("archived").glob("*.py"))
-                    if job_file.name != "__init__.py"
+            # SPEC 0005 R5.4: select by the declared JOB_FAMILY constant, read statically.
+            # The directory is presentation only now. `jobs/archived/` does not exist and its
+            # glob was dead, so `--include-archived` is gone with it.
+            jobs_root = Path.cwd() / "jobs"
+            if not jobs_root.is_dir():
+                parser.error(
+                    f"no jobs/ directory under {Path.cwd()}. `--all` discovers jobs by "
+                    f"JOB_ID under ./jobs; run from a project root or pass a job path."
                 )
+            declared = discovery.discover(jobs_root)
+            if args.family is not None:
+                selected = [d for d in declared.values() if d.family == args.family]
+                if not selected:
+                    families = sorted({d.family for d in declared.values() if d.family})
+                    parser.error(
+                        f"no job declares JOB_FAMILY '{args.family}'. "
+                        f"Declared families: {', '.join(families) or '<none>'}"
+                    )
+            else:
+                # A bare --all runs only jobs that opt IN to the sweep. Composites include
+                # other jobs, so sweeping them re-runs every sub-job, and the independence
+                # survey costs hours - which is why AGENTS.md and docs/WRITING_A_JOB.md have
+                # always promised composites are not swept. `--family` overrides, because
+                # asking for a family by name is asking for all of it.
+                selected = [d for d in declared.values() if d.sweep]
+            job_files = [d.path for d in sorted(selected, key=lambda d: d.job_id)]
             failures: list[tuple[Path, Exception]] = []
             for job_file in job_files:
                 print("\n\n---------------------\nRunning job from", job_file)

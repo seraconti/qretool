@@ -26,7 +26,7 @@ from quebra.analyzers.windows import (
     STATE_OUT_OF_SPEC,
     mark_gaps_in_segments,
 )
-from quebra.panels._artifact_guard import StaleArtifactGuard
+from quebra.core._artifact_guard import StaleArtifactGuard
 
 ESTIMATOR_CRUDE = "crude_empirical"
 
@@ -172,7 +172,7 @@ def _compliance_segments(
 
 
 def run(inputs: ReliabilityBandInputs) -> ReliabilityBand:
-    from quebra.panels._within_calibration_compute import (
+    from quebra.analyzers.within_calibration_compute import (
         _analyze_threshold_windows,
         _cumulative_damage,
         _cumulative_time_out_of_spec,

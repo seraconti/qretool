@@ -35,7 +35,7 @@ import plotly.graph_objects as go
 from quebra.panels import _within_calibration_render as render
 from quebra.analyzers.reliability_band import estimator_name
 from quebra.analyzers.windows import STATE_UNOBSERVED
-from quebra.panels._within_calibration_data import WithinCalibrationPanelData
+from quebra.analyzers.within_calibration_data import WithinCalibrationPanelData
 from quebra.plots import theme
 from quebra.plots.base import BasePlot
 from quebra.plots.fidelity_helpers import apply_common_style

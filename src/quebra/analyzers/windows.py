@@ -248,7 +248,7 @@ def in_spec_mask(
 
     KNOWN DIVERGENCE, preserved deliberately: at exact equality with
     `big_values_good=False`, this calls `value == threshold` OUT of spec, while
-    `panels/_within_calibration_compute._out_of_spec_mask` (`value > threshold`) calls it
+    `analyzers/within_calibration_compute._out_of_spec_mask` (`value > threshold`) calls it
     IN spec. Both predate this module and both are load-bearing - one drives the
     windows, the other drives cumulative time, TTF and in-spec fraction. Reconciling
     them changes published numbers, so it is a decision to take deliberately rather

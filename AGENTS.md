@@ -43,7 +43,8 @@ that tests pass without having run them.
 pytest                                        # full suite
 ruff check --fix . && ruff format .           # lint and format
 quebra run jobs/active/<job>.py               # run one job
-quebra run --all                              # run every active job (composites are not swept)
+quebra run --all                              # every job declaring JOB_SWEEP = True
+quebra run --all --family t2star              # every job in one family, sweep opt-out included
 quebra inspect [job_file]                     # print the graph without running it
 ```
 
@@ -197,7 +198,7 @@ panels/      within_calibration.py, across_calibration.py   generic render compo
              _within_calibration_data.py is the typed contract.
 plots/       base.py, targets.py, theme.py, *_plot.py   targets: static, academic, interactive
 jobs/active/ ramsey_*.py, ramsey_2x2_*.py, t2star_*.py, mtbf_*.py, check_calibration.py
-jobs/composite/ compare_*.py   job.include + .ref across datasets; NOT swept by run --all
+jobs/composite/ compare_*.py   job.include + .ref across datasets; declares JOB_SWEEP = False
 src/quebra/recipes.py          RAMSEY_CONFIG + configure_ramsey_job orchestrator.
                                Moved out of jobs/ in SPEC 0002: it is reusable library
                                code, and leaving it in jobs/ forced the CLI to put the

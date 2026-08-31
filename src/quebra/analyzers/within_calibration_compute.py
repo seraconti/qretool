@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from quebra.analyzers import distinguish_band, reliability_band, signal_band
-from quebra.panels._within_calibration_data import WithinCalibrationPanelData
+from quebra.analyzers.within_calibration_data import WithinCalibrationPanelData
 
 # ---------------------------------------------------------------------------
 # Direction-agnostic threshold primitives

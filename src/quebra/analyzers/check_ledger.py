@@ -49,7 +49,7 @@ from quebra.analyzers.checks.result import (
     CLOCK_IN_SPEC,
     CheckResult,
 )
-from quebra.panels._artifact_guard import StaleArtifactGuard
+from quebra.core._artifact_guard import StaleArtifactGuard
 
 VERDICT_PASS = "pass"
 VERDICT_FAIL = "fail"

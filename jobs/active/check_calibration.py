@@ -33,6 +33,11 @@ from quebra.plots.calibration_plot import (
     CalibrationValidationPlot,
 )
 
+# SPEC 0005 R5.2/R5.4: the logical name and category. `include` resolves JOB_ID, so this
+# file can move without breaking any composite; recategorising costs one string edit.
+JOB_ID = "check_calibration"
+JOB_FAMILY = "validation"
+
 PREFIX = "check_calibration"
 
 # Declared here, not defaulted in the step, so both reach the provenance label.

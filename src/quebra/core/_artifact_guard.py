@@ -12,6 +12,10 @@ each panel dataclass's __post_init__ (unpickling bypasses __post_init__, hence b
 from __future__ import annotations
 
 import dataclasses
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from _typeshed import DataclassInstance
 
 
 class StaleArtifactGuard:
@@ -33,7 +37,12 @@ class StaleArtifactGuard:
                 f"{type(state).__name__} - re-run the sub-job (run the composite "
                 "without --reuse-deps)."
             )
-        missing = {f.name for f in dataclasses.fields(cls)} - state.keys()
+        # `cast`: every concrete subclass IS a dataclass, but the mixin itself is not,
+        # so mypy cannot see `cls` as one. Narrowing at runtime would be a lie - a
+        # non-dataclass subclass is a programming error, not a case to handle.
+        missing = {
+            f.name for f in dataclasses.fields(cast("type[DataclassInstance]", cls))
+        } - state.keys()
         if missing:
             raise ValueError(
                 f"stale {cls.__name__} artifact: pickle lacks field(s) "

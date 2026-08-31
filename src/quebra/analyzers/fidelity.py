@@ -231,7 +231,7 @@ def make_panel_data(
     dataset_id: str = "",
 ):
     """Convert FidelityResult + the window tables to WithinCalibrationPanelData."""
-    from quebra.panels._within_calibration_compute import (
+    from quebra.analyzers.within_calibration_compute import (
         build_within_calibration_panel_data,
     )
     from quebra.plots.theme import qubit_color

@@ -27,7 +27,7 @@ import pandas as pd
 
 import quebra.analyzers.checks.c2_anderson_darling as c2
 from quebra.analyzers.checks.result import CALIB_ASYMPTOTIC, CALIB_PERMUTATION, Segment
-from quebra.panels._artifact_guard import StaleArtifactGuard
+from quebra.core._artifact_guard import StaleArtifactGuard
 
 # The dependence the real record shows, duration-level lag-1 rank autocorrelation, measured
 # on both datasets before any of this was built. Drawn as a band because it is a range

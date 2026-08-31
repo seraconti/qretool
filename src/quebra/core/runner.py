@@ -9,6 +9,7 @@ from pathlib import Path
 
 from quebra.core.job import Job, _FigureSink, _DAGNode, _LOAD_NODE_FN_NAMES
 from quebra.core.identity import content_hash
+from quebra.core.dataset import Dataset
 from quebra.core.paths import default_dataset_root, repo_root, resolve_dataset_path
 from quebra.core.reference import (
     ArtifactRef,
@@ -24,6 +25,36 @@ from quebra.provenance import (
     save_prov,
 )
 from quebra.plots.targets import RENDER_TARGETS
+
+
+def _require(value: Path | None, name: str) -> Path:
+    """Narrow an optional context field that this code path requires.
+
+    `ResolutionContext`'s run-directory fields are optional because a context can be built
+    for LocalRef resolution alone. Every ArtifactRef path populates them, so a None here is a
+    programming error and deserves to say which field was missing.
+    """
+    if value is None:
+        raise ValueError(
+            f"ResolutionContext.{name} is required to resolve an artifact reference but was "
+            f"not set. This is a runner bug: run_job populates it before resolution."
+        )
+    return value
+
+
+def _dataset_of(node: _DAGNode) -> Dataset:
+    """The `dataset` kwarg of a load node, narrowed.
+
+    `_DAGNode.kwargs` is `dict[str, object]` because the DAG stores arbitrary step arguments;
+    the value model stays untyped this phase (SPEC 0004 R4.3.2). A load node whose `dataset`
+    is not a Dataset is a defect, so this raises rather than silently skipping.
+    """
+    dataset = node.kwargs.get("dataset")
+    if not isinstance(dataset, Dataset):
+        raise TypeError(
+            f"load node carries a non-Dataset 'dataset' kwarg: {type(dataset).__name__}"
+        )
+    return dataset
 
 
 def _job_file(job: Job) -> Path:
@@ -182,13 +213,22 @@ def _locate_artifact(ref: ArtifactRef, context: ResolutionContext) -> LocatedArt
     """
     inc = ref.included
     node_name = ref.node_name
-    subjobs_dir = context.subjobs_dir
-    job_out_dir = context.job_out_dir
-    pool_root = context.pool_root
+    # These are `Path | None` on ResolutionContext because a context can be built for
+    # LocalRef resolution alone, where no run directory exists. On the ArtifactRef path all
+    # four are populated - `run_job` sets them together at its single construction site.
+    # Asserting that here rather than suppressing the type error turns a latent
+    # `NoneType has no attribute glob` deep in the search into a named failure at the
+    # boundary. `job_out_dir` is guarded too: it feeds the `not in d.parents` self-read
+    # check, and `None` is a legal operand there, so an unset value would silently DISABLE
+    # that guard and permit a wrong reuse rather than crash - the worst of the four.
+    subjobs_dir = _require(context.subjobs_dir, "subjobs_dir")
+    job_out_dir = _require(context.job_out_dir, "job_out_dir")
+    pool_root = _require(context.pool_root, "pool_root")
+    dataset_root = _require(context.dataset_root, "dataset_root")
 
     # Identity-keyed: the sub-job's content identity (memoized on the job) names its
     # output dir, so reuse keys on what the run IS, not merely its source.
-    sub_identity = inc.job.build_identity(context.dataset_root).digest
+    sub_identity = inc.job.build_identity(dataset_root).digest
     identity_short = sub_identity[:6]
     artifact_rel = f"{node_name}.pkl"
     dir_glob = f"{inc.job.name}_{identity_short}_*"
@@ -399,7 +439,7 @@ def run_job(
     # output dir exists) - this mapping feeds BOTH the execution loop (loader) and
     # _emit_prov (hashing), so the recorded hash describes the file actually loaded.
     resolved_datasets: dict[str, Path] = {
-        node_id: resolve_dataset_path(node.kwargs["dataset"].path, dataset_root)
+        node_id: resolve_dataset_path(_dataset_of(node).path, dataset_root)
         for node_id, node in _dataset_load_nodes(job).items()
     }
 
@@ -464,7 +504,7 @@ def run_job(
             kwargs = {
                 **kwargs,
                 "dataset": dataclasses.replace(
-                    kwargs["dataset"], path=resolved_datasets[node_id]
+                    _dataset_of(node), path=resolved_datasets[node_id]
                 ),
             }
         results[node_id] = node.fn(*inputs, **kwargs)
