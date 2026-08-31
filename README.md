@@ -1,10 +1,10 @@
-QUEBRA
+# QUEBRA
 
 QUEBRA is a toolkit for QUantum Engineering Reliability Analysis. The name is Portuguese for break, and that is the point of the tool.
 
 
 
-Why
+## Why
 
 Characterizing a quantum device means measuring it repeatedly and recording how good it was: coherence time, gate fidelity, frequency offset, readout error. Do that long enough, and you have a record spanning weeks or months. The usual summary is the metric average and its variation.
 
@@ -27,7 +27,7 @@ unchanged: the estimators, the handling of incomplete observation, the compariso
 recurrence models. QUEBRA is our implementation of that toolbox for this kind of data, plus the
 machinery to get from a raw instrument record to durations without corrupting them on the way.
 
-What it does
+## What it does
 
 A run moves through four stages, each marking what is implemented today.
 
@@ -57,32 +57,32 @@ Kaplan-Meier survival of in-spec windows. MTBF and MTBC over calibration event l
 analyzers for T2*, fidelity, telegraph noise and Allan deviation. Nelson-Aalen, log-rank,
 RMST and the mean cumulative function belong to the methodology and are not implemented yet.
 
-How it works
+## How it works
 
-Four ideas carry the design.
+### Four ideas carry the design.
 
-Everything is a step. A step is a pure function of typed inputs returning a typed result. It
+**Everything is a step**. A step is a pure function of typed inputs returning a typed result. It
 does not read disk, and it does not draw. Input and output live at the edges: loaders read,
 render targets write, panels draw. A step that touches the world is not a function of its
 arguments, and could not be cached.
 
-Jobs are declarative. A job is a Python file that names its datasets and wires steps
+**Jobs are declarative**. A job is a Python file that names its datasets and wires steps
 together. It describes a graph; it does not execute one. Nothing computes until a sink
 resolves, which is either a figure or an explicit request to materialize an artifact.
-
-Identity is content, not filename. A run is identified by hashes of its inputs and of the
+**
+Identity is content, not filename**. A run is identified by hashes of its inputs and of the
 code that transformed them, folded transitively through the graph. Change a threshold, and it is
 a different run. Edit an analyzer and everything downstream of it is a different run. A cached
 result is reused when, and only when, the content that produced it is identical.
 
-Provenance is append-only. Every figure and every materialized artifact is written beside a
+**Provenance is append-only.** Every figure and every materialized artifact is written beside a
 provenance record, in JSON for machines and Markdown for people, naming the graph that produced
 it and the identities that fed it. Output directories are never overwritten and never deleted.
 
 Together these mean a figure in a paper traces back to the exact data and the exact code that
 made it, and that changing one parameter recomputes only what changed.
 
-Status
+### Status
 
 QUEBRA is in active development alongside an MSc thesis, and the documentation is under construction. Interfaces may change. Parts of the methodology described above are not implemented yet and are marked as such where they appear. Feedback is welcome, particularly from anyone who runs long characterization campaigns and disagrees with how this frames the problem. Open an issue, including for questions and for merely confusing things. See CONTRIBUTING.md.
 
@@ -90,14 +90,14 @@ Feedback is welcome, particularly from anyone who runs long characterization cam
 disagrees with how this frames the problem. Open an issue, including for questions and for
 merely confusing things. See CONTRIBUTING.md.
 
-Install
+### Install
 
 QUEBRA installs as a package. Python 3.11 or newer.
 
 git clone https://github.com/seraconti/qretool.git
 cd qretool
 
-# an isolated environment, so QUEBRA's dependencies stay out of your system Python
+an isolated environment, so QUEBRA's dependencies stay out of your system Python
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
@@ -131,7 +131,7 @@ keyword arguments that affect each result, without computing anything.
 Each run writes into a directory named by its content identity, holding the figures, the
 materialized artifacts, and the provenance record.
 
-Documentation
+### Documentation
 
 Reference documentation is in docs/. Start with WRITING_A_JOB.md to run something, then
 WRITING_A_SCHEMA.md to point the tool at your own data; the rest covers time and clock
