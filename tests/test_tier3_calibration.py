@@ -20,12 +20,20 @@ example. It cannot tell you whether the p-value means what it says. That is this
   "0.0757", which are the POOLED MEANS over the two shapes and are in no cell of the table -
   the first instance CLAUDE.md's claims-discipline section records, reintroduced here.
 
-  Under EXPONENTIAL gaps, which is what `measure_asymptotic_size` generates, the same n = 20
-  gives C1 0.0342, C2 0.0292, CvM 0.0383 - CONSERVATIVE, the opposite direction. Both are
-  legitimate iid nulls (these check trend against renewal, not exponentiality), so this is
-  not a contradiction: the size of an asymptotic check here depends on the shape of the gap
-  distribution through the estimated gamma_hat. That is the reason the assertion below is a
-  wide bound and not a direction.
+  Under EXPONENTIAL gaps, which is what `measure_asymptotic_size` generates, tau = 20 gives
+  C1 0.0708, C2 0.0700, CvM 0.0642 - anti-conservative as well, and close to the Weibull
+  cells. Both are legitimate iid nulls (these check trend against renewal, not
+  exponentiality), so the size of an asymptotic check here still depends on the gap
+  distribution through the estimated gamma_hat, and the assertion below stays a wide bound
+  rather than a direction.
+
+  Those are at the shipped defaults (seed 777, 1200 replicates) and come from a
+  TIME-TRUNCATED null: tau fixed in advance, event count random. A tau derived from the draw
+  instead pins the fraction of the window past the last event at n/(n+1), which removes the
+  leftover window's variance - eq (7)'s tail term, for C2 - and turns the measured rate
+  conservative. That is the size of a scheme the ASYMPTOTIC theory does not cover; the
+  permutation checks below are indifferent to it, and `_iid_segments` still builds it for
+  them.
 
 **Why not a KS test on the p-values.** At B = 199 a permutation p-value lives on a 200-point
 grid, so its distribution differs from the continuous uniform by up to 1/(2B) in sup norm by
@@ -47,6 +55,8 @@ That is stated rather than hidden behind a passing assertion.
 """
 
 from __future__ import annotations
+
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -212,8 +222,57 @@ def test_the_asymptotic_size_is_in_the_documented_range(check_name):
     which is the same function this file imports.
     """
     module = {"c1": c1, "c2": c2, "cvm": cvm}[check_name]
-    size = measure_asymptotic_size(module, n=30, seed=777)
-    assert 0.005 <= size <= 0.20, f"{check_name} asymptotic size at n=30: {size:.4f}"
+    size = measure_asymptotic_size(module, tau=30.0, seed=777)
+    assert 0.005 <= size <= 0.20, f"{check_name} asymptotic size at tau=30: {size:.4f}"
+
+
+class _SegmentRecorder:
+    """A stand-in check that records the segments handed to it and rejects nothing.
+
+    `measure_asymptotic_size` returns only a rate, so the null it simulates is otherwise
+    unobservable. Passing this in is what puts the segments under assertion.
+    """
+
+    CHECK_NAME = "recorder"
+
+    def __init__(self) -> None:
+        self.segments: list[Segment] = []
+
+    def run(self, segments, **kwargs):
+        self.segments.extend(segments)
+        return SimpleNamespace(p_value=None)
+
+
+def test_the_size_generator_truncates_on_TIME_not_on_events():
+    """The size generator truncates on time: tau fixed in advance, event count random.
+
+    `checks/result` requires tau to be chosen without reference to the events, and nothing
+    downstream detects a violation. Both observable consequences are asserted: the event
+    count varies, and the fraction of the window used up by the last event varies. A tau
+    derived from the draw pins the second at n/(n+1) and the first at n.
+
+    Asserted on what `measure_asymptotic_size` actually builds, not on `_exponential_segment`
+    directly: the helper is not what this commit changed, so a test of the helper stays green
+    through a revert of the caller.
+    """
+    recorder = _SegmentRecorder()
+    measure_asymptotic_size(recorder, tau=20.0, seed=777, replicates=40)
+
+    assert len(recorder.segments) == 40
+    counts = [len(s.x) for s in recorder.segments]
+    used = [float(s.x.sum() / s.tau) for s in recorder.segments]
+
+    assert len(set(counts)) > 1, (
+        f"event count is fixed at {counts[0]}: tau is being derived from the events"
+    )
+    assert np.std(used) > 1e-6, (
+        f"the leftover window is pinned at {used[0]:.9f}, so it carries no variance and "
+        f"the measured rate is not a size"
+    )
+    assert all(0.0 < u <= 1.0 for u in used)
+    assert all(s.tau == 20.0 for s in recorder.segments), (
+        "tau must be the value asked for, identically on every replicate"
+    )
 
 
 def test_the_asymptotic_checks_reject_a_gross_trend_at_every_n_they_ship_at():

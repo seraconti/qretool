@@ -291,10 +291,15 @@ def read_dependence(
     )
 
 
-def _exponential_segment(n: int, rng: np.random.Generator) -> Segment:
-    """A genuinely time-truncated exponential segment: tau fixed, event count random."""
-    tau = float(n)
-    gaps = rng.exponential(size=int(n + 10 * np.sqrt(n) + 50))
+def _exponential_segment(tau: float, rng: np.random.Generator) -> Segment:
+    """A time-truncated exponential segment: tau fixed, event count random.
+
+    `tau` is a truncation TIME, not an event count. Gaps are unit-mean, so about `tau` of
+    them land; the draw is generously oversized so the cumulative sum reaches `tau` with
+    overwhelming probability.
+    """
+    tau = float(tau)
+    gaps = rng.exponential(size=int(tau + 10 * np.sqrt(tau) + 50))
     kept = gaps[: int(np.searchsorted(np.cumsum(gaps), tau, side="left"))]
     return Segment(x=kept, tau=tau, n_censored_dropped=1)
 

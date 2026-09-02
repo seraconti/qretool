@@ -265,7 +265,7 @@ def test_the_tier_3_rows_quote_a_number_this_run_produced():
     for instrument in ("C1 Lewis-Robinson", "C2 Anderson-Darling", "CvM"):
         row = data.tier_verdict(instrument, 3)
         assert row is not None
-        match = re.search(r"size measured at n=(\d+): (0\.\d{4})", row.detail)
+        match = re.search(r"size measured at tau=(\d+): (0\.\d{4})", row.detail)
         assert match, (
             f"{instrument} tier 3 does not quote a measured size: {row.detail!r}"
         )
@@ -273,7 +273,7 @@ def test_the_tier_3_rows_quote_a_number_this_run_produced():
         # four decimals in the right shape: a regex alone passes "0.9999".
         from quebra.analyzers.instrument_validation import measure_all_asymptotic_sizes
 
-        expected = measure_all_asymptotic_sizes(n=int(match.group(1)))[instrument]
+        expected = measure_all_asymptotic_sizes(tau=float(match.group(1)))[instrument]
         assert float(match.group(2)) == pytest.approx(expected, abs=5e-5), (
             f"{instrument} quotes {match.group(2)} but measures {expected:.4f}"
         )

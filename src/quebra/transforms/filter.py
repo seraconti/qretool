@@ -31,6 +31,14 @@ def _copy_norm(norm: Mapping[str, object]) -> Norm:
 
 
 def _subset_norm(norm: Mapping[str, object], mask: np.ndarray) -> Norm:
+    """Apply a row mask to every row-aligned column, or raise naming the one that cannot be.
+
+    Every array a Norm carries is one value per read, so a length disagreeing with the mask
+    is a defect rather than a column with nothing to filter. Left unfiltered it would be
+    index-misaligned against `t_rel_s` for every step downstream, and no consumer raises on
+    it - `interpolate` reads a length mismatch as simply not row-aligned. Scalars pass
+    through; an array that cannot be boxed at all says so.
+    """
     out = _copy_norm(norm)
     mask = np.asarray(mask, dtype=bool)
     for key, value in list(out.items()):
@@ -38,14 +46,21 @@ def _subset_norm(norm: Mapping[str, object], mask: np.ndarray) -> Norm:
             continue
         try:
             arr = np.asarray(value)
-            if arr.ndim == 0:
-                continue
-            if len(arr) == len(mask):
-                out[key] = arr[mask]
-            else:
-                out[key] = arr
-        except Exception:
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"filter cannot mask '{key}': it is neither a scalar nor an array "
+                f"({type(value).__name__}). A Norm value has to be one or the other, or it "
+                f"cannot be kept aligned with 't_rel_s'."
+            ) from exc
+        if arr.ndim == 0:
             continue
+        if len(arr) != len(mask):
+            raise ValueError(
+                f"filter cannot mask '{key}': length {len(arr)} against a mask of "
+                f"{len(mask)}. Every array in a Norm is one value per read, so leaving it "
+                f"unfiltered would misalign it against 't_rel_s'."
+            )
+        out[key] = arr[mask]
 
     if "t_rel_s" not in out:
         raise KeyError(
@@ -158,13 +173,28 @@ def run(
     if apply_sigma:
         sigma_factor = float(filter_cfg.get("sigma_factor", 3.5))
         delta_hz = np.asarray(current["delta_hz"], dtype=float)
-        mu = float(np.mean(delta_hz))
-        sigma = float(np.std(delta_hz))
+        # Over the finite values only. `np.mean`/`np.std` propagate, so a single failed fit
+        # makes both NaN, every comparison below False, and the mask all-False - the dataset
+        # reaches the analyzer empty and is reported as empty rather than as unfittable.
+        finite = np.isfinite(delta_hz)
+        if not np.any(finite):
+            raise ValueError(
+                f"sigma filter has no finite 'delta_hz' values to work from "
+                f"({delta_hz.size} read(s), all non-finite)."
+            )
+        mu = float(np.mean(delta_hz[finite]))
+        sigma = float(np.std(delta_hz[finite]))
         if sigma == 0.0:
-            mask = np.ones(len(delta_hz), dtype=bool)
+            # Every finite value identical: no outlier is definable, so keep them and drop
+            # only the non-finite reads.
+            mask = finite
         else:
-            mask = (delta_hz - mu < sigma_factor * sigma) & (
-                delta_hz - mu > -sigma_factor * sigma
+            # `finite &` is redundant today - each NaN comparison is already False - but it
+            # states the intent, and it survives the bounds being rewritten as a negation.
+            mask = (
+                finite
+                & (delta_hz - mu < sigma_factor * sigma)
+                & (delta_hz - mu > -sigma_factor * sigma)
             )
         current = _subset_norm(current, mask)
         rows.append({"stage": "sigma", "n_points": int(len(current["t_rel_s"]))})

@@ -10,7 +10,8 @@ from typing import Any
 class TLFResult:
     # Group 1 - histogram-based
     is_bimodal: bool
-    bic_delta: float
+    # None when the 2-component fit raised. A number here always means the comparison happened.
+    bic_delta: float | None
     normalized_bic_delta: float | None
     lobe_separation_ppm: float | None
     # weighted sqrt of per-lobe variances - reflects within-state spread, NOT a clean noise floor; confounded by drift and unresolved sub-fluctuators.
@@ -28,17 +29,24 @@ class TLFResult:
     dwell_cv_s1: float | None
 
     diagnostics: dict[str, object] = field(default_factory=dict)
+    # Read this before `is_bimodal`: False there means no comparison was made, not that one
+    # lobe was established.
+    fit_failed: bool = False
 
 
-def run(values: np.ndarray, timestamps: np.ndarray) -> TLFResult:
+def run(values: np.ndarray, timestamps: np.ndarray, *, seed: int) -> TLFResult:
     """Fit 1- and 2-component GMMs and return TLF diagnostics.
 
-    Always attempt both fits. If the 2-component fit fails (singular covariance
-    or other numerical error), fall back by copying gmm1 into both slots and
-    set bic_delta=0.0 and is_bimodal=False.
+    `seed` is required, not defaulted. `GaussianMixture` initialises by k-means, so an
+    unseeded fit makes `bic_delta`, `is_bimodal`, the state assignment and every dwell
+    statistic a fresh random variable per call while the run identity stays byte-identical.
+    It arrives as a step argument, like `xi_seed`, so it reaches the provenance label.
 
-    Timestamps are required (seconds, typically `t_rel_s` from the
-    normalized mapping) and are used to compute dwell/run-length dynamics.
+    A 2-component fit that raises sets `fit_failed` and leaves `bic_delta` and `gmm2` as
+    None rather than reporting a comparison that did not happen.
+
+    Timestamps are required (seconds, typically `t_rel_s` from the normalized mapping) and
+    are used to compute dwell/run-length dynamics.
     """
     if timestamps is None:
         raise ValueError(
@@ -49,30 +57,31 @@ def run(values: np.ndarray, timestamps: np.ndarray) -> TLFResult:
     if vals.size == 0:
         raise ValueError("No values provided to TLF analysis")
 
-    gmm1 = GaussianMixture(n_components=1, covariance_type="full")
+    gmm1 = GaussianMixture(n_components=1, covariance_type="full", random_state=seed)
     gmm1.fit(vals)
 
-    # Attempt a 2-component fit; if it fails, return a fallback copy of gmm1.
     try:
-        gmm2 = GaussianMixture(n_components=2, covariance_type="full")
+        gmm2 = GaussianMixture(
+            n_components=2, covariance_type="full", random_state=seed
+        )
         gmm2.fit(vals)
     except Exception:
-        # numerical fallback: copy gmm1 into both slots and set histogram-based extras to None
         return TLFResult(
             is_bimodal=False,
-            bic_delta=0.0,
+            bic_delta=None,
             normalized_bic_delta=None,
             lobe_separation_ppm=None,
             within_lobe_spread_ppm=None,
             lobe_snr=None,
             gmm1=gmm1,
-            gmm2=gmm1,
+            gmm2=None,
             n_transitions=None,
             switching_rate_per_hour=None,
             mean_dwell_s0=None,
             mean_dwell_s1=None,
             dwell_cv_s0=None,
             dwell_cv_s1=None,
+            fit_failed=True,
         )
 
     # compute BICs and histogram-based diagnostics

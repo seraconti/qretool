@@ -112,8 +112,8 @@ def _fidelity_step(
     return step
 
 
-def _tlf_step() -> Callable[[dict[str, object]], dict[str, object]]:
-    def step(norm: dict[str, object]) -> dict[str, object]:
+def _tlf_step() -> Callable[..., dict[str, object]]:
+    def step(norm: dict[str, object], seed: int) -> dict[str, object]:
         # TLF analysis on filtered (but NOT interpolated) data to preserve noise metrics.
         # Input norm is the final filtered stage from filter step, with uninterpolated timestamps.
         if "raw_frequency_hz" in norm:
@@ -132,7 +132,7 @@ def _tlf_step() -> Callable[[dict[str, object]], dict[str, object]]:
             )
         timestamps = norm["t_rel_s"]
 
-        result = run_tlf(values_hz, timestamps)
+        result = run_tlf(values_hz, timestamps, seed=seed)
         return {
             "result": result,
             "values_hz": values_hz,
@@ -180,6 +180,11 @@ def _fidelity_windows(result: FidelityResult, gap_mult: float) -> WindowsResult:
 # a rename, and it is Increment C work.
 XI_SEED = 20260813
 
+# GaussianMixture initialises by k-means, so an unseeded fit makes `is_bimodal` and every
+# dwell statistic a fresh random variable per call. Passed as a step kwarg, so it reaches the
+# parameter row and the provenance label.
+TLF_SEED = 20260902
+
 
 def _fidelity_panel_data(
     result: FidelityResult, window_result: WindowsResult, xi_seed: int
@@ -208,6 +213,7 @@ def configure_ramsey_job(
     allan_fractional: bool = False,
     allan_carrier_col: str = "qubit_frequency_hz",
     xi_seed: int = XI_SEED,
+    tlf_seed: int = TLF_SEED,
     figure_prefix: str | None = None,
 ) -> None:
     config = _copy_config(profile)
@@ -284,7 +290,7 @@ def configure_ramsey_job(
         job.materialize(fidelity_raw, name=f"{prefix}_fidelity_raw")
 
     if include_tlf:
-        tlf = job.step(_tlf_step(), final_filtered, name="tlf")
+        tlf = job.step(_tlf_step(), final_filtered, name="tlf", seed=tlf_seed)
         job.figure(TLFPlot, tlf, targets=["static", "academic"], title=f"{prefix} TLF")
         job.materialize(tlf, name=f"{prefix}_tlf")
 

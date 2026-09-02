@@ -293,6 +293,23 @@ def segments_from_windows(
 
         if clock == CLOCK_IN_SPEC:
             durations = block["duration_s"].to_numpy(dtype=float)
+            # Only the LAST window of a block may be censored: blocks split at read gaps, so
+            # a gap_start death lands at a block end. `x` drops a censored window's duration
+            # while `tau` keeps it, so an interior one shifts every later T_i earlier - eq (4)
+            # and eq (7) both run on the wrong ones, and the residual is reported as the
+            # censored duration when it is really zero.
+            #
+            # Reachable: `check_ledger.make_inputs_from_windows` takes `gap_spans_s` from
+            # `diagnostics.get(...)`, so a caller that omits it splits on birth types alone.
+            # `Segment` documents `n_censored_dropped` as 0 or 1 and nothing enforces it.
+            if bool((~complete[:-1]).any()):
+                interior = int((~complete[:-1]).sum())
+                raise ValueError(
+                    f"block at position {position} has {interior} censored window(s) before "
+                    f"its last. Only the final window of a block may be censored; without "
+                    f"gap_spans_s a gap flanked by out-of-spec reads leaves a censored death "
+                    f"mid-block, and every event time after it would be wrong."
+                )
             x = durations[complete]
             # In-spec time does not accrue during a gap, so an interior block's tau is its
             # own accumulated in-spec time regardless of when the gap started.

@@ -83,26 +83,36 @@ class TLFPlot(BasePlot):
                     * np.exp(-0.5 * ((x_grid_khz - float(m)) / sigma) ** 2)
                 )
 
-            means2 = np.asarray(result.gmm2.means_).ravel()
-            covs2 = np.asarray(result.gmm2.covariances_).ravel()
-            weights2 = np.asarray(result.gmm2.weights_).ravel()
-            means2_axis = means2 / 1e3
-            covs2_axis = covs2 / (1e3**2)
-            y2 = np.zeros_like(x_grid_khz, dtype=float)
-            for w, m, c in zip(weights2, means2_axis, covs2_axis):
-                sigma = max(float(np.sqrt(c)), 1e-15)
-                y2 += (
-                    float(w)
-                    * (1.0 / (sigma * np.sqrt(2.0 * np.pi)))
-                    * np.exp(-0.5 * ((x_grid_khz - float(m)) / sigma) ** 2)
-                )
+            # No GMM(2) curve when the 2-component fit failed: a single-lobe curve under a
+            # "GMM(2)" label reads as evidence against bimodality, not as an absent fit.
+            fit_failed = bool(getattr(result, "fit_failed", False)) or (
+                result.gmm2 is None
+            )
+            if fit_failed:
+                means2_axis = np.asarray([], dtype=float)
+                y2 = np.zeros_like(x_grid_khz, dtype=float)
+            else:
+                means2 = np.asarray(result.gmm2.means_).ravel()
+                covs2 = np.asarray(result.gmm2.covariances_).ravel()
+                weights2 = np.asarray(result.gmm2.weights_).ravel()
+                means2_axis = means2 / 1e3
+                covs2_axis = covs2 / (1e3**2)
+                y2 = np.zeros_like(x_grid_khz, dtype=float)
+                for w, m, c in zip(weights2, means2_axis, covs2_axis):
+                    sigma = max(float(np.sqrt(c)), 1e-15)
+                    y2 += (
+                        float(w)
+                        * (1.0 / (sigma * np.sqrt(2.0 * np.pi)))
+                        * np.exp(-0.5 * ((x_grid_khz - float(m)) / sigma) ** 2)
+                    )
 
             ax.plot(
                 x_grid_khz, y1, "--", color=color_alt, linewidth=1.3, label="GMM(1)"
             )
-            ax.plot(
-                x_grid_khz, y2, "-", color=color_main, linewidth=1.7, label="GMM(2)"
-            )
+            if not fit_failed:
+                ax.plot(
+                    x_grid_khz, y2, "-", color=color_main, linewidth=1.7, label="GMM(2)"
+                )
 
             if len(means2_axis) >= 2:
                 sorted_means = np.sort(means2_axis)
@@ -232,10 +242,14 @@ class TLFPlot(BasePlot):
             summary_lines = [
                 "TLF Summary",
                 "",
-                f"is_bimodal: {bool(result.is_bimodal)}",
+                f"is_bimodal: {bool(result.is_bimodal)}"
+                if not fit_failed
+                else "is_bimodal: n/a (2-component fit failed)",
                 "  True if BIC delta > 6",
                 "",
-                f"bic_delta: {float(result.bic_delta):.2f}",
+                f"bic_delta: {float(result.bic_delta):.2f}"
+                if result.bic_delta is not None
+                else "bic_delta: n/a",
                 "  BIC1 - BIC2",
                 f"normalized_bic_delta: {bic_norm:.4f}"
                 if bic_norm is not None

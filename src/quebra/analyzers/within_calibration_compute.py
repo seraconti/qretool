@@ -213,6 +213,18 @@ def _observed_dt_h(
     return observed
 
 
+def _to_full_length(values: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Put a finite-subset result back on the full row index, NaN where rows were dropped.
+
+    Callers hold the unmasked row index, so a subset-length return is silently misaligned
+    against it. NaN rather than 0.0 because these are cumulative quantities: a zero would
+    drop the curve back to the origin at each missing read.
+    """
+    full = np.full(mask.shape, np.nan, dtype=float)
+    full[mask] = values
+    return full
+
+
 def _cumulative_time_out_of_spec(
     t_h: np.ndarray,
     primary_series: np.ndarray,
@@ -228,14 +240,14 @@ def _cumulative_time_out_of_spec(
     result: dict[str, np.ndarray] = {}
     for label, thr_val, big_values_good in thresholds:
         if len(t_f) < 2:
-            result[label] = np.zeros(len(t_f))
+            result[label] = _to_full_length(np.zeros(len(t_f)), mask)
             continue
         oos = _out_of_spec_mask(s_f, thr_val, big_values_good)
         dt_h = _observed_dt_h(t_f, gap_spans_h or [])
         increments = oos[:-1].astype(float) * dt_h
         cum = np.zeros(len(t_f))
         cum[1:] = np.cumsum(increments)
-        result[label] = cum
+        result[label] = _to_full_length(cum, mask)
     return result
 
 
@@ -270,7 +282,7 @@ def _cumulative_damage(
     result: dict[str, np.ndarray] = {}
     for label, thr_val, big_values_good in thresholds:
         if len(t_f) < 2:
-            result[label] = np.zeros(len(t_f))
+            result[label] = _to_full_length(np.zeros(len(t_f)), mask)
             continue
         excess = _excess(s_f, thr_val, big_values_good)
         damage_rate = apply_damage(excess)
@@ -280,7 +292,7 @@ def _cumulative_damage(
         trap_steps = 0.5 * (damage_rate[:-1] + damage_rate[1:]) * dt_h
         cum = np.zeros(len(t_f))
         cum[1:] = np.cumsum(trap_steps)
-        result[label] = cum
+        result[label] = _to_full_length(cum, mask)
     return result
 
 

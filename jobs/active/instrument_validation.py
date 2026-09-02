@@ -44,7 +44,7 @@ DIVERGENCE_THRESHOLD = 0.02
 N_PERM_IN_TIE_STUDY = 999
 # Declared here, not defaulted in the builder: these two decide the three tier-3 numbers.
 ASYMPTOTIC_SIZE_SEED = 777
-ASYMPTOTIC_SIZE_N = 20
+ASYMPTOTIC_SIZE_TAU = 20.0
 
 # Published source data and R reference values live in `jobs/reference/`, beside the
 # jobs that declare them. They were in `tests/fixtures/` first, and `tests/` was
@@ -77,7 +77,7 @@ _report = job.step(
     divergence_threshold=DIVERGENCE_THRESHOLD,
     n_perm_in_tie_study=N_PERM_IN_TIE_STUDY,
     asymptotic_size_seed=ASYMPTOTIC_SIZE_SEED,
-    asymptotic_size_n=ASYMPTOTIC_SIZE_N,
+    asymptotic_size_tau=ASYMPTOTIC_SIZE_TAU,
 )
 
 job.materialize(_report, name=f"{PREFIX}_report")

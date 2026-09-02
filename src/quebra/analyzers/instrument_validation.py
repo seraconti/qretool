@@ -114,7 +114,9 @@ class InstrumentValidationData:
         return None
 
 
-ASYMPTOTIC_SIZE_N = 20
+# A truncation time, not an event count. Gaps are unit-mean, so about this many events land,
+# and how many is random.
+ASYMPTOTIC_SIZE_TAU = 20.0
 ASYMPTOTIC_SIZE_REPLICATES = 1200
 ASYMPTOTIC_SIZE_SEED = 777
 
@@ -122,12 +124,12 @@ ASYMPTOTIC_SIZE_SEED = 777
 def measure_asymptotic_size(
     module,
     *,
-    n: int = ASYMPTOTIC_SIZE_N,
+    tau: float = ASYMPTOTIC_SIZE_TAU,
     seed: int = ASYMPTOTIC_SIZE_SEED,
     alpha: float = 0.05,
     replicates: int = ASYMPTOTIC_SIZE_REPLICATES,
 ) -> float:
-    """Rejection rate of an asymptotic check on iid gaps - its actual size at this n.
+    """Rejection rate of an asymptotic check on iid gaps - its actual size at this tau.
 
     LIVES HERE, not in the test module, and that is the point. A previous version of this
     measurement sat in `tests/test_tier3_calibration.py` while three of its docstrings and
@@ -136,24 +138,49 @@ def measure_asymptotic_size(
     artifact. The pipeline may not import `tests/`, so the only way to make the claim true
     is for the measurement to live on this side and the TEST to import it. It now does.
 
+    The null simulated here has to be the one the theory assumes: the truncation time is
+    chosen without reference to the events, which `checks/result` states as a requirement.
+    Nothing downstream can check it for you - `checks/battery` gates the asymptotic rows on
+    `tau == T_N`, which an event-derived `T_N(1 + 1/n)` clears.
+
+    Deriving tau from the draw as `g.sum() + g.mean()` gives exactly that, so `T_N/tau` is
+    pinned at `n/(n+1)` where the null has it Beta(n, 1), and the count is fixed where it
+    should be random. The leftover window then carries no variance, which for C2 is eq (7)'s
+    tail term. `_exponential_segment` fixes tau and lets the count fall where it falls.
+
     Pure compute: seeded generator in, float out, no disk and no matplotlib.
     """
     import numpy as _np
 
-    from quebra.analyzers.checks.result import CALIB_ASYMPTOTIC, Segment
+    from quebra.analyzers.calibration_summary import _exponential_segment
+    from quebra.analyzers.checks.result import CALIB_ASYMPTOTIC
 
     rng = _np.random.default_rng(seed)
     rejected = 0
     for _ in range(replicates):
-        g = rng.exponential(size=n)
-        segment = Segment(x=g, tau=float(g.sum() + g.mean()))
+        segment = _exponential_segment(tau, rng)
         p = module.run([segment], calibration=CALIB_ASYMPTOTIC).p_value
+        # A `None` p-value counts as a non-rejection, which is only defensible because the
+        # event count is now random: at N < 2 the checks raise rather than declining, so a
+        # None here would be a new failure mode rather than a quiet zero.
         rejected += int(p is not None and p <= alpha)
     return rejected / replicates
 
 
+def asymptotic_size_se(
+    size: float, replicates: int = ASYMPTOTIC_SIZE_REPLICATES
+) -> float:
+    """Monte Carlo standard error of a measured size.
+
+    Reported beside the size because at these replicate counts it is around 0.007, so the
+    third and fourth decimals of the rate are noise and a bare `0.0708` reads as far more
+    precise than the measurement is. The bench tables already carry an SE column.
+    """
+    return float((size * (1.0 - size) / replicates) ** 0.5)
+
+
 def measure_all_asymptotic_sizes(
-    *, n: int = ASYMPTOTIC_SIZE_N, seed: int = ASYMPTOTIC_SIZE_SEED
+    *, tau: float = ASYMPTOTIC_SIZE_TAU, seed: int = ASYMPTOTIC_SIZE_SEED
 ) -> dict[str, float]:
     """The three asymptotic instruments' measured size, keyed by the report's own names."""
     import quebra.analyzers.checks.c1_lewis_robinson as _c1
@@ -161,9 +188,9 @@ def measure_all_asymptotic_sizes(
     import quebra.analyzers.checks.cvm_cramer_von_mises as _cvm
 
     return {
-        "C1 Lewis-Robinson": measure_asymptotic_size(_c1, n=n, seed=seed),
-        "C2 Anderson-Darling": measure_asymptotic_size(_c2, n=n, seed=seed),
-        "CvM": measure_asymptotic_size(_cvm, n=n, seed=seed),
+        "C1 Lewis-Robinson": measure_asymptotic_size(_c1, tau=tau, seed=seed),
+        "C2 Anderson-Darling": measure_asymptotic_size(_c2, tau=tau, seed=seed),
+        "CvM": measure_asymptotic_size(_cvm, tau=tau, seed=seed),
     }
 
 
@@ -390,13 +417,15 @@ def build_instrument_validation(
     divergence_threshold: float = 0.02,
     n_perm_in_tie_study: int = 999,
     asymptotic_size_seed: int = ASYMPTOTIC_SIZE_SEED,
-    asymptotic_size_n: int = ASYMPTOTIC_SIZE_N,
+    asymptotic_size_tau: float = ASYMPTOTIC_SIZE_TAU,
 ) -> InstrumentValidationData:
     """Assemble the whole artifact. This is the step the job calls."""
     published = build_published_comparisons(gaps_df, published_df)
     # Measured HERE, into the artifact, so the tier-3 rows below quote a number this run
     # produced rather than one a docstring remembers.
-    sizes = measure_all_asymptotic_sizes(n=asymptotic_size_n, seed=asymptotic_size_seed)
+    sizes = measure_all_asymptotic_sizes(
+        tau=asymptotic_size_tau, seed=asymptotic_size_seed
+    )
     cross = build_cross_implementation(r_inputs_df, r_values_df)
 
     # Tier table. Every verdict here is a statement about evidence that EXISTS in this
@@ -412,7 +441,7 @@ def build_instrument_validation(
             "C1 Lewis-Robinson",
             3,
             TIER_PARTIAL,
-            f"size measured at n=20: {sizes['C1 Lewis-Robinson']:.4f} on "
+            f"size measured at tau=20: {sizes['C1 Lewis-Robinson']:.4f} +/- {asymptotic_size_se(sizes['C1 Lewis-Robinson']):.4f} on "
             "exponential gaps (nominal 0.05). The bench measures 0.0640 and 0.0740 on "
             "Weibull shapes 0.75 and 1.50 - but ONLY in the fully specified cell "
             "arm=A_iid_weibull, clock=in_spec, quantised=False, censoring=0.00; "
@@ -432,10 +461,10 @@ def build_instrument_validation(
             "C2 Anderson-Darling",
             3,
             TIER_PARTIAL,
-            f"size measured at n=20: {sizes['C2 Anderson-Darling']:.4f} on exponential "
+            f"size measured at tau=20: {sizes['C2 Anderson-Darling']:.4f} +/- {asymptotic_size_se(sizes['C2 Anderson-Darling']):.4f} on exponential "
             "gaps. Bench 0.0650 and 0.0865 on Weibull shapes 0.75 and 1.50, in the "
             "cell arm=A_iid_weibull, clock=in_spec, quantised=False, censoring=0.00 "
-            "only - other rows at the same n and shape run to 0.176",
+            "only - other rows at n=20 and the same shape run to 0.176",
         ),
         TierRow(
             "C2 Anderson-Darling",
@@ -493,7 +522,7 @@ def build_instrument_validation(
             "CvM",
             3,
             TIER_PASS,
-            f"size measured at n=20: {sizes['CvM']:.4f} on exponential gaps. "
+            f"size measured at tau=20: {sizes['CvM']:.4f} +/- {asymptotic_size_se(sizes['CvM']):.4f} on exponential gaps. "
             "BENCHED 2026-08-14 (219 size rows): in the cell arm=A_iid_weibull, "
             "clock=in_spec, quantised=False, censoring=0.00, asymptotic size is 0.0610 "
             "and 0.0770 at n=20 for Weibull shapes 0.75 and 1.50, and within 0.007 of "
@@ -550,7 +579,7 @@ def build_instrument_validation(
             # artifact. Left as bare defaults they reached neither meta nor the provenance
             # label - the same defect as the un-declared xi_seed caught earlier in P5.
             "asymptotic_size_seed": asymptotic_size_seed,
-            "asymptotic_size_n": asymptotic_size_n,
+            "asymptotic_size_tau": asymptotic_size_tau,
             "asymptotic_size_replicates": ASYMPTOTIC_SIZE_REPLICATES,
         },
     )

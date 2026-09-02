@@ -36,10 +36,46 @@ def _real_vs_interpolated_counts(
     return n_real, n_interp
 
 
+def _interpolate_finite(
+    t_rel_s: np.ndarray,
+    values: np.ndarray,
+    x_uniform: np.ndarray,
+    *,
+    label: str,
+) -> tuple[np.ndarray, int]:
+    """pchip through the finite (t, value) pairs only, plus the count dropped.
+
+    Zero-filling instead would put a real, wrong measurement on the grid - for a detuning,
+    exactly 0 Hz - and pchip passes through its data, so it would drag the neighbours too.
+
+    Grid points outside the finite support are NaN, not extrapolated: dropping a leading or
+    trailing read shortens the support while the grid still spans the original interval.
+    """
+    finite = np.isfinite(values)
+    n_finite = int(np.count_nonzero(finite))
+    if n_finite < 2:
+        raise ValueError(
+            f"cannot interpolate '{label}': {n_finite} finite value(s) of {finite.size}. "
+            f"pchip needs at least two."
+        )
+    t_support = t_rel_s[finite]
+    resampled = scipy.interpolate.pchip_interpolate(
+        t_support, values[finite], x_uniform
+    )
+    outside = (x_uniform < t_support[0]) | (x_uniform > t_support[-1])
+    if np.any(outside):
+        resampled = np.asarray(resampled, dtype=float).copy()
+        resampled[outside] = np.nan
+    return resampled, int(finite.size - n_finite)
+
+
 def run(norm: Mapping[str, object], config: Mapping[str, object]) -> Norm:
     """Interpolate a normalized Ramsey dataset onto a uniform time grid.
 
     Time values are in seconds and frequency values are in hertz.
+
+    Row-aligned columns come out at the grid length. Reads whose value did not fit are
+    dropped before the pchip, never zero-filled.
     """
     del config
 
@@ -66,34 +102,51 @@ def run(norm: Mapping[str, object], config: Mapping[str, object]) -> Norm:
     if len(t_rel_s) < 2:
         raise ValueError("Interpolation requires at least two points.")
 
+    # A NaN timestamp sorts last and becomes `t_rel_s[-1]`; an infinite one survives the
+    # shift below. Either way the grid is unusable, and unlike a value there is nothing to
+    # interpolate a timestamp from.
+    if not np.all(np.isfinite(t_rel_s)):
+        n_bad = int(t_rel_s.size - np.count_nonzero(np.isfinite(t_rel_s)))
+        raise ValueError(
+            f"'t_rel_s' carries {n_bad} non-finite timestamp(s) of {t_rel_s.size}. The time "
+            f"axis has to be real before anything can be resampled onto it."
+        )
+
     order = np.argsort(t_rel_s)
     t_rel_s = t_rel_s[order]
     delta_hz = delta_hz[order]
     if rabi_hz is not None:
+        if len(rabi_hz) != len(order):
+            raise ValueError("rabi_hz length must match t_rel_s when provided")
         rabi_hz = rabi_hz[order]
-    if raw_frequency_hz is not None and len(raw_frequency_hz) == len(order):
+    if raw_frequency_hz is not None:
+        # Dropping it instead would hand downstream a Norm missing a key it declared,
+        # which reads as "no raw frequency" rather than "its length was wrong".
+        if len(raw_frequency_hz) != len(order):
+            raise ValueError("raw_frequency_hz length must match t_rel_s when provided")
         raw_frequency_hz = raw_frequency_hz[order]
 
     t_rel_s = t_rel_s - float(t_rel_s[0])
     x_uniform = np.linspace(0.0, float(t_rel_s[-1]), num=len(t_rel_s))
-    delta_uniform = scipy.interpolate.pchip_interpolate(
-        t_rel_s, np.nan_to_num(delta_hz), x_uniform
-    )
 
-    rabi_uniform = None
-    if rabi_hz is not None:
-        if len(rabi_hz) == len(t_rel_s):
-            rabi_uniform = scipy.interpolate.pchip_interpolate(
-                t_rel_s, np.nan_to_num(rabi_hz), x_uniform
-            )
-        else:
-            raise ValueError("rabi_hz length must match t_rel_s when provided")
+    # Per column, because each has its own pattern of failed fits.
+    nonfinite_dropped: dict[str, int] = {}
 
-    raw_uniform = None
-    if raw_frequency_hz is not None and len(raw_frequency_hz) == len(t_rel_s):
-        raw_uniform = scipy.interpolate.pchip_interpolate(
-            t_rel_s, np.nan_to_num(raw_frequency_hz), x_uniform
+    def _resample(values: np.ndarray, label: str) -> np.ndarray:
+        resampled, dropped = _interpolate_finite(
+            t_rel_s, values, x_uniform, label=label
         )
+        if dropped:
+            nonfinite_dropped[label] = dropped
+        return resampled
+
+    delta_uniform = _resample(delta_hz, "delta_hz")
+    rabi_uniform = None if rabi_hz is None else _resample(rabi_hz, "rabi_hz")
+    raw_uniform = (
+        None
+        if raw_frequency_hz is None
+        else _resample(raw_frequency_hz, "raw_frequency_hz")
+    )
 
     idx = np.searchsorted(t_rel_s, x_uniform)
     left = np.clip(idx - 1, 0, len(t_rel_s) - 1)
@@ -120,33 +173,40 @@ def run(norm: Mapping[str, object], config: Mapping[str, object]) -> Norm:
             continue
         try:
             arr = np.asarray(value)
-            if arr.ndim == 0 or len(arr) != len(order):
-                out[key] = value
-                continue
-
-            arr_sorted = arr[order]
-            if np.issubdtype(arr_sorted.dtype, np.number):
-                out[key] = scipy.interpolate.pchip_interpolate(
-                    t_rel_s, np.nan_to_num(arr_sorted.astype(float)), x_uniform
-                )
-            else:
-                out[key] = arr_sorted[nearest]
-        except Exception:
+        except (TypeError, ValueError):
+            # Not array-shaped at all - ragged, or an object numpy cannot box.
             out[key] = value
+            continue
+
+        # Not row-aligned with the time axis, so there is nothing to resample.
+        if arr.ndim == 0 or len(arr) != len(order):
+            out[key] = value
+            continue
+
+        # Row-aligned from here. Passing the array through unresampled would keep the input
+        # sampling at the grid length - misaligned against its own time axis, at a length
+        # nothing downstream can use to detect it.
+        arr_sorted = arr[order]
+        if np.issubdtype(arr_sorted.dtype, np.number):
+            out[key] = _resample(arr_sorted.astype(float), key)
+        else:
+            out[key] = arr_sorted[nearest]
 
     out["meta"]["n_points"] = int(len(out["t_rel_s"]))
     out["meta"]["duration_h"] = float(
         (np.max(out["t_rel_s"]) - np.min(out["t_rel_s"])) / 3600.0
     )
+    # Against the input CLOCK, which is what these keys are about: how much of the grid
+    # coincides with a real timestamp. Reads whose VALUE was dropped are a separate fact and
+    # are reported under `n_nonfinite_dropped` below.
     n_real, n_interp = _real_vs_interpolated_counts(t_rel_s, out["t_rel_s"])
     total = max(1, n_real + n_interp)
     out["meta"]["n_real_points"] = int(n_real)
     out["meta"]["n_interpolated_points"] = int(n_interp)
     out["meta"]["pct_real_points"] = float(100.0 * n_real / total)
     out["meta"]["pct_interpolated_points"] = float(100.0 * n_interp / total)
+    # Which columns lost reads to failed fits, and how many. Absent, nothing was dropped.
+    if nonfinite_dropped:
+        out["meta"]["n_nonfinite_dropped"] = dict(nonfinite_dropped)
 
-    print(
-        f"[interpolate] dataset={out['meta']['dataset_id']} input_points={len(t_rel_s)} output_points={len(out['t_rel_s'])} real={out['meta']['pct_real_points']:.1f}% interp={out['meta']['pct_interpolated_points']:.1f}%",
-        flush=True,
-    )
     return out
