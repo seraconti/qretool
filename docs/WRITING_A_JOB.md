@@ -251,9 +251,11 @@ Three module-level constants, read statically — discovery never imports your j
 importing one builds its graph:
 
 ```python
-JOB_ID = "my_first_job"     # the logical name `job.include` resolves. Move the file freely.
-JOB_FAMILY = "t2star"       # the subject. `quebra run --all --family t2star` selects it.
-JOB_SWEEP = True            # default. False keeps it out of a bare `run --all`.
+JOB_ID = (
+    "my_first_job"  # the logical name `job.include` resolves. Move the file freely.
+)
+JOB_FAMILY = "t2star"  # the subject. `quebra run --all --family t2star` selects it.
+JOB_SWEEP = True  # default. False keeps it out of a bare `run --all`.
 ```
 
 `JOB_ID` is what makes a job's location stop being part of its identity: a composite naming

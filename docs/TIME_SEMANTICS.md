@@ -36,8 +36,8 @@ are not renamed - they remain `frequency` and `Rabi_frequency` as verified in th
 external data. The `aliases` argument to `lookup_prior` maps them to the
 correct norm keys:
 ```python
-fields=["frequency", "Rabi_frequency"],
-aliases={"frequency": "qubit_frequency_hz", "Rabi_frequency": "rabi_hz"},
+fields = (["frequency", "Rabi_frequency"],)
+aliases = ({"frequency": "qubit_frequency_hz", "Rabi_frequency": "rabi_hz"},)
 ```
 
 ## Run-Start Time Resolution Levels

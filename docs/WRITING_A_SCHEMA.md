@@ -87,14 +87,14 @@ relies on that.
 
 ```python
 Dataset(
-    path,                # the file, relative to the data root
-    schema=None,         # your schema class
-    qubit=None,          # optional; added to the frame as a qubit_id column
-    device=None,         # optional; added to the frame as a device column
-    duration_h=None,     # optional; run length - carried into meta by the shipped
-                         #   schemas, though NullSchema does not copy it
-    extra={},            # run metadata: reaches your schema and provenance
-    loader_kwargs={},    # options for the file reader, e.g. {"sep": ";"}
+    path,  # the file, relative to the data root
+    schema=None,  # your schema class
+    qubit=None,  # optional; added to the frame as a qubit_id column
+    device=None,  # optional; added to the frame as a device column
+    duration_h=None,  # optional; run length - carried into meta by the shipped
+    #   schemas, though NullSchema does not copy it
+    extra={},  # run metadata: reaches your schema and provenance
+    loader_kwargs={},  # options for the file reader, e.g. {"sep": ";"}
 )
 ```
 

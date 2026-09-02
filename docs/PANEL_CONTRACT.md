@@ -80,38 +80,44 @@ a symmetric excursion drives Spearman to zero by construction.
 @dataclass
 class WithinCalibrationPanelData:
     # Required
-    t_h: np.ndarray            # time in hours (x-axis for all subplots)
-    primary_series: np.ndarray # metric values (same units as thresholds)
-    primary_label: str         # y-axis label, e.g. "Infidelity"
-    thresholds: list[tuple[str, float, bool]]  # (label, value, big_values_good); empty = no threshold views
-    meta: dict[str, object]    # key-value pairs shown in summary text (≤4 items displayed)
+    t_h: np.ndarray  # time in hours (x-axis for all subplots)
+    primary_series: np.ndarray  # metric values (same units as thresholds)
+    primary_label: str  # y-axis label, e.g. "Infidelity"
+    thresholds: list[
+        tuple[str, float, bool]
+    ]  # (label, value, big_values_good); empty = no threshold views
+    meta: dict[
+        str, object
+    ]  # key-value pairs shown in summary text (≤4 items displayed)
 
     # Optional
     traces: list[tuple[str, np.ndarray]] | None  # extra series for zoom/binned subplots
-    use_log_scale: bool         # semilogy on primary panel (default False)
-    higher_is_better: bool      # True → above threshold = green (default True)
-    color: object               # matplotlib color for primary trace (default "C0")
+    use_log_scale: bool  # semilogy on primary panel (default False)
+    higher_is_better: bool  # True → above threshold = green (default True)
+    color: object  # matplotlib color for primary trace (default "C0")
 
     # R1 additions
     damage_fn: Callable[[np.ndarray], np.ndarray] | None
-        # Applied to per-threshold excess before integration in cumulative-damage
-        # computation. None = linear default (identity on excess).
-        # Signature: (excess: np.ndarray) -> np.ndarray
-        # The panel does NOT mutate PanelData; damage_fn is called read-only.
+    # Applied to per-threshold excess before integration in cumulative-damage
+    # computation. None = linear default (identity on excess).
+    # Signature: (excess: np.ndarray) -> np.ndarray
+    # The panel does NOT mutate PanelData; damage_fn is called read-only.
 
-    include_cumulative_time: bool    # render cumulative time-out-of-spec subplot (default True)
+    include_cumulative_time: (
+        bool  # render cumulative time-out-of-spec subplot (default True)
+    )
     include_cumulative_damage: bool  # render cumulative damage subplot (default True)
-    include_mttr: bool               # include first-crossing times in summary text (default True)
+    include_mttr: bool  # include first-crossing times in summary text (default True)
 
     # from the window/read tables
     primary_sigma: np.ndarray | None
-        # per-read 1-sigma on primary_series, same units. Drawn as error bars under
-        # the trace; snapshotted y-limits keep it from driving autoscale.
+    # per-read 1-sigma on primary_series, same units. Drawn as error bars under
+    # the trace; snapshotted y-limits keep it from driving autoscale.
     gap_spans_h: list[tuple[float, float]]
-        # (t_before, t_after) per read gap. The trace is BROKEN across these - a line
-        # through unobserved time is an interpolation the data does not support.
+    # (t_before, t_after) per read gap. The trace is BROKEN across these - a line
+    # through unobserved time is an interpolation the data does not support.
     timeline_segments_per_threshold: dict[str, list[tuple[float, float, str]]]
-        # (t_start_h, t_end_h, state) runs. Required per threshold by __post_init__.
+    # (t_start_h, t_end_h, state) runs. Required per threshold by __post_init__.
 
     # big_values_good is per-threshold (third element of each threshold tuple):
     #   False: above threshold = out-of-spec (lower is better, e.g. infidelity)
