@@ -1,4 +1,4 @@
-"""Content identity (Increment 4).
+"""Content identity.
 
 Pins the fold's determinism and the composite→child folding that a later
 identity-keyed reuse step will depend on: a composite's identity must change iff

@@ -1,4 +1,4 @@
-"""Unit tests for the five checks: identities, oracles, and the guards.
+"""Unit tests for the six checks: identities, oracles, and the guards.
 
 The two tests that matter most are the ones that pin a statistic against something
 INDEPENDENT of the implementation:
@@ -11,15 +11,15 @@ INDEPENDENT of the implementation:
   Marsaglia's limiting AD distribution over 6000 replicates.
 
 Both force `gamma = 1`, so both pin the TRANSCRIPTION and neither pins the shipped path,
-which divides by an estimated `gamma_hat`. That distinction was previously blurred - the
-gate was described as proving the whole implementation - and it matters, because the
-shipped asymptotic path is measurably oversized at small n (0.0634 against 0.05 at n = 20).
+which divides by an estimated `gamma_hat`. The distinction matters: reading the gate as
+proof of the whole implementation hides that the shipped asymptotic path is measurably
+oversized at small n (0.0634 against 0.05 at n = 20).
 `test_shipped_c2_asymptotic_is_oversized_at_small_n` pins that separately, so the known
 gap is a recorded fact rather than an unmeasured one.
 
 The third group at the bottom of the file covers `statistic_batch` and
-`segments_from_windows`, both of which were entirely untested. The second is how a defect
-that merged renewal segments across unobserved read gaps survived three reviews.
+`segments_from_windows`. The second is where a defect merging renewal segments across
+unobserved read gaps is invisible to inspection.
 """
 
 from __future__ import annotations
@@ -129,8 +129,8 @@ def test_shipped_c2_asymptotic_is_oversized_at_small_n(n, expected):
     Dividing by an ESTIMATED `gamma_hat` fattens the upper tail: at n = 20 the shipped
     asymptotic path rejects at 0.0634 against a nominal 0.05, converging to 0.0514 by
     n = 50. Both figures are MEASURED on this generator at 40,000 replicates (MC SE
-    0.0012), not borrowed from a nearby run - an earlier draft pinned 0.061/0.054, which
-    passed only because the tolerance is 4 SE wide. This
+    0.0012), not borrowed from a nearby run - a borrowed value would pass anyway, because
+    the tolerance is 4 SE wide. This
     is not a defect - `ad_limiting_cdf` is the limiting null and the finite-N cost of
     estimating gamma is exactly what the bench measures - but it is pinned here so it
     cannot drift unnoticed, and so nobody reads the gamma = 1 test as covering production.
@@ -217,7 +217,7 @@ def test_gamma_hat_eq10_goes_negative_where_the_complete_form_cannot():
 def test_gamma_hat_distinguishes_a_negative_variance_from_a_constant_vector():
     """The two failures have different causes and must not share a message.
 
-    Clamping a materially negative eq (10) variance to zero used to report it as "every
+    Clamping a materially negative eq (10) variance to zero would report it as "every
     gap is identical", which is a different and false diagnosis.
     """
     with pytest.raises(ValueError, match="every gap is identical"):
@@ -301,7 +301,7 @@ def test_battery_drops_only_the_tau_checks_when_asked():
         row_key(r) for r in run_battery([segment], perm=perm, include_tau_checks=False)
     ]
     # C5, C6 and CvM-by-permutation survive; C1, C2 and CvM-ASYMPTOTIC do not.
-    # CvM is the one promoted in P5 precisely because it is entitled to this case: its
+    # CvM is the one entitled to this case: its
     # statistic has no `1/(s(1-s))` weight so it stays finite when `tau == T_N`. Its
     # asymptotic row is still dropped here, because a limiting null needs a truncation
     # time chosen independently of the events and this one is not.
@@ -327,8 +327,6 @@ def test_validate_segment_raises_rather_than_returning_nonsense(segment, match):
 
 
 # ------------------------------------------------------- the batch/segment paths
-# Both of these were entirely untested, and the second is how the gap-merge defect
-# survived three reviews.
 
 
 @pytest.mark.parametrize("sizes", [[6], [4, 5], [3, 3, 4]])

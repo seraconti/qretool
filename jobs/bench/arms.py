@@ -302,7 +302,7 @@ def _carved_segments(
     read - not `[0, t_last]`. That distinction is the difference between a truncation time
     chosen in advance and one read off the data: ending at the last read makes `tau` an
     event-determined boundary, and when the final window is a single read it collapses to
-    `tau == T_N`, where eq (7) is singular. Measured before the fix, that hit 25% of Arm B
+    `tau == T_N`, where eq (7) is singular. Measured: that hits 25% of Arm B
     replicates on the calendar clock.
     """
     n_reads = len(values)

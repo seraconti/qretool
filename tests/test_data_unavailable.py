@@ -1,8 +1,8 @@
 """A missing dataset must say which kind of missing it is.
 
-SPEC 0003 R3.4. Before this, both situations raised the same `FileNotFoundError`: a reviewer
-who lacked an embargoed record and a user who mistyped a path got identical output, and only
-the first of them was in a position to do anything about it.
+Without the distinction both raise the same `FileNotFoundError`: a reviewer who lacks an
+embargoed record and a user who mistyped a path get identical output, and only the first of
+them can do anything about it.
 
 These tests need none of the private data - they drive `_is_manifested` and `DataUnavailable`
 against a manifest written under `tmp_path`.
@@ -38,7 +38,7 @@ def test_a_manifested_but_absent_record_is_reported_as_embargoed(fake_repo):
     error = excinfo.value
     assert error.manifested is True
     assert "EMBARGOED" in str(error)
-    # R3.4.2: the message must end in an action, not an apology.
+    # The message must end in an action, not an apology.
     assert "fixture" in str(error)
 
 

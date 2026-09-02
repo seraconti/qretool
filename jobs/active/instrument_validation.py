@@ -1,6 +1,6 @@
 """The instrument report: what licenses each statistical routine, as four figures.
 
-P5's closing artifact. Every input is declared as a `Dataset` and loaded with
+Every input is declared as a `Dataset` and loaded with
 `job.load_df`, so each reference table's sha256 lands in `dataset_hashes` and in the run
 identity - the same discipline `check_calibration.py` uses for the bench tables. A figure
 here cannot silently be rebuilt against a regenerated fixture, and no pipeline module
@@ -14,8 +14,8 @@ The four views answer four questions and are separate figures on purpose:
   tie experiment      where does Chatterjee's xi stop being trustworthy under ties
 
 WHAT IS NOT HERE. Power. None of these figures says an instrument can detect anything on a
-short window; `bench/results/promotion_report.md` is where that lives, it scores four
-checks and not five, and C3 and CvM have no bench cell at all.
+short window; `bench/results/promotion_report.md` is where that lives, it scores five
+checks and not six, and C3 has no bench cell at all.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from quebra.plots.instrument_validation_plot import (
     TieExperimentPlot,
 )
 
-# SPEC 0005 R5.2/R5.4: the logical name and category. `include` resolves JOB_ID, so this
+# The logical name and category. `include` resolves JOB_ID, so this
 # file can move without breaking any composite; recategorising costs one string edit.
 JOB_ID = "instrument_validation"
 JOB_FAMILY = "validation"

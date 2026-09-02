@@ -15,7 +15,7 @@ rather than on raw check results.
 
 **Seven grids, because `battery.ROW_KEYS` has seven entries.** C1 and C2 each appear twice,
 once per calibration, because the asymptotic and permutation routes are different
-instruments that happen to share a statistic - the P5 tier work measured them separately
+instruments that happen to share a statistic - the tier work measured them separately
 and they disagree. C5 appears twice for its two variants. C3 is NOT here: it is out of
 process, has no bench cell, and the survey turns it off to stay affordable.
 
@@ -253,7 +253,7 @@ def build_independence_survey(
     # `check_id="(all)"` when a rung produced no windows, or when segmentation declined it
     # - one row standing for all seven instruments. Matching on `check_id` alone therefore
     # drops them, and the cell renders as "no row" rather than as `not computed`.
-    # Measured on the shipped artifact before this fix: the 1 us and 10 us columns were
+    # Without this the 1 us and 10 us columns are
     # 34/34 absent in EVERY one of the seven figures - 132 of 340 cells per grid silently
     # blank. A blank cell reads as "nothing to say here"; `not computed` says the rung was
     # reached and declined, which is the truth and is a different statement.

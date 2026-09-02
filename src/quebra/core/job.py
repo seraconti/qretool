@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     # Annotation-only (`_FigureSink.plot_class`, `Job.figure`'s PlotClass). Importing it at
     # runtime pulled `plots.base`, which imports matplotlib AND plotly at module scope, into
     # every `import quebra.core.job` - 813 modules against 648. The graph runtime has no
-    # business loading a rendering stack. SPEC 0004 R4.1.4.
+    # business loading a rendering stack.
     from quebra.plots.base import BasePlot
 
 import pandas as pd
@@ -148,11 +148,10 @@ _LOAD_NODE_FN_NAMES = frozenset({"_load_dataset", "_load_dataframe_raw"})
 def _load_dataset(dataset: Dataset) -> Norm:
     """Read a file and hand it to a schema. Nothing here is specific to any experiment.
 
-    It used to be: this function required `timestamp` and `frequency` columns and a
-    resolvable run start, so `job.load` was the Ramsey path wearing a generic name and a
-    job about anything else could not use it. That work now lives in
-    `quebra.schemas.ramsey_series.RamseySeriesSchema`, which is the DEFAULT and not a
-    requirement.
+    Requiring `timestamp` and `frequency` columns and a resolvable run start here would make
+    `job.load` the Ramsey path wearing a generic name, unusable by a job about anything else.
+    That work lives in `quebra.schemas.ramsey_series.RamseySeriesSchema`, which is the DEFAULT
+    and not a requirement.
 
     Two schema shapes, dispatched below:
 
@@ -167,10 +166,10 @@ def _load_dataset(dataset: Dataset) -> Norm:
 
     frame = frame.copy()
     # Attach declared metadata as columns so a schema can key device-specific validation
-    # off them. Only when declared: `int(dataset.qubit)` used to run unconditionally, so
-    # `qubit=None` raised `int() argument must be...` - naming neither `qubit` nor
-    # `Dataset` - before any schema could intervene, and even a `to_norm` schema that
-    # never looks at a qubit had to declare one.
+    # off them. Only when declared: an unconditional `int(dataset.qubit)` raises
+    # `int() argument must be...` on `qubit=None`, naming neither `qubit` nor `Dataset`,
+    # before any schema can intervene - and would force even a `to_norm` schema that never
+    # looks at a qubit to declare one.
     if dataset.qubit is not None and "qubit_id" not in frame.columns:
         frame["qubit_id"] = int(dataset.qubit)
     if dataset.device is not None and "device" not in frame.columns:
@@ -313,7 +312,7 @@ class Job:
         sink's input is always persisted for `ref`, and `figures` only controls
         whether a fresh nested run also renders the figure sinks' PDFs.
         """
-        # SPEC 0005 R5.2: a logical JOB_ID first, a path only as a fallback. The ID names the
+        # A logical JOB_ID first, a path only as a fallback. The ID names the
         # graph node and content hashes determine identity; where the file sits is neither.
         # Resolve BEFORE _import_job so the import works from any CWD, and store the absolute
         # path on the _IncludedJob (the runner's locator resolves reuse by the sub-job's

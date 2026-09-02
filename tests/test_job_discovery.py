@@ -1,6 +1,6 @@
 """Jobs declare their own identity and category, and discovery never imports them.
 
-SPEC 0005 R5.2 and R5.4. Two things moved out of the filesystem and into the file: `JOB_ID`
+Two things live in the file rather than the filesystem: `JOB_ID`
 (so `include` stops naming a path) and `JOB_FAMILY` (so recategorising stops meaning moving a
 file).
 
@@ -108,7 +108,7 @@ def test_an_annotated_assignment_is_read(tmp_path):
 
 
 def test_every_in_repo_job_declares_an_id_and_a_family():
-    """A job with no `JOB_FAMILY` is reported, not silently skipped (R5.4 acceptance)."""
+    """A job with no `JOB_FAMILY` is reported, not silently skipped."""
     found = discover(REPO_JOBS)
     assert found, "no jobs discovered in this repository"
     missing = sorted(k for k, v in found.items() if not v.family)
@@ -140,11 +140,10 @@ def test_sweep_defaults_to_true_and_can_be_declined(tmp_path):
 def test_a_bare_sweep_excludes_the_composites_as_the_docs_promise():
     """The regression this guards is measured, not hypothetical.
 
-    R5.4's first implementation replaced the `jobs/active/*.py` glob with "every discovered
-    job", which silently widened `run --all` from 9 jobs to 12 — pulling in the three
-    composites that `AGENTS.md` and `docs/WRITING_A_JOB.md` both promise are not swept, one
-    of which is the ~6.5 h independence survey. Someone typing `run --all` would have
-    started it without asking for it.
+    Replacing the `jobs/active/*.py` glob with "every discovered job" silently widens
+    `run --all` from 9 jobs to 12, pulling in the three composites that `AGENTS.md` and
+    `docs/WRITING_A_JOB.md` both promise are not swept - one of which is the ~6.5 h
+    independence survey. Someone typing `run --all` starts it without asking for it.
     """
     all_jobs = discover(REPO_JOBS)
     swept_ids = {j.job_id for j in swept(REPO_JOBS)}
@@ -162,7 +161,7 @@ def test_a_bare_sweep_excludes_the_composites_as_the_docs_promise():
 
 
 def test_an_unparseable_job_file_raises_rather_than_vanishing(tmp_path):
-    """A broken job used to fail the batch loudly; it must not become invisible instead."""
+    """A broken job must fail the batch loudly rather than becoming invisible."""
     from quebra.core.discovery import UnreadableJobFile
 
     _write(tmp_path, "broken.py", "def (\n")

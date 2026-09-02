@@ -10,7 +10,7 @@ statistic = sum_h n_pairs(h) * r_h^2
 ```
 
 Where C5 asks "is any single lag extreme", C6 asks "is the whole autocorrelation profile
-larger than reordering would produce". It is the natural reference among the five: a pure
+larger than reordering would produce". It is the natural reference among the six: a pure
 permutation test of exchangeability, resting on no asymptotic approximation and no citation
 beyond the permutation principle itself.
 

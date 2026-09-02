@@ -83,7 +83,7 @@ def chatterjee_xi(x: np.ndarray, y: np.ndarray) -> float:
 
     with the pairs sorted by x, `r_i = #{j : y_j <= y_(i)}` and `l_i = #{j : y_j >= y_(i)}`.
     With no ties in y this reduces algebraically to `1 - 3*sum|dr|/(n^2 - 1)`, which is
-    what this function computed until P5 - correct on tie-free data and wrong the moment a
+    the tie-free reduction - correct on tie-free data and wrong the moment a
     quantised metric produces tied responses.
 
     Measured on the shipped artifacts, which is where the number has to come from: the
@@ -106,7 +106,7 @@ def chatterjee_xi(x: np.ndarray, y: np.ndarray) -> float:
     DEVIATION FROM THE SOURCE, recorded rather than hidden: Chatterjee breaks ties in x
     "uniformly at random". This uses a deterministic stable sort, because a seeded shuffle
     inside a reproducibility tool is its own problem - the same decision `tie_fraction`
-    documents. The cost is measured in the P5 tie experiment rather than assumed to be nil.
+    documents. The cost is measured in the tie experiment rather than assumed to be nil.
     """
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)

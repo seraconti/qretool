@@ -2653,3 +2653,1965 @@ MINOR | jobs/bench/probe_unresolved.py:17 | "Every job file declares a ladder by
 - [x] jobs/active/t2star_q1_070423.py
 - [x] jobs/active/t2star_q1_100423.py
 - [x] tests/test_independence_survey.py
+
+--- PATCH COMMIT 1 of 4 (build/parse breakage + Makefile incoherence), appended 2026-09-02 ---
+
+SCOPE: pyproject.toml, .gitignore, Makefile, .github/workflows/ci.yml, src/quebra/cli.py
+COMMIT: 1241725
+
+## Manifest
+- [ ] pyproject.toml (+2/-1)
+- [ ] .gitignore (+4/-1)
+- [ ] Makefile (+8/-1)
+- [ ] .github/workflows/ci.yml (+5/-28)
+- [ ] src/quebra/cli.py (+1/-5)
+
+## Reviewed
+
+## Findings
+
+### pyproject.toml
+
+VERIFIED | pyproject.toml:80 | The dot fix is real and load-bearing, and worse than reported. MEASURED: `tomllib` on `git show HEAD:pyproject.toml` -> "Expected newline or end of document after a statement (at line 79, column 17)"; the working-tree file parses and `tool.ruff.lint` comes back as a table with key `select`. Additionally ruff itself HARD-FAILS on the HEAD form (reproduced on a two-line copy: "ruff failed / Cause: Failed to parse ... TOML parse error at line 1, column 17"), so at HEAD `make lint` and therefore all of `make check` were unrunnable, not merely `pip install`. Because nothing ran before, the fix cannot have changed any lint outcome.
+
+VERIFIED | pyproject.toml:19 | 3.13 classifier is consistent with every other version claim in the tree, checked: `requires-python = ">=3.11"`, `[tool.ruff] target-version = "py311"` (floor, correct), `[tool.mypy] python_version = "3.11"` (floor, correct), README.md:95 "Python 3.11 or newer", AGENTS.md:5 "Python 3.11+". Nothing else needed updating. All five gates pass on this machine's 3.13 (`ruff check`, `ruff format --check` 147 files, `mypy` 11 files, `lint-imports --no-cache` 1 kept, `deptry .` 110 files), so the new matrix leg is very likely green.
+
+## Reviewed
+- [x] pyproject.toml
+
+### .gitignore
+
+VERIFIED | .gitignore:51 | Pattern syntax and position are correct (trailing-slash directory match, filed under the existing "# Tool caches" heading beside `.grimp_cache/`), and it shadows nothing. Load-bearing for the sdist, MEASURED both ways: built an sdist from a `git archive HEAD` tree with the real `.import_linter_cache/` copied in and the dot fix applied -> ships exactly 5 entries (`.gitignore`, `CACHEDIR.TAG`, `quebra.meta.json`, and two mtime-keyed `*.data.json` import-graph caches); built from the working tree -> `grep -Ei "import_linter|grimp_cache|__pycache__|\.pyc"` over 194 entries returns nothing. Also confirms the `.grimp_cache/` claim by construction: hatchling reads only the ROOT `.gitignore`.
+
+MINOR | .gitignore:50-51 | Comment states the redundant reason first. "Ignored so it cannot be committed and so hatchling keeps it out of the sdist" - the commit half was already true and is not what this rule buys: `.import_linter_cache/.gitignore` contains `*` ("# Automatically created by Grimp."), and `git check-ignore -v` confirms every path inside was already blocked, which is why `git status` looked clean. The ONLY live leak was the sdist, because hatchling honours the root `.gitignore` and not nested ones. A reader who believes the stated reason may delete the nested Grimp file as superfluous, or may not learn the nested/root asymmetry that caused the leak. | Say: hatchling honours only the root `.gitignore`, so the nested one Grimp writes keeps the cache out of git but not out of the sdist.
+
+## Reviewed
+- [x] .gitignore
+
+### Makefile
+
+VERIFIED | Makefile:47 | Both halves of the premise reproduce, and the fix is correct GNU make. MEASURED on a `git show HEAD:Makefile` copy: `make -f <head> -n test-r` prints TWO lines, `pytest -m "r"` then `pytest -m "real or regression"` (a non-tab `#`/`##` comment line does not terminate a recipe); `make -f <head> -n test-real` prints "make: Nothing to be done for 'test-real'." exit 0, i.e. the silent no-op, because `test-real` is in `.PHONY` with no rule. Working tree: one line each. No other target has the defect - `make -n` on all of check/lint/types/arch/deps/test/test-all/test-r/test-real/docs/clean prints exactly its own recipe, and `promote` carries its own header. `.PHONY` lists all 12 targets.
+
+VERIFIED | Makefile:44 | The "exit 5" claim is accurate. MEASURED: `pytest -m "r"` -> "419 deselected", exit 5; `pytest -m "real or regression"` -> "419 deselected", exit 5.
+
+IMPORTANT | Makefile:48 | `regression` is not a declared marker. `[tool.pytest.ini_options].markers` declares only `slow`, `heavy`, `real`, `r`, and `addopts = "--strict-markers"`. So half this selector is a dead name in two directions: today `-m "real or regression"` silently evaluates `regression` false (`-m` expressions are not strict-marker-checked), and the moment anyone writes `@pytest.mark.regression` collection ERRORS under `--strict-markers`. This diff is promoting the recipe to a live target for the first time, so it is shipping a selector the project's own config forbids completing. | Declare `regression` in `markers`, or drop it from the selector.
+
+IMPORTANT | Makefile:46 | "## Markers are assigned in the test-architecture phase." is project chronology in a comment - the exact category the author's hard rule bans (no spec numbers, no phase references). It also dates: the line becomes false and unnoticeable the moment markers land. | Delete it, or restate as state rather than plan: "no test carries these markers yet, so both selectors are empty."
+
+MINOR | Makefile:41-45 | The two paragraphs undercut each other. Para 1 makes the missing header sound like a live leak - "that is how the private-data selector reaches a public runner". Para 2 says `pytest -m "r"` exits 5. Since make aborts on the first failing recipe line, at HEAD the attached second line could NEVER have executed: the leak only becomes live once an `r`-marked test exists and line 1 starts passing. As written a reader concludes an active exposure was just closed. | State that the exposure is latent, live from the first `r`-marked test.
+
+MINOR | Makefile:47-48 | The commit claims "no behaviour change"; this target changes one. `make test-real` moves from exit 0 (nothing to be done) to exit 5. That is the intended fix and the comment owns it, but the commit message as stated is wrong. `make test-r` is fine - its exit code was already 5 from line 1, so dropping line 2 is observationally inert. | Say in the message that `make test-real` now fails loudly instead of passing vacuously.
+
+MINOR | Makefile:40 | "Local only. Touches data/real_private/, so it must never run on GitHub Actions" justifies only the `real` half of `real or regression`. Nothing states what `regression` needs or why it may not run in CI. | Cover both, or split the targets.
+
+## Reviewed
+- [x] Makefile
+
+### .github/workflows/ci.yml
+
+VERIFIED | ci.yml:34-38 | CI cannot reach the private-data selector. The workflow has exactly two run steps after install: `make check` and `make deps`. `make -n check` expands to `ruff check .`, `ruff format --check .`, `mypy src/quebra/core`, `lint-imports --no-cache`, `pytest -m "not slow and not heavy and not real and not r"`. Neither `test-r` nor `test-real` is a prerequisite of anything CI invokes. `actions/setup-python@v5` supports 3.13.
+
+IMPORTANT | ci.yml:17-18 | "it is the interpreter that produced every shipped number" is a provenance claim that no shipped artifact can support. MEASURED: a `prov.json` under `output/` carries keys `dataset_hash, dataset_hashes, dataset_path, dataset_paths, figure_node_label, git_commit, includes, job_file, job_file_hash, node_name, pipeline_steps, targets_rendered` - no interpreter field; `grep -rl "3\.11\|3\.12\|3\.13" output/*/provenance/` matches nothing; `grep` over `src/quebra/` finds no `sys.version` / `platform.python_version` capture anywhere. The rule is that a measured claim in a comment comes from the artifact it cites in the state it ships; this one cites nothing and rests on memory. | Drop the clause, or record `python_version` in provenance in a later commit and then make the claim.
+
+IMPORTANT | ci.yml:19 | "and it went untested while the classifiers omitted it" is past-tense project chronology - "it used to" - in a diff whose other half is the author removing exactly that from this file. | Delete the clause; "3.13 is the interpreter this is developed on" already carries the reason.
+
+IMPORTANT | ci.yml:35-56 (deleted block) | The deletion takes two things with it that are not chronology and are now recorded nowhere. (a) The prohibition "no step fetches data/real_private/, and none may be added" - the only statement of that invariant in the workflow. (b) The corrected mechanism for why CI is green without the private tree: per-test `pytest.skip` in `tests/test_data_manifest.py` (4 sites) and `tests/test_artifact_guard.py`, NOT the marker selector. That correction was the output of a prior review gate (logged in this ledger against ci.yml:38-39), and it remains true today - re-measured: `pytest -m "r"` reports 419 deselected, zero tests carry any of the four markers, so `FAST` excludes nothing. Deleting it means the next reader re-derives the false version. | Keep two lines: CI must never fetch `data/real_private/`, and the guard is the per-test `pytest.skip` on its absence, the markers being currently unused.
+
+MINOR | ci.yml:3 vs :35 (deleted) | Inconsistent trim. The diff removes "SPEC 0004 R4.4.1" from the step comment but leaves "SPEC 0002 R1.4.2" in the file header nine lines above, so the file now applies the no-spec-numbers rule to one comment and not to the other. | Trim both or neither.
+
+## Reviewed
+- [x] .github/workflows/ci.yml
+
+### src/quebra/cli.py
+
+VERIFIED | cli.py:9,207 | The removed branch was unreachable AND was not a fallback. `h5py>=3.11` is a hard `dependencies` entry, and the stale local editable metadata DOES list it - `importlib.metadata` gives `Requires-Dist: [... 'h5py>=3.11' ...]`; what the stale metadata is missing is `grimp`, plus it says `import-linter>=2.0` where pyproject now says `>=2.13`. So the staleness does not touch h5py and no reachable environment loses it. Separately, the old `and h5py` guard did not provide a fallback: with h5py absent an `.h5` path fell through to `_schema_stub(load(file_path))`, and `loaders/registry._load_hdf` does its own bare `import h5py`, so the identical ImportError was raised a few frames later with a worse message. Deleting it removes a silent-fallback shape, per the project rule.
+
+VERIFIED | cli.py:9 | No import invariant is broken and `code_hash()` is structurally unable to move. The "must not load a rendering stack" rule exists only as a comment at `src/quebra/core/job.py:15`, scoped to that module; grep over `tests/` finds no `sys.modules`-based import-weight assertion for job.py or cli.py, so nothing covers cli.py. And cli.py is already the heaviest module in the package: it imports `quebra.plots.targets`, so `import quebra.cli` already pulls matplotlib AND plotly - MEASURED 860 modules, 0.62 s. h5py adds ~0.16 s on top (`-X importtime`: 170 ms cumulative). Nothing in `src/` or `jobs/` imports `quebra.cli` (grep clean), and the import-linter layers contract puts `quebra.cli` at the top and passes, so cli.py can never enter a step's static import closure; `core/closure.py` hashes only `quebra.*` modules reachable from step functions. The byte-identical `code_hash()` claim holds for a structural reason, not luck.
+
+IMPORTANT | src/quebra/recipes.py:64-70 (omitted from the diff) | Self-consistency gap. `run_start_unix_s_from_hdf5` still carries the identical dead guard on the identical mandatory dependency: `try: import h5py / except ImportError as exc: raise ImportError("h5py is required to read measurement_time from HDF5") from exc`. That is a catch-and-rewrap of an error that cannot occur. The stated reason for the cli.py edit - "the fallback branch could never execute" - applies to it verbatim. The repo now holds three conventions for one hard dep: module-level (cli.py:9), bare function-level (loaders/registry.py:73), function-level-with-rewrap (recipes.py:65). | Delete the try/except in recipes.py in this same commit, so the rule is applied once rather than half-applied.
+
+MINOR | cli.py:9 | Module-scope import widens the blast radius in a broken environment: an h5py-less install now fails at `import quebra.cli`, taking `quebra run` and `quebra inspect` down with it rather than only `schema-wizard` on an `.h5` path. Loud is the right direction and this is unreachable via a supported install, but note `make docs` (`sphinx-build -W --nitpicky`; sphinx is in no extra) would autodoc-import `quebra.cli` in whatever minimal env a docs build has. | No change needed; do not add sphinx without adding h5py to that env.
+
+MINOR | cli.py:207 | The only code line the commit touches has no test. Grep over `tests/` and `scripts/` for `schema-wizard`, `schema_wizard`, `_schema_stub`, `cli.main` returns nothing; the three tests that touch this module (`test_nesting.py:18`, `test_artifact_guard.py:174`, `test_path_resolution.py:198`) only import `_module_from_path`. They do exercise the new top-level import on every FAST run, which is the part most likely to break, so the exposure is small - but the no-behaviour-change guarantee is asserted, not tested. | Note it; a `schema-wizard` test is its own commit.
+
+MINOR | cli.py:207-227 (pre-existing, newly exposed) | The `if` now reads as a total handler for `.h5`/`.hdf5` and is not: the `len(keys) > 1` arm returns, the `<= 1` arm falls out of the `with` and re-opens the same file through `load(file_path)`. With the `and h5py` short-circuit gone there is no longer any visual cue that the branch is partial. | Add an explicit `if len(keys) <= 1` comment, or restructure. Not introduced here.
+
+## Reviewed
+- [x] src/quebra/cli.py
+
+--- PATCH COMMIT 2 of 4 (the provenance record describes the run that actually happened) — SLICE A, appended 2026-09-02 ---
+
+SCOPE: src/quebra/provenance.py, src/quebra/core/runner.py, src/quebra/core/job.py, src/quebra/core/closure.py, scripts/promote_run.py, tests/test_reuse_completeness.py (new/untracked), tests/test_identity_closure.py, tests/test_shape_stats.py
+COMMIT: a00894d (working tree, uncommitted)
+
+## Manifest
+- [ ] src/quebra/provenance.py (+39/-33)
+- [ ] src/quebra/core/runner.py (+66/-21)
+- [ ] src/quebra/core/job.py (+20/-19)
+- [ ] src/quebra/core/closure.py (+19/-4)
+- [ ] scripts/promote_run.py (+18/-0)
+- [ ] tests/test_reuse_completeness.py (NEW, 181 lines)
+- [ ] tests/test_identity_closure.py (+8/-9)
+- [ ] tests/test_shape_stats.py (+4/-4)
+
+## Reviewed (slice A)
+
+## Findings (slice A)
+
+--- PATCH COMMIT 2 of 4 — SLICE B (paths/cli/recipes + spec amendment), appended 2026-09-02 ---
+
+SCOPE: src/quebra/core/paths.py, src/quebra/cli.py, src/quebra/recipes.py, tests/test_data_root_resolution.py, spec/specinstallabity02.md, spec/specdatalayout03.md
+COMMIT: a00894d (working tree, uncommitted)
+
+## Manifest (slice B)
+- [ ] src/quebra/core/paths.py (+~70/-~30)
+- [ ] src/quebra/cli.py (+3/-5)
+- [ ] src/quebra/recipes.py (+2/-5)
+- [ ] tests/test_data_root_resolution.py (+43/-12)
+- [ ] spec/specinstallabity02.md (+20/-1)
+- [ ] spec/specdatalayout03.md (+6/-0)
+
+## Reviewed (slice B)
+
+## Findings (slice B)
+
+### src/quebra/core/paths.py
+
+CRITICAL | src/quebra/core/paths.py:234-238 (and the whole `explicit` demand branch, :246-255) | The motivating failure is NOT fixed, and the docstring now claims it is impossible. `resolve_data_root(explicit=...)` has NO production caller: `cli.py:130-131` does `Path(args.data_root).expanduser().resolve()` itself and hands the result to `run_job`, which at `runner.py:465` does `dataset_root = Path(data_root).resolve() if data_root else default_dataset_root()` - never `resolve_data_root(data_root)`. So the new raise fires only for direct-API/test callers. MEASURED on the working tree: `resolve_dataset_path("data/real_private/6D2S/070423_6D2S_qubit1.pickle", Path("/mnt/typo"))` -> `/…/qre_tool/data/real_private/6D2S/070423_6D2S_qubit1.pickle`, and `jobs/bench/results/xi_tie_experiment.csv` likewise. Every job in `jobs/active/` declares a repo-relative `Dataset.path` (`data/real_private/…` or `jobs/…`), and `quebra.toml` declares `data_root = "."`, so `resolve_dataset_path`'s repo-root second candidate silently reproduces EXACTLY the described failure: `quebra run jobs/active/t2star_q1_070423.py --data-root /mnt/typo` completes against the repository tree and records that tree's dataset hashes. The docstring sentence "which is the failure `DataRootNotFound` exists to make impossible" is therefore an overclaim about the shipped CLI. (Already logged against this repo at ledger:2025 in the SPEC 0002 pass and still open.) | Make `run_job` call `resolve_data_root(data_root)` and drop the ad-hoc `Path(data_root).resolve()`, in this commit - otherwise the commit buys nothing a user can reach. If that is deferred, delete the "makes impossible" clause and say the CLI does not route through here yet.
+
+IMPORTANT | src/quebra/core/paths.py:192-198 | `DataRootNotFound`'s own docstring - "No data root could be resolved, **with every location that was tried**" - is now false at two of its three raise sites. The two new demand raises name only the failed demand; the explicit one does not even mention that `QUEBRA_DATA_ROOT`, `quebra.toml` and platformdirs exist, so a user who hits it learns nothing about the mechanism set. The class is the contract carrier for R1.3.4 and it was not touched. | Narrow it: "either a root somebody named does not exist - in which case the message names that one - or nothing resolved, in which case it lists every location tried."
+
+IMPORTANT | src/quebra/core/paths.py:246-255 vs docs/WRITING_A_JOB.md:145 (omitted from the slice) | The user-facing documentation of this exact contract still says "resolved in this order, **first hit wins**" over all four mechanisms, and "If none resolves, QUEBRA raises `DataRootNotFound`" - i.e. it documents the fall-through this commit deleted. The spec files were amended; the doc a user reads was not. | Add one sentence to WRITING_A_JOB.md:145-155: mechanisms 1 and 2 raise if they name a non-directory.
+
+MINOR | src/quebra/core/paths.py:1 vs :8-10 | The new title line - "Path anchors and resolvers, **all of them relative to the caller's project**" - is contradicted seven lines below: "It may be inside the project or outside it." The dataset root is precisely the anchor that is NOT relative to the project. | "Path anchors and resolvers. Neither is computed from this file's location."
+
+MINOR | src/quebra/core/paths.py:4-7 | Ambiguous rewrite lands on a false reading. "…never computed from this file's location, which is the same anchor `provenance.get_git_commit` uses." Nearest antecedent of "which" is "this file's location", so the sentence asserts `get_git_commit` anchors on `__file__`. It does not: `provenance._git` runs `subprocess.run([...], cwd=Path.cwd())` (provenance.py:43, unchanged by the slice-A diff), so it anchors on the cwd - the same anchor `repo_root` uses, which is presumably the intended point. The old text asserted the same falsehood in the other direction, so the rewrite did not fix it. | "…never computed from this file's location. The cwd is also what `provenance.get_git_commit` anchors on."
+
+MINOR | src/quebra/core/paths.py:260-271 | `QUEBRA_DATA_ROOT=""` is treated as unset (`if env:`) and the failure message then prints the literally false line `QUEBRA_DATA_ROOT: not set`. Setting it empty is the plausible way a shell script "clears" it (`export QUEBRA_DATA_ROOT=` / a CI variable defined-but-blank), and a docstring that calls this mechanism a DEMAND makes silently ignoring a set value the odd branch. No test or doc sets it empty (grepped `tests/`, `docs/`, `scripts/`, `.github/`). Note `Path("").resolve()` is the cwd, so honouring "" literally would be worse - the issue is only the diagnostic. | `tried.append(f"{QUEBRA_DATA_ROOT_ENV}: set but empty, treated as unset")` when `env == ""`.
+
+MINOR | src/quebra/core/paths.py:251 | The message hard-codes a CLI flag for a general parameter: a library caller doing `resolve_data_root(Path("/data"))` from Python is told "--data-root was given as ...". The env-var message at :266 gets this right by naming the actual mechanism. | "an explicit data root was given as '{explicit}' (the `--data-root` flag arrives here)".
+
+MINOR | src/quebra/core/paths.py:250 | `DataRootNotFound` subclasses `RuntimeError`, so once the CRITICAL above is fixed a typo'd `--data-root` reaches the user as a bare RuntimeError traceback rather than argparse's `parser.error` two-liner. The sibling failure `DataUnavailable` deliberately subclasses `FileNotFoundError` for handler compatibility; "you named a path that is not a directory" is the same species. | Catch it in `cli.main` and route to `parser.error`, or subclass `NotADirectoryError` for this case.
+
+VERIFIED | src/quebra/core/paths.py:246-270 | No legitimate caller relied on the fall-through. Every caller of `resolve_data_root` with an argument is in `tests/`; the only production entry is `default_dataset_root()` -> `resolve_data_root()` with `explicit=None` (grepped src/, jobs/, scripts/, conftest.py). Nothing passes a path that is created later: `run_job(data_root=tmp_path)` in the test suite bypasses this function entirely. A path to an existing FILE raises with the correct wording ("that is not a directory"), and `Path("")` -> cwd, which is a directory, so `resolve_data_root("")` returns the cwd rather than raising - the CLI never gets there because `if args.data_root` is falsy for `""`.
+
+VERIFIED | src/quebra/core/paths.py:25,280-284 | The `platformdirs` guard removal is correct and the comment is accurate: `platformdirs>=4.0` is a hard `dependencies` entry in pyproject.toml. Module-scope import is safe for the identity closure (`core/closure.py` hashes only `quebra.*` modules) and platformdirs is import-light.
+
+VERIFIED | src/quebra/core/paths.py:63-64 | The measured claim is true in the state it ships: working-tree `quebra.toml` says `data_root = "."` and `default_dataset_root()` returns `/…/qre_tool` (executed). Spec-number and `qre_tool/` removals at :115,:137,:154 are complete for this file - `grep -n "SPEC \|R1\.3\|qre_tool" src/quebra/core/paths.py` is empty.
+
+## Reviewed (slice B)
+- [x] src/quebra/core/paths.py
+
+MINOR | src/quebra/core/paths.py:148,154-155 (addendum) | The chronology sweep is half-applied inside one docstring. The diff removes "SPEC 0003 R3.4." from :154 but leaves ":148 …the two situations that **used to** look identical" three lines above - the "it used to" form the rule bans - and leaves the deleted prefix's hole unreflowed, so :154 is a 63-column line in an 88-column file. | Say "the two situations that otherwise look identical" and reflow the paragraph.
+
+### src/quebra/cli.py
+
+IMPORTANT | src/quebra/cli.py:119 | The one user-visible statement of the data-root default is still the pre-`data_root = "."` one: `--data-root` help says "(default: **the repo's parent directory**)". `quebra run --help` therefore tells every user the opposite of what `default_dataset_root()` returns (measured: the repository itself), and it names a mechanism the resolver no longer has. This commit exists to make exactly this claim accurate in `paths.py`; it left the copy a user actually reads untouched, in a file the commit already edits. (Logged at ledger:2047 in the SPEC 0002 pass, still open.) | help="Dataset root for relative dataset paths; defaults to QUEBRA_DATA_ROOT, then [tool.quebra] data_root in a quebra.toml at or above the cwd, then the platformdirs user data dir. Used by both loading and provenance hashing."
+
+VERIFIED | src/quebra/cli.py:9,207 | The guard removal is correct and cannot regress anything reachable: `h5py>=3.11` is a hard dependency, nothing in `src/` or `jobs/` imports `quebra.cli`, and the old `and h5py` short-circuit was not a fallback (it fell through to `load(file_path)` -> `loaders/registry._load_hdf`, which does its own bare `import h5py`). The `make docs` worry raised against this line in PATCH COMMIT 1 is moot: `docs/` contains no `conf.py` and no `automodule`/`autodoc` anywhere, so `sphinx-build -W --nitpicky -b html docs docs/_build/html` fails before importing any project module.
+
+## Reviewed (slice B)
+- [x] src/quebra/cli.py
+
+### src/quebra/recipes.py
+
+MINOR | src/quebra/recipes.py:65 | The surviving inline `import h5py` states no reason, so the repo now carries two unexplained conventions for one hard dependency: module scope in `cli.py:9`, function scope here and in `loaders/registry.py:73`. There IS a good reason here - `quebra.recipes` is in the step-import closure that `core/closure.py` hashes and every job imports it, so keeping h5py out of that import keeps job-build light - but a reader who applies the cli.py precedent will "tidy" it to the top of the file. | One line: "Imported here, not at module scope: every job imports this module and only this function needs h5py."
+
+MINOR | src/quebra/recipes.py:58 | The function the commit edits is dead. `run_start_unix_s_from_hdf5` has zero call sites and zero tests repo-wide (grepped src/, jobs/, tests/, scripts/, docs/ - the only hit is its own `def`). Editing it is harmless, but it is the only behaviour-bearing line in this file's diff, and it moved the code hash of all six measurable jobs for a function nothing executes. | Either delete the function or give it a caller/test; note in the commit message that the recipes.py hash movement comes from dead code.
+
+VERIFIED | src/quebra/recipes.py:61-67 (removed) | Nothing depended on the removed message: `grep "h5py is required"` over the tree is empty. The rewrap was loud, not a silent fallback, so behaviour changes only from a custom ImportError text to `ModuleNotFoundError: No module named 'h5py'` - unreachable under a supported install. File is 413 lines, single-purpose, not unwieldy.
+
+## Reviewed (slice B)
+- [x] src/quebra/recipes.py
+
+### tests/test_data_root_resolution.py
+
+VERIFIED | tests/test_data_root_resolution.py:100-136 | Both inverted tests are load-bearing, MEASURED by mutation without touching any source file: a pytest plugin re-bound `quebra.core.paths.resolve_data_root` to a verbatim copy of the pre-change fall-through implementation, and both new tests FAILED ("DID NOT RAISE DataRootNotFound") while the other 6 passed. On the working tree, `pytest tests/test_data_root_resolution.py` -> 8 passed. No env leak: ambient `QUEBRA_DATA_ROOT` is unset here, and `finally: del os.environ[...]` runs before `isolated`'s `monkeypatch.delenv` undo, so the two orders compose; running the env test followed by `test_when_nothing_resolves...` in one process passes.
+
+IMPORTANT | tests/test_data_root_resolution.py (whole file) | The suite pins the FUNCTION and leaves the shipped BEHAVIOUR untested, which is why `make check` is green while the motivating hazard is live (see the CRITICAL against paths.py). There is no test that `run_job(job, out, data_root=<nonexistent>)`, or `quebra run --data-root <typo>`, refuses to run - and it does not refuse; it silently analyses the repo tree. A test at that level is what would have caught that the demand branch has no production caller. | Add one test: `run_job` with a nonexistent `data_root` must raise, not resolve datasets through the repo-root fallback.
+
+MINOR | tests/test_data_root_resolution.py:131-136 | Hand-rolled `os.environ[...] = ...` + `try/finally` where the file's three sibling tests (:45, :56, :117) use `monkeypatch.setenv`, and where `monkeypatch` was deliberately dropped from the signature to make it possible. It is not leaking today, but it re-introduces exactly the anti-pattern already logged against this file at ledger:2129 (raw `os.chdir` at :67,:82), and a future edit that adds a second `os.environ` write or an early `return` inside the block loses the undo. Nothing in the test needs the env var to survive `monkeypatch`'s undo, so there is no reason for the deviation. | `monkeypatch.setenv(QUEBRA_DATA_ROOT_ENV, str(tmp_path / "gone"))` and delete the try/finally.
+
+MINOR | tests/test_data_root_resolution.py:118,133 | The two `match=` strings pin prose at different strengths and neither pins the mechanism. `match="demand, not a candidate"` binds a copy-editable clause: any rewording of that sentence turns a passing test red for no behavioural reason. `match="not a directory"` is the opposite problem - BOTH demand raises contain that phrase, so it does not discriminate which mechanism fired (it only separates the demand raises from the catch-all, which has no such phrase). | Match on the stable identifiers instead: `match=r"--data-root"` for the explicit test, `match=QUEBRA_DATA_ROOT_ENV` for the env test.
+
+MINOR | tests/test_data_root_resolution.py:3-4 vs :87,:142 | The chronology/oracle sweep is half-applied here too. The module docstring drops "SPEC 0002 R1.3.3 ... R1.3.4" in favour of "the documented resolution order" - which now cites nothing checkable, so a test file loses its oracle - while :87 still says `"""R1.3.4. ..."""` and :142 still says "The declared value changed in SPEC 0003 - `data_root` moved from `".."` to `"."`", which is the "it used to" form. Either tests may cite specs or they may not; right now this one file does both. | Pick one. If specs stay out of tests, point the oracle at `resolve_data_root`'s docstring and restate :142 as "asserts the checkout resolves to whatever its own quebra.toml declares".
+
+MINOR | tests/test_data_root_resolution.py:3-4 | "the requirement that a failure name every location tried" is now only true of the catch-all raise; the two new raises name one location. The docstring states the old, unnarrowed contract as the file's oracle two lines above the tests that break it. | Say "a failure names either the demand that was not met or every candidate tried."
+
+MINOR | tests/test_data_root_resolution.py:100-136 | Untested edge case introduced by this change: an explicit root that is an existing FILE rather than a missing path. It takes the same branch and the message ("that is not a directory") is correct for it, but nothing pins that - and it is the likelier operator mistake (`--data-root ./data/file.csv`, tab-completion). | Add `(tmp_path/"f").write_text(""); pytest.raises(DataRootNotFound, match="not a directory")` on `resolve_data_root(tmp_path/"f")`.
+
+## Reviewed (slice B)
+- [x] tests/test_data_root_resolution.py
+
+### spec/specinstallabity02.md
+
+IMPORTANT | spec/specinstallabity02.md:113-117 (R1.3.3a rationale) vs :128 (R1.3.5) | The amendment overclaims at the system level. Its rationale is written about `--data-root` ("With `quebra.toml` here declaring `data_root = "."`, the tree it silently reaches is the repository itself"), which only holds if R1.3.5 - "`--data-root` maps to mechanism 1" - is actually implemented. It is not: `cli.py:130` resolves the flag itself and `runner.py:465` does `Path(data_root).resolve()`, so `resolve_data_root`'s explicit branch is never reached from the CLI and the described silent-wrong-tree run still happens (MEASURED, see the CRITICAL against paths.py). So the amendment is accurate about the FUNCTION and false about the tool. R1.3.5 is stated as a requirement in the same section and is unmet, unmarked. | Either wire `run_job` through `resolve_data_root` in this commit, or add one sentence to R1.3.3a: "R1.3.5 is not yet implemented - the CLI bypasses `resolve_data_root`, so the demand rule does not yet protect `--data-root`."
+
+MINOR | spec/specinstallabity02.md:107-110 vs the code at paths.py:261 | R1.3.3a says "If either names a path that is not a directory, `resolve_data_root` raises". The code has an unstated carve-out: `if env:` means `QUEBRA_DATA_ROOT=""` is treated as UNSET and falls through to mechanisms 3 and 4, so an env var that is set-but-empty is the one demand that silently does not raise. | State the carve-out: "an empty `QUEBRA_DATA_ROOT` counts as unset, because `Path("")` is the cwd and honouring it literally would be the very guess this rule forbids."
+
+MINOR | spec/specinstallabity02.md:127-128 (R1.3.4, unamended) | R1.3.3 got an "AMENDED — see R1.3.3a" marker; R1.3.4 did not, although its text ("If no root resolves, raise a named exception stating ... every location tried") is exactly what the two demand raises no longer satisfy. The narrowing lives only inside R1.3.3a, and R1.3.4 is what other artifacts cite by number - `tests/test_data_root_resolution.py:87` is a docstring reading `"""R1.3.4. ..."""`. A reader arriving at R1.3.4 gets the unnarrowed contract. | Add "**NARROWED — see R1.3.3a**: applies to mechanisms 3 and 4" to R1.3.4.
+
+VERIFIED | spec/specinstallabity02.md:118-119 | The claim "R1.3.4's requirement is unchanged for mechanisms 3 and 4: when nobody named a root and none is found, the exception still lists every location tried" is TRUE of the code: the catch-all at paths.py:286-291 still appends all four entries, including "explicit argument: none passed" and "QUEBRA_DATA_ROOT: not set", and `test_when_nothing_resolves_it_raises_and_names_every_location` passes (executed). The R1.3 acceptance bullet "its message lists all four locations tried" therefore still holds unmodified.
+
+## Reviewed (slice B)
+- [x] spec/specinstallabity02.md
+
+### spec/specdatalayout03.md
+
+MINOR | spec/specdatalayout03.md:36-37 vs spec/specinstallabity02.md:107-108 | The two specs state the same new rule with two different predicates: here "a path they name **that does not exist** raises", there "names a path **that is not a directory**". The code tests `root.is_dir()`, so an existing FILE also raises - which this file's wording says it should not. Whichever spec a future reader consults first, one of them is wrong. | Use "is not a directory" here too.
+
+VERIFIED | spec/specdatalayout03.md:35-37 | The cross-reference is correct and the closed decision is re-opened explicitly rather than quietly: R1.3.3a exists at the cited location, the order and the four mechanisms are genuinely unchanged (only the miss-handling of 1 and 2 changed), and the "Do not re-open it" sentence at :32 is now scoped rather than contradicted. Both spec additions are short amendments to existing planning docs, not new unasked documents.
+
+## Reviewed (slice B)
+- [x] spec/specdatalayout03.md
+
+## Slice B verdict: DO NOT SHIP (1 CRITICAL: the shipped CLI still does the thing the commit
+## claims to have made impossible; the fix is one line in runner.py:465).
+
+### src/quebra/provenance.py
+
+VERIFIED | provenance.py:31-49 | The `_git` collapse is mechanically sound. `TimeoutExpired.__mro__` and `CalledProcessError.__mro__` both go through `SubprocessError`; `FileNotFoundError` is an `OSError`; `SubprocessError` is NOT an `OSError`, so both arms are needed and neither is redundant. MEASURED: `subprocess.run(check=True, capture_output=True, timeout=0.2)` on `sh -c 'sleep 5'` raises `TimeoutExpired` at 0.2 s and is caught by `(OSError, subprocess.SubprocessError)`. `cwd=Path.cwd()` is evaluated INSIDE the try, so the docstring's "a deleted cwd" claim is real.
+
+VERIFIED | provenance.py:63 | The empty-string case is read correctly, not as failure. `_git` returns `completed.stdout` unstripped, so a clean tree yields `""`, and `out is not None and out.strip() == ""` -> True. MEASURED end-to-end by the new test file (`test_an_untracked_file_does_not_make_the_tree_dirty`, passes). `get_git_commit`'s `(out.strip() or "nogit") if out is not None else "nogit"` handles both None and `""`.
+
+IMPORTANT | provenance.py:28-29 | The timeout's stated mechanism cannot occur for either command that routes through `_git`. "`git` can block indefinitely waiting on a credential prompt" applies to commands that contact a remote; `rev-parse --short HEAD` and `status --porcelain --untracked-files=no` are purely local and reach no credential helper. A reader who believes this will not think to check the reachable hangs (a stalled network filesystem holding the worktree, an fsmonitor daemon, a very large worktree). The rule is that a comment says why the code does what it does; this one gives a false why. | Name a reachable hang, or keep only "a provenance helper that hangs stops the run it exists to describe".
+
+IMPORTANT | provenance.py:52-53, 62-64 with core/runner.py:227,231 | "nogit" is a sentinel that MATCHES ITSELF, and this collapse newly makes `(git_commit="nogit", tree_clean=True)` a reachable, self-consistent state, which turns the commit half of the reuse gate into a tautology. MEASURED in a fresh `git init -q` directory: `git status --porcelain --untracked-files=no` exits 0 with EMPTY output (-> `is_tree_clean() is True`) while `git rev-parse --short HEAD` exits 128, "fatal: Needed a single revision" (-> `"nogit"`). Before the collapse `is_tree_clean` read `Path(__file__).parent`, so from a wheel this pair was unreachable (site-packages is not a repo -> False). Now: run twice in an unborn repo and `_reuse_eligible_dir` sees `rec_commit == git_commit == "nogit"` and `rec_tree_clean == True` -> SKIP, with zero code-version guarantee. `job_code_hash` folding the closure narrows but does not close it: any module outside the step closure (`plots/*`, every plot class) can be edited with the identity byte-identical, and the stale figure is reused. | `_reuse_eligible_dir` returns None when `git_commit == "nogit"` (or `_read_prov_reuse_fields` treats a recorded "nogit" as ineligible).
+
+IMPORTANT | provenance.py:44 | The widened except writes a provenance FALSEHOOD in a case that was previously loud. Under `(FileNotFoundError, CalledProcessError)` a `PermissionError` on the cwd propagated and there was no timeout to expire; under `(OSError, SubprocessError)` both collapse to `None` -> `get_git_commit()` returns `"nogit"`, which is then recorded as this run's `git_commit`. A run that really did happen at a real commit ships a record asserting it happened outside version control, and nothing in the record distinguishes "not a repo" from "git timed out / git not executable". In the commit whose title is "the provenance record describes the run that actually happened", that is the wrong direction. `tree_clean=False` keeps it reuse-safe, so this is a record-accuracy defect, not a wrong-artifact one. | Either keep the narrow excepts for the commit read, or record a distinct value (e.g. "git-unavailable") so the two are distinguishable in the record.
+
+MINOR | provenance.py:37 | `cwd=Path.cwd()` is the `subprocess.run` default. The only thing the explicit form buys is that `Path.cwd()` is evaluated inside the try, which is what makes the docstring's "deleted cwd" OSError path real - nothing says so, so a future reader deletes it as redundant and loses that path. | One clause on the line.
+
+MINOR | provenance.py:24-28 | The comment justifies `Path.cwd()` entirely by describing what a `__file__`-anchored helper would do, but `__file__` no longer appears anywhere in the module. It is rationale rather than chronology, so it does not break the hard rule, but the reader has no code to attach half the paragraph to. | Shorten to the invariant: both halves of the gate must describe the repository the run is happening in, which is the cwd.
+
+VERIFIED | provenance.py:88-94 (job_file_hash -> job_code_hash) | The rename breaks NO reader. MEASURED: 909 files under `output/**/provenance/` carry the old key, 0 carry the new one, and grep over `src/`, `scripts/`, `tests/`, `docs/`, `README.md`, `AGENTS.md`, `CONTRIBUTING.md` finds no reader of either key - the only consumers of a record are `_read_prov_reuse_fields` (identity, git_commit, tree_clean), `promote_run._load_records` (identity, job_file, tree_clean) and `_mermaid_graph` (dataset_*, includes, pipeline_steps, git_commit, figure_node_label). `published/` holds 0 records, so no COMMITTED audit trail carries the old name. All 909 old-key records are also already reuse-ineligible after this commit because `git_commit` moves. The rename is a clean break.
+
+MINOR | provenance.py:88-94 | Nothing in the tree states that records under `output/` written before this commit carry `job_file_hash`. Harmless today (no reader, see above), but the record format has no version field, so the next reader of an old directory has no way to learn why the key differs. | One line in the field comment, or a `record_format` key.
+
+## Reviewed (slice A)
+- [x] src/quebra/provenance.py
+
+### src/quebra/core/runner.py
+
+VERIFIED | runner.py:173-193 | `_expected_sink_pkls` derives the RIGHT set, checked against the sink loop line by line. Figure sink, `render_figures=True`: runner.py:568 writes `job_out_dir / f"{sink.input.node_id}.pkl"`. Figure sink, `render_figures=False`: runner.py:575-577 sets `prov_name = sink.input.node_id` and writes `f"{prov_name}.pkl"` - the SAME name. Materialize: runner.py:601 writes `f"{sink.name}.pkl"`. So the docstring's "mode-independent" claim holds. MEASURED over all 11 real jobs: `_expected_sink_pkls` matches the on-disk pkl set for every one (e.g. `instrument_validation` -> {instrument_validation.pkl, instrument_validation_report.pkl} for 5 sinks, correctly deduping 4 figures off one node).
+
+VERIFIED | runner.py:494-503 | The "render_figures=False run reused by a render_figures=True call, producing no PDFs" scenario is UNREACHABLE, not a regression and not pre-existing-live. `render_figures` has exactly one non-default call site, runner.py:326 (`render_figures=inc.figures`), on the nested sub-job path, and that call also passes `force=True`, so the gate is skipped there. `cli.py` never passes it (default True). And nested runs are written under `job_out_dir / "subjobs_output"`, which is not a DIRECT child of `out_dir`, so the non-recursive `out_dir.glob(...)` at runner.py:498 cannot see them. Separately, the new filter is a pure conjunction on the candidate generator, so it can only REJECT candidates the old glob accepted - it is structurally incapable of introducing a new acceptance.
+
+VERIFIED | runner.py:494-503 | The filter is also the right side of safe when it disagrees with identity. A materialize sink renamed on the same node leaves the identity unchanged (`parameter_row`/closure do not fold sink names) but changes the expected set, so the old directory is now incomplete and the job re-runs. Old behaviour reused it and served the artifact under the wrong name.
+
+IMPORTANT | runner.py:492-493 | Project chronology in a comment, the exact category the author's hard rule bans: "the standalone path used to glob on directory name alone, so a run that died mid-sink-loop stayed eligible". Same rule PATCH COMMIT 1 was pulled up on at ci.yml:19. | State it as an invariant: "a candidate must hold every pkl a finished run writes; a run that died mid-sink-loop leaves a matching provenance record and would otherwise stay eligible forever."
+
+MINOR | runner.py:181-187 | Same category, softer form: "so a run that raised on its third sink still holds a perfectly readable provenance record from its first ... without this test the gate reads a half-written run as reusable". This is a counterfactual about absent code rather than history, which is defensible, but "`run --all` makes it likely, because it catches per job and carries on" is an unverified behavioural claim about a code path in another module. | Cite it (`cli.py` line) or drop the sentence.
+
+CRITICAL | runner.py:141-158 with jobs/composite/check_ledger_q1.py:112-118 | The docstring names a live provenance-overwrite defect and then EXEMPTS the only instance of it in the repo, calling that instance "harmless". The docstring says "BOTH write `provenance/{name}.prov.json`. So a figure title and a materialize name that coincide overwrite one another's provenance record even though their artifacts do not collide" - and then "Duplicates resolving to the same source node are harmless: that is one artifact requested twice." `check_ledger_q1` declares, per dataset, a FIGURE and a MATERIALIZE with the SAME `name` off the SAME node (`q1_27h_0704_dataset_check_ledger`, and the 1004 twin), so `existing == source_id` and the check passes - yet they are NOT one artifact requested twice: they emit two DIFFERENT records to one path. The materialize is declared second, so it wins. MEASURED on a shipped run, `output/check_ledger_q1_7174d1_20260812_095729/`: the directory holds `q1_27h_0704_dataset_check_ledger_static.pdf`, `..._academic.pdf` and the 1004 pair - four rendered PDFs - while BOTH surviving records say `targets_rendered = []` and `figure_node_label = None`. The provenance record does not describe the run that actually happened, which is this commit's title. | Key on `sink.name` for COLLISION (as done) but reject same-name duplicates whose PROV CONTENT differs - i.e. treat a figure and a materialize sharing a name as a collision regardless of source node - or give the figure record a distinct prov name. Also correct the "harmless" sentence.
+
+IMPORTANT | runner.py:141-171 | This change turns a check that was structurally dead for figures (`x != x`) into one that can now `raise ValueError` at run start for any figure sink, and there is NO test for it anywhere: grep over `tests/` for `_check_sink_artifact_names` and for the message "artifact name collision" returns nothing. A slice that ships a new test file for the other two changes leaves the one newly-live rejection path untested, and a false positive here aborts `run --all` at job import. I did the falsification by hand - MEASURED: all 11 jobs under `jobs/` pass the new check, and the only verdict that changed is the correct one (two figures off DIFFERENT nodes with the same name: previously keyed on `node_id`, so two distinct keys and NO error; now one key, two sources, rejected). Two figures off the SAME node with different names is unchanged (allowed) under both keyings. | Add two tests: different-nodes-same-name rejects, same-node-different-names passes.
+
+MINOR | runner.py:167-169 | The error message lost the information that made it actionable. It was "'{basename}.pkl' would be written for two different nodes"; it is now "'{sink.name}' would be written for two different nodes" - a bare name with no indication of WHAT would be written, when the whole point of the new keying is that one name spans a `.pkl`, `{name}_{target}.pdf` files and a `.prov.json`. | "'{sink.name}' names the artifacts and provenance record of two different nodes (...)".
+
+MINOR | runner.py:153-155 | The `_safe_name` claim is accurate but incomplete, and the omission makes the collision LESS visible than it is. `_safe_name` (job.py:201-204) also `.strip("_")` and falls back to `"node"`, so beyond `"a b"`/`"a_b"` it also collapses `"_a_b_"` and maps `""`, `"***"`, `"---"`... to a shared literal `"node"`. Confirmed applied at both constructors (job.py:440, 450), so `sink.name` really is pre-sanitised as claimed. | Mention the strip and the `"node"` fallback.
+
+MINOR | runner.py:494-503 vs :263-292 | The commit's stated invariant ("a candidate must be COMPLETE") is applied only to the standalone gate. `_cached_runs` still filters on the single `{node_name}.pkl` it needs, so a composite under `--reuse-deps` will happily reuse the one artifact it wants out of a directory left by a run that died on a LATER sink. That is content-correct for the artifact requested and I am not asking for a change, but the comment at runner.py:492 asserts the composite path "already filters this way", which conflates "requires the artifact it needs" with "requires the run to have finished". | Say which of the two the composite path checks.
+
+## Reviewed (slice A)
+- [x] src/quebra/core/runner.py
+
+### src/quebra/core/job.py
+
+VERIFIED | job.py:218,222,240-251,299 | Rename is complete and internally consistent: `_code_hash` -> `_job_code_hash` (3 sites), `code_hash` -> `job_code_hash` (def + 1 internal caller at :299 + error message at :242). Grep over `src/`, `scripts/`, `tests/`, `jobs/` finds no surviving `\.code_hash\(` or `_code_hash`. Memoisation semantics unchanged; the rewritten docstring's three-item list matches the three `parts` contributions at :243, :249, :250 exactly.
+
+VERIFIED | job.py:222-234 | The docstring edit is the correct handling of the chronology rule: "Before SPEC 0005 R5.1 this hashed only the file" became "The job file alone WOULD NOT BE the code that produced the result", and "R5.1.7:" was dropped from the inline comment at what is now :249-250. This is the pattern the other two docstrings in the slice should have followed.
+
+MINOR | job.py:222 | "Named for the three things it folds" is a name-justifies-itself claim that the name does not actually carry: `job_code_hash` says "code hash of the job", which covers items 1 and 2 but says nothing about item 3 (the step arguments). The old name's problem was `file`; the new name is better but the docstring oversells it. | "The identity's `code` contribution. It folds three things:".
+
+## Reviewed (slice A)
+- [x] src/quebra/core/job.py
+
+### src/quebra/core/closure.py
+
+NOTE | scope | This file carries a SEVENTH substantive change not in the six-item brief: `_module_digest` switches from `__import__` to `importlib.util.find_spec`. Reviewed here.
+
+VERIFIED | closure.py:167-178 | The switch achieves its stated goal for the heavy dependencies. MEASURED on a cold interpreter: `importlib.util.find_spec("quebra.analyzers.checks.c1_lewis_robinson")` returns `origin` = that file and leaves `scipy`, `sklearn` and `matplotlib` all unloaded. Error handling is not a silent fallback - `(ImportError, AttributeError, ValueError)` is re-raised as a named `ValueError` with the module name, and `spec is None` falls into the existing "no source file to hash" raise.
+
+IMPORTANT | closure.py:161-172 | "Located rather than imported" is false for ancestor packages, and the docstring's own failure argument therefore still applies. MEASURED, same run as above: `find_spec` on that leaf newly imported `quebra`, `quebra.analyzers`, `quebra.analyzers.checks`, `quebra.analyzers.checks.result` AND `numpy` (159 modules total) - because `find_spec` must import each ancestor to read its `__path__`, and `quebra/analyzers/checks/__init__.py` re-exports from `.result`. So the claim "a module-scope failure in a reachable-but-unused module would surface as a failure of IDENTITY COMPUTATION" is still true for any ancestor package, and the property is not structural: it holds only while every `quebra` package `__init__.py` stays trivial (two of the four non-empty ones already are not: `analyzers/checks` imports `result`, `_fixtures` is 2 kB). | Say "the leaf module is located rather than imported; its ancestor packages are still imported, so package `__init__.py` files must stay import-light", and consider an import-weight test on the package inits.
+
+MINOR | closure.py:161-172 | The docstring names sklearn/scipy/plotting as what importing would pull, which is a measured-shaped claim with no locator. It is directionally right (verified above that they are avoided) but the reader cannot check it. | Name the module that does it, e.g. "sklearn via `analyzers/tlf.py`".
+
+MINOR | closure.py:68-69 | The replacement comment drops a specific measured number ("81 modules in ~80 ms cold") for a vague one ("tens of milliseconds cold"). Dropping a number that can go stale is the right instinct, but "tens of milliseconds" is still a measurement with no source and no way to check it. | Either drop the cost claim entirely or cite how it was measured.
+
+MINOR | closure.py:174-176 | Newly reachable hard failure that the old code could not produce: `find_spec` raises `ValueError` when a name is already in `sys.modules` with `__spec__ is None`, and the handler converts that to "could not be located to hash". Not reachable for real `quebra.*` modules (grimp only yields importable ones), so this is a note, not a defect - but the message will be misleading if it ever fires, because the module WAS located, it just has no spec. | Distinguish the ValueError arm in the message.
+
+## Reviewed (slice A)
+- [x] src/quebra/core/closure.py
+
+### scripts/promote_run.py
+
+VERIFIED | promote_run.py:90-105 | The new check CANNOT reject a legitimate run, checked both ways. (a) Within one run, `_emit_prov` is called from exactly two sites (runner.py:583, 606) and both pass the same `identity` and `git_commit` locals computed once at runner.py:466-468, so every record of one run agrees by construction. (b) A composite's nested sub-job records land in `job_out_dir / "subjobs_output" / <subjob-dir> / "provenance"`, and `_load_records` globs `run_dir / "provenance" / "*.prov.json"` NON-recursively, so nested records are never in the set being compared. Confirmed on disk: `output/check_ledger_q1_7174d1_20260812_095729/provenance/` holds only the composite's own 2 records, with `subjobs_output/` beside it. The all-records-missing-`identity` case degrades correctly: `{None}` has len 1, passes, and the existing `or ""` at :107 handles it.
+
+MINOR | promote_run.py:96-98 | "so it checks the stronger thing it can see" is backwards. Mutual consistency of the records present is strictly WEAKER than verifying every sink ran: a directory holding one record of a five-sink run passes this check trivially. The sentence tells a reader the promotion gate is stronger than it is. | "so it checks the only thing it can see from here: that the records present are mutually consistent."
+
+MINOR | promote_run.py:90-91 | The comment says records of one run share "the same identity, commit and tree state" and the loop then checks two of the three. `tree_clean` disagreement is mostly caught by the `dirty` check above, but not under `--allow-dirty`, where a mixed directory promotes silently. | Add `tree_clean` to the tuple, or drop it from the sentence.
+
+MINOR | promote_run.py:90-93 | The check does not catch the most likely way a directory acquires two runs' records: `job_out_dir` is created with `mkdir(exist_ok=True)` on a name keyed by `{job.name}_{identity_short}_{timestamp}` at one-second resolution, so two runs of the SAME identity in the same second merge into one directory - and they agree on identity and commit, so this passes. The comment's stated coverage ("records from two runs have been merged") is therefore partial. | Note that same-identity merges are invisible here; the timestamp collision is the real hole.
+
+## Reviewed (slice A)
+- [x] scripts/promote_run.py
+
+### runner.py addenda (found while checking targets.py naming)
+
+MINOR | runner.py:144-147 | The namespace enumeration that the whole collision argument rests on is incomplete and one entry is wrong. Checked against `plots/targets.py`: `render_static` -> `{name}_static.pdf`, `render_academic` -> `{name}_academic.pdf`, `render_poster` -> `{name}_poster.png` (NOT `.pdf`), `render_interactive` -> `{name}.html` with NO target suffix. So the docstring's "a figure renders `{name}_{target}.pdf`" misses `.png` and misses the one filename that collides between two same-named figures regardless of their target lists. | "a figure renders `{name}_{target}.pdf`/`.png` and `{name}.html`".
+
+MINOR | runner.py:149-151 | "Keying a figure on its SOURCE NODE instead cannot detect this: ... the mismatch test is `x != x` and the check is inert for every figure." This is a description of the implementation being replaced. It is phrased as an alternative design rather than as history, which is the defensible form, but it is the third comment in this slice whose subject is the previous code. | Keep; if the rule is applied strictly, compress to "keying a figure on its source node makes the mismatch test `x != x`".
+
+### tests/test_reuse_completeness.py (NEW)
+
+CRITICAL | tests/test_reuse_completeness.py:159 | The test is FLAKY and fails with a message that asserts the opposite of the truth. It asserts `(run_dirs[0] / "two.pkl").is_file()` - i.e. that the re-run wrote back into the FIRST run's directory - which only holds if both `run_job` calls land in the same wall-clock SECOND, because `job_out_dir` is `f"{job.name}_{identity_short}_{timestamp}"` at one-second resolution (runner.py:513). Cross a second boundary and the re-run correctly creates a SECOND directory, correctly produces `two.pkl` there, and the assertion fails saying "the partial run was treated as reusable and the job was skipped" - blaming the gate for behaving right. REPRODUCED deterministically: sleeping to the next second between the two calls gives dirs `[twosink_e29ff0_20260902_141126, twosink_e29ff0_20260902_141127]`, `run_dirs[0]/two.pkl` -> False, `two.pkl` present at `twosink_e29ff0_.._141127/two.pkl`. MEASURED window: t0->t2 is 15.2 ms mean over 20 iterations, so ~1.5% failure rate per run on this machine, higher on a loaded CI runner. The comment at :156-158 identifies the same-second behaviour and then relies on it instead of defending against it. | Assert on the artifact anywhere in the pool: `assert list(out.glob("twosink_*/two.pkl"))`. That is still a positive control (with the filter removed nothing is produced at all) and is timestamp-independent.
+
+IMPORTANT | tests/test_reuse_completeness.py:1-18, 139 | The module docstring is written almost entirely as project chronology, the category the author's hard rule bans, and it is the largest single block of it in the slice. "Both of these guard defects that survived because nothing exercised them"; "It read `Path(__file__).parent` while its partner `get_git_commit` read `Path.cwd()`"; "It happened to work in this checkout because..."; "The standalone reuse gate globbed on directory name alone"; ":139 Before the filter this was indistinguishable from a finished run." All past tense about the implementation being replaced. | Restate as the invariants under test: both git helpers must describe the repository the run is happening in; a candidate run must hold every pkl a finished run writes. The "Oracle for both" paragraph at :16-17 is already in the right form and is the model.
+
+IMPORTANT | tests/test_reuse_completeness.py:129-131 | The only test of `_expected_sink_pkls` uses a job with TWO MATERIALIZE SINKS AND NO FIGURE, so the figure branch - the one with the documented subtlety, and the only one whose correctness is non-obvious - is untested. `_expected_sink_pkls`'s docstring makes a specific claim ("a figure sink persists its input under the SOURCE NODE's id whether or not a PDF is rendered") that no test in the repo exercises. Regression direction is safe-but-silent: if the figure branch drifted to `sink.name`, the expected pkl would never exist and the job would re-run on every invocation forever, with no test failing and no message. | Add a figure sink to `_two_sink_job` (or a third job) and assert `{node_id}.pkl` is expected, under both `render_figures` values.
+
+MINOR | tests/test_reuse_completeness.py:43-54 | `tiny_repo` is exposed to the developer's GLOBAL git config in ways that will fail a clean CI runner, and the fixture's own `_git` helper (:33-40) has `capture_output=True` and NO timeout, so a config that prompts hangs the suite silently rather than failing. `user.email`/`user.name` are correctly set locally, so those are covered - the uncovered ones are `commit.gpgsign=true` (fails, or blocks on a passphrase agent), `core.hooksPath` / `init.templateDir` pointing at hooks that run on commit. Verified none are set on THIS machine (`git config --get` on all three returns nothing), so it passes here and will pass on a bare runner; the risk is a contributor with a signing setup. `git init -q` without `--initial-branch` is NOT a portability risk: git 2.51 prints the `init.defaultBranch` hint to stderr, which is captured, exits 0, and no test reads the branch name. | `_git(repo, "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-qm", "initial")`, and a `timeout=` on the fixture's `_git`.
+
+MINOR | tests/test_reuse_completeness.py:179 | `assert "Skipping twosink" in capsys.readouterr().out` couples the negative control to a `print` string in `run_job` (runner.py:506). Rewording that message turns this into a failure that reads "a complete run was not reused; the completeness filter is too strict" when nothing about the filter changed. Acceptable given the same-second constraint the docstring explains, but a structural oracle exists. | Prefer asserting `_reuse_eligible_dir(...) is not None`, or that the run-dir mtime did not change; or at minimum import the message from one place.
+
+VERIFIED | tests/test_reuse_completeness.py | 7 passed in 0.82 s. `test_outside_a_repository_reports_nogit_and_dirty` and `test_a_dirty_tracked_file_makes_the_tree_dirty` both fail if `_git` stops returning None on error or if `is_tree_clean` stops treating None as dirty, so those are real. `test_both_git_helpers_describe_the_cwd_repository` fails if either helper is re-anchored on `__file__` (a temp repo is not the package's repo), so it is a genuine pin on the change.
+
+## Reviewed (slice A)
+- [x] tests/test_reuse_completeness.py
+
+### tests/test_identity_closure.py
+
+VERIFIED | test_identity_closure.py:1-11, 148 | Correct on both counts: the rename reaches the only two call sites, and the docstring is the ONE place in this slice where the chronology rule was applied properly - "SPEC 0005 R5.1. Before this, `code_hash` was..." became the counterfactual "`job_code_hash` over the job file alone WOULD leave...", and "the blast radius the plan warned about" became "an unacceptable blast radius". No spec number, no phase reference, no past tense. Nothing else in the file references the old name.
+
+## Reviewed (slice A)
+- [x] tests/test_identity_closure.py
+
+### tests/test_shape_stats.py
+
+IMPORTANT | tests/test_shape_stats.py:1-8 | The docstring's justification for the file's existence is now FALSE in the shipped state, and this diff rewrote the sentence rather than fixing it. It reads "with `Job.job_code_hash` covering only the job file, an analyzer edit left the run identity byte-identical ... Without this file the shape statistics could be changed with no signal anywhere in the repo." MEASURED: `quebra.analyzers.shape_stats` IS in the code closure of the jobs that use it - `code_closure` for `jobs/composite/independence_survey.py` returns 52 modules including `quebra.analyzers.shape_stats`, and for `jobs/active/instrument_validation.py` 23 modules, also including it. So editing that analyzer now DOES move `job_code_hash`, the identity, and the run directory name: there IS a signal, and it is the very mechanism the commit next door is about. The docstring also keeps the past-tense chronology the hard rule bans ("Written BEFORE...", "at the time", "left", "kept loading"). | State what is actually load-bearing now: the identity says the numbers CHANGED, it cannot say they are RIGHT; these tests are the only thing pinning the eq (8) values themselves. And drop the tense.
+
+## Reviewed (slice A)
+- [x] tests/test_shape_stats.py
+
+### Cross-cutting / omissions
+
+IMPORTANT | omission | The `job_file_hash` -> `job_code_hash` rename is not complete across the tree: `spec/specidentity05.md:39` and `:282` still name `Job.code_hash`, and that file is NOT among the modified files, so the rename leaves two dangling references in a document the repo treats as the authority for this mechanism. (Called out only as rename completeness - `spec/*.md` is excluded from this slice's review.) | Rename in the spec in the same commit, or note the alias.
+
+VERIFIED | omission check | `_expected_sink_pkls`'s guarantee for the composite/`--reuse-deps` path was checked and needs nothing: nested runs are written to `subjobs_dir` and always with `force=True`, and `_cached_runs` (runner.py:263-292) applies its own artifact-existence filter. No third call site of the gate exists.
+
+VERIFIED | measured-claim audit | Every measured claim in the added comments was checked. The only false ones are provenance.py:28-29 (credential prompt), closure.py:161-172 ("located rather than imported"), closure.py:68-69 ("tens of milliseconds", unsourced), runner.py:145 (`{name}_{target}.pdf` only), runner.py:157-158 ("harmless"), promote_run.py:97 ("stronger"), and test_shape_stats.py:1-8. All filed above.
+
+MINOR | evidence for the "nogit" finding above | The exposure the commit+clean-tree gate is the ONLY defence for is real and measured: `jobs/active/instrument_validation.py` declares 4 figures whose plot classes all live in `quebra.plots.instrument_validation_plot`, and that module is NOT in the job's 23-module code closure (checked directly: `in closure? False` for all four). `job.figure(PlotClass, ...)` passes a class, not a step function, so the plot module is never seeded. Editing it changes every shipped PDF with the identity byte-identical. That is why "nogit" == "nogit" defeating the commit half of the gate matters.
+
+VERIFIED | gates | `pytest tests/test_promote_run.py tests/test_reuse_gate.py tests/test_identity_closure.py tests/test_nesting.py -q` -> 45 passed. In particular no existing promote fixture writes a run directory with disagreeing `identity`/`git_commit`, so the new promote check does not break the existing suite. `pytest tests/test_reuse_completeness.py -q` -> 7 passed.
+
+SLICE A VERDICT: DO NOT SHIP (2 blockers: runner.py:141-158 prov-record overwrite exempted by the same-node carve-out, MEASURED on a shipped run; test_reuse_completeness.py:159 flaky assertion, reproduced).
+
+--- PATCH COMMIT 3 of 4 — BEHAVIOUR, appended 2026-09-02 ---
+
+SCOPE: src/quebra/transforms/interpolate.py, src/quebra/transforms/filter.py,
+src/quebra/analyzers/within_calibration_compute.py, src/quebra/analyzers/checks/_multiprocess.py,
+src/quebra/analyzers/tlf.py, src/quebra/analyzers/instrument_validation.py,
+src/quebra/plots/tlf_plot.py, src/quebra/recipes.py, jobs/active/instrument_validation.py,
+tests/test_tier3_calibration.py, tests/test_instrument_validation.py, docs/JOBS.md (generated check only)
+COMMIT: c0056f4 (working tree, uncommitted)
+
+## Manifest (patch 3)
+- [ ] src/quebra/transforms/interpolate.py  (+133/-?)
+- [ ] src/quebra/transforms/filter.py  (+70)
+- [ ] src/quebra/analyzers/within_calibration_compute.py  (+26)
+- [ ] src/quebra/analyzers/checks/_multiprocess.py  (+19)
+- [ ] src/quebra/analyzers/tlf.py  (+44)
+- [ ] src/quebra/recipes.py  (+12)
+- [ ] src/quebra/plots/tlf_plot.py  (+51)
+- [ ] src/quebra/analyzers/instrument_validation.py  (+49)
+- [ ] jobs/active/instrument_validation.py  (+4)
+- [ ] tests/test_tier3_calibration.py  (+56)
+- [ ] tests/test_instrument_validation.py  (+4)
+- [ ] docs/JOBS.md  (generated)
+
+## Reviewed (patch 3)
+
+## Findings (patch 3)
+
+--- PATCH COMMIT 3 of 4 — PROSE (comments/docstrings only), appended 2026-09-02 ---
+
+SCOPE: prose (comments, docstrings, markdown) in the added/changed lines of:
+src/quebra/transforms/interpolate.py, src/quebra/transforms/filter.py,
+src/quebra/analyzers/within_calibration_compute.py, src/quebra/analyzers/checks/_multiprocess.py,
+src/quebra/analyzers/tlf.py, src/quebra/analyzers/instrument_validation.py,
+src/quebra/plots/tlf_plot.py, src/quebra/recipes.py, jobs/active/instrument_validation.py,
+tests/test_tier3_calibration.py, tests/test_instrument_validation.py, docs/JOBS.md
+COMMIT: c0056f4 (working tree, uncommitted)
+NOTE: working tree is being edited concurrently - interpolate.py gained a paragraph between
+my `git diff` and my `sed` of the same file. All findings below are against the CURRENT file
+contents (what would ship), not against the diff text I first read.
+
+## Manifest (prose)
+- [ ] src/quebra/transforms/interpolate.py
+- [x] src/quebra/transforms/filter.py MOVED-TO-REVIEWED
+- [ ] src/quebra/analyzers/within_calibration_compute.py
+- [ ] src/quebra/analyzers/checks/_multiprocess.py
+- [ ] src/quebra/analyzers/tlf.py
+- [ ] src/quebra/analyzers/instrument_validation.py
+- [ ] src/quebra/plots/tlf_plot.py
+- [ ] src/quebra/recipes.py
+- [ ] jobs/active/instrument_validation.py
+- [ ] tests/test_tier3_calibration.py
+- [ ] tests/test_instrument_validation.py
+- [ ] docs/JOBS.md
+
+## Reviewed (prose)
+- [x] src/quebra/transforms/interpolate.py
+
+## Findings (prose)
+
+### src/quebra/transforms/interpolate.py
+
+MUST FIX | interpolate.py:83-85 | `run` docstring invariant 2 - "no value on the grid was invented to stand in for one the instrument did not produce" - is FALSE as written, and the module's own meta contradicts it: `n_interpolated_points` / `pct_interpolated_points` count exactly the grid values that stand in for reads the instrument did not produce at that time. Interpolation invents values by design; the distinction meant is fabricated-zero vs interpolated. Also "enforced rather than assumed" overclaims - nothing asserts either invariant on the way out, they hold by construction. | Replace all three lines with: "Row-aligned columns come out at the grid length. Reads whose value did not fit are dropped before the pchip, never zero-filled."
+
+SHOULD FIX | interpolate.py:54-55 | "Dropping the pair instead bridges the gap from the real neighbours either side, which is interpolation doing what it says." - contradicted by the paragraph directly under it (a dropped leading/trailing value has no neighbour either side, and the code NaNs those grid points), and "which is interpolation doing what it says" is rhetorical filler. Para 3 subsumes it. | Delete both lines.
+
+SHOULD FIX | interpolate.py:45-60 | 15-line, four-paragraph docstring on a 15-line function; the mechanism is stated in the summary and again twice in the body. Caps-for-emphasis three times (FINITE, THROUGH, plus RAISE at :197). | Keep the summary, one sentence of para 1, and para 3 trimmed: `"""pchip through the finite (t, value) pairs only, plus the count dropped.` / `Zero-filling instead would put a real, wrong measurement on the grid - for a detuning, exactly 0 Hz - and pchip passes through its data, so it would drag the neighbours too.` / `Grid points outside the finite support are NaN, not extrapolated: dropping a leading or trailing value shortens the support while the grid still spans the original interval."""` Drops ~7 lines.
+
+SHOULD FIX | interpolate.py:114-115 | "a non-finite timestamp sorts last, so it becomes `t_rel_s[-1]`" is true only for NaN; `-inf` sorts FIRST under `np.argsort`, becomes `t_rel_s[0]`, and breaks the grid through the `t_rel_s - t_rel_s[0]` shift instead. Claim FALSE for half the values the guard rejects. Sentence 1 also duplicates the raise message two lines below ("The time axis has to be real before anything can be resampled onto it"). | Replace both lines with: `# A NaN timestamp sorts last and becomes t_rel_s[-1]; an infinite one survives the shift. Either way the whole uniform grid is unusable, and the time axis has no interpolation to fall back on.`
+
+SHOULD FIX | interpolate.py:197-200 | "would leave it at the input length ... nothing downstream can detect because the lengths still look plausible" - FALSE. `x_uniform = np.linspace(..., num=len(t_rel_s))`, so the grid length EQUALS the input length by construction; there is no length discrepancy to look plausible, only a sampling one. "failure must RAISE" also describes the removed blanket `except`, not the code present. | Replace with: `# Row-aligned from here. Passing the array through unresampled would keep the input sampling at the grid length - a column misaligned against its own time axis, at a length nothing downstream can use to detect it.`
+
+OPTIONAL | interpolate.py:191-192 | "scalars, lookup tables, per-dataset annotations" is a rhythm triad of speculative examples, and "Passed through untouched" restates the two lines of code under it. | Keep only: `# Not row-aligned with the time axis, so there is nothing to resample.`
+
+OPTIONAL | interpolate.py:186-187 | "There is no time axis to resample it against" is the wrong reason - the time axis exists; what is missing is an array. | Keep only: `# Not array-shaped at all - ragged, or an object numpy cannot box.`
+
+OPTIONAL | interpolate.py:217-219 | "Recorded rather than printed: a step is pure compute, and this belongs in the artifact a reader audits, not in a log line nobody keeps" narrates the removal of the `print` and restates a project rule; only the absent-key semantics is load-bearing. | Keep: `# Which columns lost reads to failed fits, and how many. Absent, nothing was dropped.`
+
+OPTIONAL | interpolate.py:131-133 | Three lines where one does; "matching `rabi_hz`" is visible in the branch immediately above. | Keep: `# Raises rather than dropping the column: a missing key reads downstream as "this dataset has no raw frequency", not "its length was wrong".`
+
+MINOR | interpolate.py:48 vs :217 | Vocabulary drift inside new prose: "at that read" (:48) vs "lost points" (:217) for the same thing. `read` is on the fixed list. | Say "read" in both.
+
+VERIFIED | interpolate.py:51-52 | "Downstream finite-mask guards cannot reject any of it" - the guards exist (windows.py:371, shape_stats.py:116, t2star.py:81, filter.py:193). Claim true.
+VERIFIED | interpolate.py:57-60 | NaN-outside-support paragraph matches the `outside` mask in the code, and pchip_interpolate does extrapolate by default.
+
+### src/quebra/transforms/filter.py  [reviewed]
+
+MUST FIX | filter.py:11-13 | "Named explicitly because the length test alone cannot tell them apart: a lookup table can coincidentally match the mask length, and a row-aligned column can coincidentally not." - the first hazard is NOT addressed by the code. The set is consulted only in the `elif`; a lookup table whose length happens to match the mask is still filtered, in the set or out of it. The comment credits the frozenset with a guarantee it does not provide. | Cut to two lines: `# Columns that are one value per read by definition. Consulted only to turn a length that` / `# disagrees with the mask into a raise instead of a silent pass-through.`
+
+SHOULD FIX | filter.py:191-192 | `raises "cannot run on an empty dataset"` is not a verbatim string anywhere in the repo. The real strings are `"Cannot run filter on empty dataset."` (filter.py:115) and `"Cannot run T2* analysis on empty dataset."` (t2star.py:77); the comment quotes a composite of the two. A quoted error message must match the artifact it cites. | Drop the quotation: `...the mask all-False, and the dataset empty by the time an analyzer complains about something else.`
+
+SHOULD FIX | filter.py:206-209 | Four lines explaining IEEE NaN comparison rather than the code. The load-bearing content is that the term is redundant now and defends a future rewrite. | Keep two: `# Redundant today - each NaN comparison is already False - but it states the intent, and it` / `# survives the bounds being rewritten as a negation, which would invert the NaN case.`
+
+SHOULD FIX | filter.py:44-47 | "nothing detects it: the lengths still look plausible and the values are all real" - the stated reason is wrong for this function. If a row-aligned column is left unfiltered while `t_rel_s` is masked, its length visibly DIFFERS from `t_rel_s`; the hazard is that no consumer raises on it (interpolate.py:191 silently treats a length mismatch as not-row-aligned), not that the lengths look plausible. | `A row-aligned column left at full length is index-misaligned against `t_rel_s` for every step downstream, and no consumer raises on it - interpolate treats a length mismatch as simply not row-aligned.`
+
+OPTIONAL | filter.py:49-50 | "scalars, lookup tables, per-dataset annotations" is the same speculative rhythm triad used at interpolate.py:191; "There is nothing to filter in them" restates the clause before it. | `Columns that are not row-aligned are left untouched.`
+
+OPTIONAL | filter.py:42-51 | 10-line docstring on a 25-line function that the summary line already describes accurately. With the two trims above it is summary + 2 lines. | Net delete ~5 lines.
+
+MINOR | interpolate.py:217-218 vs filter.py:118,222-225 | The justification written in interpolate.py - "Recorded rather than printed: a step is pure compute" - is contradicted by its sibling in the same commit: filter.py, also a transform step, keeps two `print` calls. The asserted rule is not true of the shipped state. | Either drop the rule from the interpolate comment or the prints are a code finding for the correctness reviewer.
+
+VERIFIED | filter.py:202-203 | "Every finite value identical: no outlier is definable, so keep them and drop only the non-finite reads" matches `mask = finite`. Short, correct, keep as is - the best comment in the file.
+VERIFIED | filter.py:189-190 | np.mean/np.std do propagate NaN; filter's own empty guard is on input only (:113), so an all-False mask does return an empty Norm. Substance of the claim is right; only the quoted string is wrong.
+
+### interpolate.py
+
+VERIFIED | interpolate.py:39-75 | Change 1, the numerics. pchip's node derivative is Fritsch-Carlson, a function of the two adjacent intervals only, so dropping one node perturbs the interpolant on at most the 4 intervals around it and nothing further. Measured: 20 nodes, drop index 10, max |full-reduced| away from index 10 is exactly 0.0. Interpolating from reduced support is the right operation and does NOT move values far from the dropped read.
+
+VERIFIED | interpolate.py:71-74 | Change 1, ends. First/last non-finite does NOT extrapolate: `outside` NaNs the grid beyond `t_support`. Measured: delta_hz with index 0 and -1 NaN returns `[nan, 1..8, nan]`.
+
+IMPORTANT | interpolate.py:209-214 | `_real_vs_interpolated_counts(t_rel_s, out["t_rel_s"])` is still passed the FULL input time axis, not the per-column finite support, so `pct_real_points` counts a grid point as "real" when the read at that timestamp was dropped as non-finite and its grid value was in fact interpolated - or is NaN. Measured: 10 reads, delta_hz[4]=NaN -> `pct_real_points=100.0`, `n_nonfinite_dropped={'delta_hz':1}`; both ends NaN -> `pct_real_points=100.0` with two NaN grid points that are neither real nor interpolated. `plots/interpolation_stage_plot.py:132` annotates that number onto a published figure. | Compute the counts against the delta_hz support (`t_rel_s[np.isfinite(delta_hz_sorted)]`), or subtract the dropped count from `n_real`.
+
+MINOR | interpolate.py:69-70 | Change 2 regression: a row-aligned 2-D numeric column now raises `IndexError: too many indices for array` (`t_rel_s[finite]` with a 2-D `finite`). The old code resampled it correctly - `pchip_interpolate` broadcasts y along axis 0. Measured with a (6,2) column. Not reachable today (NullSchema refuses duplicate labels precisely to keep everything 1-D, RamseySeriesSchema emits only 1-D), but the raise the diff advertises is a ValueError and this is an unhandled IndexError from a private helper. | Guard `values.ndim != 1` in `_interpolate_finite` with a message, or mask along axis 0.
+
+MINOR | interpolate.py:64-68 | Change 2, reachability of the new raise. The only row-aligned columns any shipped schema emits are `chi_squared`, `T2star_s`, `T2star_error_s` (ramsey_series.py:136-146, built with `errors="coerce"`, so NaN-capable). A dataset where one of those columns is present but entirely unparseable used to yield an all-zero resampled column; it now raises `cannot interpolate 'T2star_error_s': 0 finite value(s)`. For `track912Schema` the `dropna(subset=...)` at track912.py:79 makes it unreachable; for a bare `RamseySeriesSchema` load it is reachable. The raise is the right call, but this is a load path that used to succeed and now does not. | None needed; note it in the commit message.
+
+MINOR | interpolate.py:128-134 | Change 3, `raw_frequency_hz` length raise. Nothing relied on the drop: the only producer is `ramsey_series.py:130`, which sets it to `f_hz`, the same masked-and-sorted array as `t_rel_s`, so the lengths cannot disagree. The old `len(...) == len(order)` was dead in every shipped path. `filter.py:15` lists it in `_ROW_ALIGNED_KEYS` and `fidelity.py:102` re-checks the length itself, so no consumer wanted the silent drop. Guard is correct but currently unfirable.
+
+MINOR | interpolate.py:112-119 | Change 3, non-finite `t_rel_s` raise. Also unreachable from any shipped path: `ramsey_series.py:52-55` masks on `np.isfinite(timestamp) & np.isfinite(frequency)` before building `t_rel_s`. Correct as a contract check; it is a claim, not a live check.
+
+MINOR | interpolate.py (whole file) | None of change 1/2/3 has a test. `tests/` has no unit test for `interpolate.run` at all (only `test_windows_not_interpolated.py`, which asserts DAG shape, and `test_load_dataset_contract.py`). The NaN-drop, the NaN-edge and `meta["n_nonfinite_dropped"]` are all unpinned, so a future revert to `nan_to_num` passes `make check`. | Add three asserts: dropped interior read bridges from neighbours, leading/trailing NaN stays NaN, `n_nonfinite_dropped` counts.
+
+VERIFIED | interpolate.py:215-221 | Removing the `print` is the everything-is-a-step rule applied correctly (no I/O in a step) and the information is not lost - it moves to `meta`. `filter.py:144,153` still print, which is a pre-existing violation this diff did not touch.
+
+## Reviewed (patch 3)
+- [x] src/quebra/transforms/interpolate.py
+
+### filter.py
+
+IMPORTANT | filter.py:14-16 | Change 4: `_ROW_ALIGNED_KEYS` is INCOMPLETE and carries one dead entry. Missing, all one-value-per-read and all emitted by shipped code: `chi_squared`, `T2star_s`, `T2star_error_s` (ramsey_series.py:136-146) and `qubit_frequency_hz` (lookup_prior.py:133-135, injected by jobs/active/ramsey_q1_100423.py:48 in the same call that injects `rabi_hz`, which IS in the set). Dead: `t_unix_s` is not a Norm key any producer in src/ or jobs/ writes - it exists only as a field on `types.Measurement`. So the guard omits exactly the columns that arrive through the NaN-capable `errors="coerce"` path and includes one that cannot occur. | Add the four; drop `t_unix_s` or point it at a producer.
+
+IMPORTANT | filter.py:10-13,67-76 | Change 4: the stated reason for a named set over the length test - "a lookup table can coincidentally match the mask length" - is not what the code does. Line 67 still masks ANY column whose length equals the mask, named or not, so a coincidentally-matching lookup table is still silently sliced. The set only converts silent-passthrough into a raise for the five named keys; it buys nothing for the first hazard. Behaviourally that is fine, but the guard is half of what it claims, and the half it does not do is the one that corrupts values rather than merely misaligning them. | Either drop the first clause of the justification, or add the reciprocal check (a NON-row-aligned key whose length coincidentally matches must not be masked - which needs a positive declaration, i.e. the set inverted).
+
+MINOR | filter.py:57-64 | New raise: `np.asarray(value)` failure is now fatal where it used to `continue`. `interpolate.py:181-187`, changed in the same diff, takes the OPPOSITE decision for the identical input class (ragged/unboxable -> pass through like a scalar). Since filter runs before interpolate in `configure_ramsey_job`, interpolate's branch is dead in every shipped DAG. Two transforms disagreeing on the same input is a contract split. | Pick one. Raising in both is the stricter and more defensible half.
+
+MINOR | filter.py:194-199 | Change 5: the new all-non-finite raise also fires for an EMPTY `delta_hz` (`np.any(np.zeros(0,bool))` is False), which is reachable when the chi stage removes every read (threshold 0.8 on normalised chi-square). The message then reads "0 read(s), all non-finite", which mis-describes an empty stage. Behaviour is still an improvement over the old path (NaN mu/sigma -> all-False mask -> a downstream "cannot run on an empty dataset"), but the diagnosis is wrong. | `if delta_hz.size == 0: raise ValueError("the sigma stage received 0 reads; an earlier stage removed them all")` before the finite test.
+
+VERIFIED | filter.py:200-203 | Change 5, `sigma == 0.0` -> `finite`. Not a silent row-count change on any real dataset: `sigma == 0.0` requires every finite `delta_hz` identical, and `delta_hz` is built at ramsey_series.py:126 as `f_hz - mean(f_hz)` from an array already masked to finite (ramsey_series.py:52-55), so `finite` is all-True and `mask = finite` is identical to the old `np.ones(...)`. The only other reachable case is a single surviving read, where `np.std` is 0.0 and both old and new keep it. The change is correct and inert.
+
+MINOR | filter.py:186-213 | Change 5 as a whole is unfirable on shipped data for the same reason: `delta_hz` cannot be non-finite downstream of `RamseySeriesSchema`. The `finite &` in the mask, the all-non-finite raise, and the `sigma == 0.0` branch are all contract checks against a norm no in-repo schema produces. Correct, but claims rather than live checks.
+
+MINOR | filter.py (whole file) | `tests/` contains no test that imports `quebra.transforms.filter`. Every change 4 and change 5 behaviour is unpinned. | Two tests: a row-aligned key at the wrong length raises; a non-finite `delta_hz` is dropped by the sigma stage rather than emptying the mask.
+
+## Reviewed (patch 3)
+- [x] src/quebra/transforms/filter.py
+
+### src/quebra/analyzers/within_calibration_compute.py  [reviewed]
+
+SHOULD FIX | within_calibration_compute.py:219-223 | 12-line docstring on a 3-line function, and the first paragraph explains why a bug was a bug (an `ax.plot` crash) instead of stating the invariant (results are returned at row length so they align with `t_h`). "which is a rendering crash rather than a wrong number, but only because matplotlib happens to check" is editorial and adds nothing a caller can act on. This is also a compute module justifying its return shape by matplotlib's internal error text - the layer boundary the project keeps in the code should hold in the prose. | Keep summary + one sentence: `"""Put a finite-subset result back on the full row index, NaN where rows were dropped.` / `Callers hold the unmasked row index; a subset-length return would be silently misaligned against it. NaN rather than 0.0 because these are cumulative quantities - a zero would drop the curve back to the origin at each missing read."""` Deletes 6 lines.
+
+MINOR | within_calibration_compute.py:220-221 | Quoted matplotlib text `x and y must have same first dimension` is a truncation of the real message (which continues ", but have shapes ..."). If the quote stays anywhere, it should not look verbatim. | Drop the quote with the paragraph.
+
+MINOR | within_calibration_compute.py:220 | Caps-for-emphasis (`UNMASKED`); same tic as interpolate.py (FINITE/THROUGH/RAISE) and _multiprocess.py (LAST). | Lower-case it; the sentence carries the emphasis.
+
+VERIFIED | within_calibration_compute.py:225-227 | NaN-not-zero rationale is correct for cumulative series, and matplotlib does break a line at NaN.
+
+### src/quebra/analyzers/checks/_multiprocess.py  [reviewed]
+
+SHOULD FIX | _multiprocess.py:296-306 | 11 lines of comment on a 7-line guard, and lines 303-305 restate the raise message immediately below them ("without gap_spans_s a gap flanked by out-of-spec reads leaves a censored death mid-block, and every event time after it would be wrong"). | Cut to the invariant, the mechanism, the reachability, and the authority - about 7 lines: `# Only the LAST window of a block may be censored: blocks are split at read gaps, so a` / `# gap_start death lands at a block end. x drops a censored window's duration while tau` / `# keeps it, so an interior one shifts every later T_i earlier - eq (4) and eq (7) both run` / `# on the wrong ones and report the censored duration as a residual that is really zero.` / `# Reachable: check_ledger.make_inputs_from_windows takes gap_spans_s from` / `# diagnostics.get(...), so a caller that omits it splits on birth types alone. Segment` / `# documents n_censored_dropped as 0 or 1 and nothing enforces it.`
+
+SHOULD FIX | _multiprocess.py:305-306 | "Raising is right rather than defensive" argues with an imagined reader who has not objected yet. The `Segment` citation that follows is the actual justification and stands without it. | Delete the clause; keep the citation.
+
+MINOR | _multiprocess.py:298 | "it is what makes the event times below correct" - the event times are not below; they are formed in c1_lewis_robinson and c2_anderson_darling from `Segment.x`. | Say "the T_i that eq (4) and eq (7) form from `x`".
+
+VERIFIED | _multiprocess.py:296-302 | `x = durations[complete]` vs `tau = float(durations.sum())` - x drops, tau keeps. Blocks are split via `_segment_starts(births, t_birth_all, gap_spans_s)`. eq (4) = C1 Lewis-Robinson, eq (7) = C2 Anderson-Darling, both consuming `Segment.x`. All as claimed.
+VERIFIED | _multiprocess.py:303-304 | `check_ledger.make_inputs_from_windows` does set `gap_spans_s=diagnostics.get("gap_spans_s")` (check_ledger.py:196), so None is reachable. Module lives at analyzers/check_ledger.py, not analyzers/checks/ - the unqualified name in the comment is still unambiguous.
+VERIFIED | _multiprocess.py:305-306 | `Segment.n_censored_dropped` is documented "0 or 1 per segment" (result.py:88-90) and no code anywhere asserts it. "nothing else enforces it" is true.
+
+### within_calibration_compute.py
+
+VERIFIED | within_calibration_compute.py:216-231 | Change 6 is a real crash fix and it is correctly wired. `build_within_calibration_panel_data` (line 464, 486) hands the SAME `t_arr` to `signal_band.run` and `reliability_band.run`, and `signal_band.run` stores it unfiltered (signal_band.py:114,171), so `pd_.signal.t_h` really is the full row index and `_to_full_length(..., mask)` really does match it. Before: a single non-finite `t_h` or `primary_series` value made `cumulative_time_per_threshold[label]` shorter than `signal.t_h` and `within_calibration.py:899-906` / `:949-956` raised `x and y must have same first dimension`.
+
+VERIFIED | within_calibration_compute.py:248-250,290-292 | The `len(t_f) < 2` short-circuit is correct. `mask.sum() == len(t_f)` by construction, so `full[mask] = np.zeros(len(t_f))` is shape-consistent for len(t_f) in {0,1}; the result is length `len(mask)`, zero at the surviving row and NaN elsewhere, which is what the panel needs.
+
+VERIFIED | within_calibration_compute.py | Change 6 is COMPLETE for the two arrays. The other finite-masked helpers in the file (`_ttf`:317, `_threshold_in_spec_frac`:345, `_threshold_summary`:377) all return scalars or None, never a row-indexed array, so none of them needed the same padding. Every reader of the two arrays was checked: `reliability_band.py:224-225` (assignment), `reliability_band.py:100-101` (`to_dict`, not written to any file under `jobs/bench/results/`), `panels/within_calibration.py:897,948` (`ax.plot` only, no sum/max/index). Nothing sums, maxes or indexes them, so the NaN cannot propagate into a number.
+
+MINOR | tests/test_within_calibration_builder.py:78-85 | Change 6 is untested. `test_cumulative_time_is_monotonic_and_bounded` already asserted `len(arr) == len(d.signal.t_h)` but runs on a dense all-finite synthetic series, so it passed before the fix and passes after; it never enters the padding path. Worse, its own assertions are NaN-hostile (`np.all(np.diff(arr) >= -1e-12)` and `arr[-1] <= total_h` are both False once a NaN exists), so the obvious extension of it would fail. | Add a case with one interior NaN in `primary_series` asserting `len(arr) == len(t_h)` and `np.isnan(arr[i])`, using `np.nanmax`/`np.diff` on the finite subset.
+
+## Reviewed (patch 3)
+- [x] src/quebra/analyzers/within_calibration_compute.py
+
+### src/quebra/analyzers/tlf.py  [reviewed]
+
+MUST FIX | tlf.py:48-50 | FALSE claim about another module: "the seed arrives here the way `xi_seed` does, as a step argument, so it reaches both the identity and the provenance label." It does not. `xi_seed` is a real step kwarg (`recipes.py:282: xi_seed=xi_seed`), which `closure.py:259-262` folds into the identity and `provenance.py:130` renders into the step label. `tlf_seed` is captured in a factory closure - `recipes.py:293: job.step(_tlf_step(tlf_seed), final_filtered, name="tlf")` passes no kwargs - so it appears in NEITHER the kwarg rows of the identity nor the step's provenance label. | Either delete the sentence or state what is true: `Passed to the step factory, so its value lives in the recipe text the code hash covers.` The structural fix is a code finding for the correctness reviewer.
+
+MUST FIX | tlf.py:34-36 | "Without this, a failure returned bic_delta=0.0 with `gmm2` aliased to `gmm1`, so a consumer read ..." is a description of the code that was here, in the past tense, which rule 1 forbids. It explains why a bug was a bug instead of stating the invariant. | `# True when the 2-component fit raised. Consumers must read it before is_bimodal: False there means no comparison was made, not that one lobe was established.`
+
+SHOULD FIX | tlf.py:15 | `"the two-lobe fit did not converge"` names the wrong failure mode. `fit_failed` is set by `except Exception` around `gmm2.fit`, i.e. the fit RAISED; `GaussianMixture` does not raise on non-convergence, it warns and returns. | `"the two-lobe fit did not run"`.
+
+SHOULD FIX | tlf.py:13-15 | Three lines where sentence 2 and sentence 3 both restate sentence 1, and the whole thing is repeated at :34-36. | Keep: `# None when the 2-component fit raised. A number here always means the comparison happened.`
+
+SHOULD FIX | tlf.py:43-50 | Eight-line paragraph for one fact plus one false claim; the same mechanism is written a second time at recipes.py:183-185. | Keep three lines: `` `seed` is required, not defaulted. `GaussianMixture` initialises by k-means, so an unseeded fit makes `bic_delta`, `is_bimodal`, the state assignment and every dwell statistic a fresh random variable per call while the run identity stays byte-identical. `` Drops 5 lines and the false sentence with them.
+
+OPTIONAL | tlf.py:76-77 | "`fit_failed` is the field that says which" is the third statement of the same thing in one file (:13, :34, :76). | Keep only the first sentence: `# False because nothing established two lobes - not because one lobe was established.`
+
+VERIFIED | tlf.py:43-45 | sklearn `GaussianMixture` does default to `init_params="kmeans"` and `random_state=None` draws on the global numpy RNG. Mechanism claim is right.
+VERIFIED | tlf.py:47 | "The same defect is refused outright in `checks/_permutation`" - _permutation.py:92-93 does raise on an unseeded generator with the identity argument. True, but it is authority-by-analogy that the reader does not need; goes with the trim above.
+
+### src/quebra/recipes.py  [reviewed]
+
+MUST FIX | recipes.py:184-185 | "Passed as a step argument so it folds into that identity." FALSE for the same reason as tlf.py:48 - `TLF_SEED` reaches the step through a closure over `_tlf_step(seed)`, not through `job.step(..., tlf_seed=...)`, so `closure.py`'s kwarg rows never see it. | `# Its value lives in this file's text, which the code hash covers.` (accurate today) - or make it a real kwarg and keep the sentence.
+
+SHOULD FIX | recipes.py:183-185 | The k-means mechanism is now written in full in two places (here and tlf.py:43-46). One of them should be a pointer. | Keep the one at the parameter (`tlf.run`); reduce here to `# Seeded because GaussianMixture initialises by k-means. See tlf.run.`
+
+OPTIONAL (adjacent, unchanged line) | recipes.py:180 | "it is a design change, not a rename, and it is Increment C work" - internal chronology of exactly the kind rule 1 bans, sitting three lines above the new comment. Not in this diff, but it will be read as part of it. | Drop "and it is Increment C work".
+
+### src/quebra/plots/tlf_plot.py  [reviewed]
+
+OPTIONAL | tlf_plot.py:86-88 | Three lines; the second and third argue the hypothetical rather than state the rule. | Keep two: `# No GMM(2) curve when the two-component fit failed: a single-lobe curve under a "GMM(2)" label reads as evidence against bimodality rather than as an absent fit.`
+
+VERIFIED | tlf_plot.py:243-253 | The summary block does distinguish absent from computed - "is_bimodal: n/a (2-component fit failed)" and "bic_delta: n/a" - so the downstream consumer really does see the difference the tlf.py comments promise. Claim consistent with what ships.
+
+### checks/_multiprocess.py
+
+VERIFIED | _multiprocess.py:308-309 | Change 7 index arithmetic is right. For a single-window block `complete[:-1]` is empty and `np.any` of an empty bool array is False, so a lone censored window (the normal `scan_end` case) does not raise - measured. For length n, `complete[:-1]` is exactly indices 0..n-2, i.e. every window but the last. An interior `gap_start` death with `gap_spans_s=None` raises; supplying `gap_spans_s=[(5.0, 99.0)]` splits the block and yields `Segment(x=[3.], tau=3.0, n_censored_dropped=0)` - measured both.
+
+VERIFIED | _multiprocess.py:308-316 | The guard cannot fire on any shipped path, and the claim holds for the right reason. `windows.run` unconditionally writes `gap_spans_s` into `diagnostics` (windows.py:494-509, empty list when there are no gaps), and both shipped consumers take it from there (recipes.py:196, recipes.py:380 -> check_ledger.py:200). The only censoring death types are `gap_start` and `scan_end` (windows.py:45-47); `_segment_starts` splits at the first birth at-or-after each `t_after_s`, so a `gap_start` death is always the last window of its block, and `scan_end` only ever belongs to the last window of the record. `n_censored = int((~complete).sum())` is therefore in {0,1}, which is what `Segment` documents. It is a contract check on `CheckLedgerInputs(gap_spans_s=None)` (check_ledger.py:154 defaults it to None), not a live check.
+
+MINOR | _multiprocess.py:308-316 | The same defect corrupts the CALENDAR clock and is not guarded there. With an interior censored window and no gap list, `x = np.diff(t_birth)` includes an inter-birth interval that spans unobserved hours and `tau = t_death[-1] - t_birth[0]` spans them too (`block_end_s` stays None because `gap_starts_s` is empty), so eq (4)/(7) get at-risk time the instrument was not watching - and `n_censored = 1` under-reports the two censored windows. The guard's placement inside `if clock == CLOCK_IN_SPEC` makes it half a check. | Hoist the `(~complete[:-1]).any()` test above the `if clock ==` branch.
+
+MINOR | _multiprocess.py:308 | The guard sits BEFORE the `len(x) < min_events` drop, so a block that the old code silently discarded into `n_dropped` now aborts the whole ledger. Concretely: a two-window block `[censored, censored]` produced `x = []`, was dropped, and `n_dropped` recorded it; it now raises. | Move the test after the `min_events` drop, or accept it and say so - either is defensible, but the current order turns a counted drop into a hard failure.
+
+## Reviewed (patch 3)
+- [x] src/quebra/analyzers/checks/_multiprocess.py
+
+### src/quebra/analyzers/instrument_validation.py  [reviewed]
+
+MUST FIX | instrument_validation.py:118 | "which is the whole point" - banned construction, and it is doing no work: the sentence before it already says the count is random. Same phrase is already in the repo at checks/result.py:117 ("it is the whole point of time censoring"), so it is becoming a tic. | `# A truncation time, not an event count. Gaps are unit-mean, so about this many events land, and how many is random.` (2 lines -> 2, but drops the tell; also drop the caps on "A TRUNCATION TIME".)
+
+MUST FIX | instrument_validation.py:142-143 | "`checks/battery` refuses CvM-asymptotic when it is not met" is FALSE. battery.py gates CvM-asymptotic on `include_tau_checks` and `len(segments) == 1` (battery.py:170-186); it cannot detect where tau came from. The only tau refusal in the repo is `validate_segment`'s `tau` vs `T_N` clearance (result.py:43), and `tau = T_N(1 + 1/n)` clears it comfortably - the exact scheme being criticised would sail straight through. Nothing refuses it, which is the actual reason this function has to construct the null itself. | `...chosen WITHOUT reference to the events, which `checks/result` states as a requirement and nothing downstream can check for you.`
+
+SHOULD FIX | instrument_validation.py:147 | "Eq (7)'s tail term depends on that leftover window" is applied to a function that measures C1, C2 and CvM. Eq (7) is C2's statistic; C1 uses eq (4) and CvM's integrand explicitly has no `1/(s(1-s))` weight (cvm_cramer_von_mises.py:177). The mechanism named accounts for one of the three instruments. | `Every one of these statistics reads the window past the last event; frozen, it contributes no variance...` - or name eq (7) as the clearest case rather than the cause.
+
+SHOULD FIX | instrument_validation.py:141-152 | 12 lines for one requirement and one mechanism, sitting under a 6-line paragraph of repo history (:134-139, unchanged). | Keep 5: `The null simulated here has to be the one the theory assumes: the truncation time is chosen without reference to the events (`checks/result`). Deriving tau from the draw as `g.sum() + g.mean()` makes it `T_N(1 + 1/n)`, so `T_N/tau` is pinned at `n/(n+1)` where the null has it Beta(n, 1), the event count is fixed where it should be random, and the leftover window carries no variance. `_exponential_segment` fixes tau and lets the count fall where it falls.` Deletes ~6 lines.
+
+MINOR | instrument_validation.py:449-452 | The rename left a dangling antecedent in a shipped artifact string: the C2 row now reads "size measured at tau=20: ... Bench 0.0650 and 0.0865 ... other rows at the same n and shape run to 0.176". After the change the row no longer states an n, so "the same n" refers to nothing, and a reader sees tau=20 and n=20 in one row as if they were the same quantity. | `other rows at n=20 and the same shape run to 0.176`.
+
+MINOR | instrument_validation.py:117-119 vs calibration_summary.py:294-296 | The commit's insisted-on vocabulary ("A TRUNCATION TIME, not an event count") is contradicted by the function that implements it: `_exponential_segment(n: int, rng)` still calls the argument `n` and the new caller passes `tau` into it positionally. Rule 3 vocabulary should hold at the definition, not only at the call site. | Rename that parameter to `tau: float` (code finding, but the prose is what makes it visible).
+
+OPTIONAL | jobs/active/instrument_validation.py:46 (unchanged line, now inaccurate) | "these two decide the three tier-3 numbers" - three inputs decide them. `ASYMPTOTIC_SIZE_REPLICATES = 1200` is equally decisive and is NOT declared in the job; it reaches meta from the module constant (instrument_validation.py:571). | `these decide the three tier-3 numbers, together with ASYMPTOTIC_SIZE_REPLICATES in the analyzer`.
+
+VERIFIED | instrument_validation.py:117 | "The mean gap is 1" - `rng.exponential(size=...)` uses scale 1.0. True.
+VERIFIED | instrument_validation.py:144-146 | `g.sum() + g.mean() == T_N(1 + 1/n)` and `T_N/tau == n/(n+1)` are correct algebra; `T_N/tau ~ Beta(n, 1)` is correct for fixed-tau truncation conditional on N = n.
+VERIFIED | instrument_validation.py:151-152 | `_exponential_segment` (calibration_summary.py:294-299) does fix tau and take a random count. Claim true.
+VERIFIED | instrument_validation.py:432,452,513 | "size measured at tau=20" is a literal, but it is effectively pinned: test_instrument_validation.py:268-277 parses the tau out of the row, re-measures, and compares to the quoted size, so a changed default breaks the test. (Note for the code reviewer: the regex is `tau=(\d+)`, which will not match if the label is ever interpolated as "tau=20.0".)
+
+### tests/test_tier3_calibration.py  [reviewed]
+
+MUST FIX | test_tier3_calibration.py:33 | "reports 0.0342 / 0.0292 / 0.0383" - MEASURED and reproduced (I ran it: n=20, seed=777, 1200 replicates, event-derived tau gives exactly 0.0342 / 0.0292 / 0.0383), but no code in the repo produces them any more: that generator was removed from `measure_asymptotic_size` in this very commit. Three numbers no shipped artifact regenerates and no test asserts, describing a code path that no longer exists - rule 2 and rule 1 at once. | Drop the three numbers and keep the direction: `...removes eq (7)'s tail variance and turns the measured rate conservative - the size of a sampling scheme the theory does not cover.`
+
+MUST FIX | test_tier3_calibration.py:231 | Docstring summary "The property whose failure made the reported sizes the size of another null" narrates a past defect instead of naming the property under test. | `The size generator truncates on time: tau fixed in advance, event count random.`
+
+MUST FIX | test_tier3_calibration.py:233-234 | Same FALSE battery claim as instrument_validation.py:143 - "`checks/battery` refuses CvM-asymptotic where that does not hold". It gates on `include_tau_checks` and segment count, and cannot see where tau came from. | `checks/result` requires tau to be chosen without reference to the events; nothing downstream detects a violation.`
+
+SHOULD FIX | test_tier3_calibration.py:23-24 | "tau = 20 gives C1 0.0708, C2 0.0700, CvM 0.0642" - VERIFIED (I ran `measure_all_asymptotic_sizes(tau=20.0, seed=777)`: 0.0708 / 0.0700 / 0.0642 exactly). But NOTHING pins them: the only size test runs at `tau=30.0` and asserts the wide bound `0.005 <= size <= 0.20`. They will drift silently if `ASYMPTOTIC_SIZE_REPLICATES` (1200) changes or if `_exponential_segment`'s draw size formula changes the RNG stream, and they are not reproducible from the docstring alone because it names tau but not the seed or the replicate count. | Either say `at the shipped defaults (seed 777, 1200 replicates)`, or add an assertion at tau=20 with abs tolerance so the docstring has a keeper.
+
+SHOULD FIX | test_tier3_calibration.py:236-238 | Half the docstring describes a generator that does not exist and that the test does not exercise; the assertions are `len(set(counts)) > 1` and `np.std(used) > 1e-6`, neither of which touches `n/(n+1)`. "- to every decimal place, on every replicate -" is amplification of "exactly". | `Both consequences are asserted: the event count varies, and the fraction of the window used up by the last event varies. A tau derived from the draw pins the second at n/(n+1) and the first at n.` (n/(n+1) is algebra, not a measurement, so it needs no pinning - and it is correct.)
+
+MINOR | test_tier3_calibration.py:33 | "removes eq (7)'s tail variance" is asserted for all three instruments; only C2 uses eq (7). Same defect as instrument_validation.py:147. | Scope it to C2 or name the leftover window rather than the equation.
+
+MINOR | test_tier3_calibration.py:30-35 vs :107 | The docstring condemns the event-derived tau, and `_iid_segments` at :107 in the same file still builds `Segment(x=g, tau=float(g.sum() + g.mean()))` for the C5/C6 permutation nulls. Defensible (tau does not enter a permutation null the same way) but a reader will hit the contradiction. | One clause: `...a scheme the ASYMPTOTIC theory does not cover; the permutation checks below are indifferent to it.`
+
+OPTIONAL | test_tier3_calibration.py:19-21 (unchanged) | "An earlier draft of this docstring quoted '0.069' and '0.0757' ... the first instance CLAUDE.md's claims-discipline section records, reintroduced here." Internal chronology plus a pointer to a process document - rule 1, in the docstring the new prose sits inside. Not in this diff, but it is what a reader meets first. | Cut to the standing rule: `Pooled means over the two shapes ("0.069", "0.0757") are in no cell of the table and must not be quoted as one.`
+
+### docs/JOBS.md  [reviewed]
+
+VERIFIED | docs/JOBS.md:52 | Only the parameter row changed (`ASYMPTOTIC_SIZE_N=20` -> `ASYMPTOTIC_SIZE_TAU=20.0`). The file is regenerated by `scripts/make_job_manifest.py` and its staleness is asserted by `tests/test_job_manifest.py:27`. Regenerated and pinned - no prose finding.
+
+### tests/test_instrument_validation.py  [reviewed]
+
+VERIFIED | no new prose. The two changed lines are code (regex and call site); the surrounding comment at :272 is unchanged and still accurate.
+
+### jobs/active/instrument_validation.py  [reviewed]
+
+VERIFIED | no new prose. One constant renamed; the comment above it is unchanged (see the OPTIONAL note under instrument_validation.py about "these two").
+
+PROSE VERDICT: DO NOT SHIP as prose. 6 MUST FIX, of which 3 are false or unsupportable
+claims (tlf.py:48 and recipes.py:184 on where the seed lands; instrument_validation.py:143
+and test_tier3_calibration.py:233 on battery refusing CvM-asymptotic) and 2 are rule-1
+chronology (tlf.py:34, test_tier3_calibration.py:231). Numbers: 0.0708/0.0700/0.0642 and
+0.0342/0.0292/0.0383 both reproduce exactly, but neither triple is asserted anywhere and the
+second describes a deleted code path. ~45 lines deletable outright.
+CORRECTION to the line count above: the trims listed total ~55 deletable prose lines, not 45
+(interpolate ~16, filter ~11, within_calibration ~7, _multiprocess 4, tlf ~10, recipes 2,
+tlf_plot 1, instrument_validation ~7, test_tier3 ~7).
+Also measured across the added prose in scope: 22 dash-aside constructions (" - x - ") in
+~58 added comment lines.
+
+### tlf.py + recipes.py + tlf_plot.py
+
+IMPORTANT | recipes.py:293 (with tlf.py:47-49, recipes.py:183-186) | Change 8: the seed does NOT reach `parameter_row`, and both the code comment and the `tlf.run` docstring claim it does ("Passed as a step argument so it folds into that identity" / "the seed arrives here the way `xi_seed` does, as a step argument, so it reaches both the identity and the provenance label"). It is captured in the `_tlf_step` CLOSURE, not passed as a step kwarg. Measured: `parameter_row` for a job with `job.step(_tlf_step(20260902), raw, name="tlf")` returns `['raw()', 'tlf()']` - no seed. Compare recipes.py:270, `job.step(_fidelity_panel_data, ..., xi_seed=xi_seed)`, which yields `fidelity_panel_data(xi_seed=20260813)`. Consequences: (a) `provenance.pipeline_steps` is built by `runner._format_step`, which renders `node.kwargs`, so the shipped provenance record for the tlf node names no seed at all - the record does not state which seed produced the reported `bic_delta`/`is_bimodal`/dwell numbers; (b) identity still changes when `TLF_SEED` changes, but only because `code_closure` hashes `quebra/recipes.py` bytes - i.e. any edit to recipes.py, not the seed specifically. This is exactly the failure `parameter_row` was written to close, and the project rule is that a seed affecting a reported number is a declared parameter. | Mirror `xi_seed`: `def _tlf_step()` returning `def step(norm, seed)`, called as `job.step(_tlf_step(), final_filtered, name="tlf", seed=tlf_seed)`.
+
+VERIFIED | tlf.py:40 | `seed` is keyword-only and required, so no caller can silently take a default. The only caller in the repo is recipes.py:135. `jobs/` never overrides `tlf_seed`.
+
+MINOR | tlf.py:43-46 | Change 8: the nondeterminism the docstring asserts is not exhibitable on this data. `GaussianMixture` is 1-D here, and sklearn 1.8.0's k-means++ init converges to the same optimum every time: `random_state=None` repeated 8x on a deliberately multi-optimum 1-D mixture (three clusters fitted with 2 components) gives byte-identical `bic_delta` and `means_`, and so do seeds 0..7. So `random_state=seed` changes no currently reported number - it is correct hardening, but the claim "become a fresh random variable on each call" overstates what could be measured. | Keep the change; soften the claim to a contract statement.
+
+VERIFIED | tlf.py:16,37,74-92 | `bic_delta: float | None`, `gmm2=None`, `fit_failed=True` on the failure path is correct and complete. The success path (tlf.py:98) always assigns a `float`, so the widened annotation costs nothing. `tlf_plot.py` is the ONLY reader of `bic_delta` or `gmm2` anywhere in src/, jobs/, tests/ or scripts/, and it handles both (`result.bic_delta is not None` at :252, `result.gmm2 is None` at :90). The old fallback genuinely was a silent-fallback violation: `bic_delta=0.0` with `gmm2=gmm1` reported "no evidence of bimodality" from a comparison that never ran.
+
+MINOR | tlf.py:9,37 | Change 8, the pickle question, answered definitively. `TLFResult` is `slots=True`, so a new defaulted field is NOT safe for unpickling: a slots dataclass pickles as `(None, slots_dict)` and `__setstate__` never applies field defaults, so an old pickle loads with the `fit_failed` slot UNSET and any direct access raises `AttributeError: 'TLFResult' object has no attribute 'fit_failed'` - reproduced. `StaleArtifactGuard` cannot help: it is explicitly for NON-slots dataclasses (`_artifact_guard.py:22`) and `TLFResult` does not inherit it, so the repo's stale-artifact policy does not cover this class. In practice the hazard is moot right now: all 37 `*_tlf.pkl` files under `output/` were written before the src-layout move and reference `analyzers.tlf`, so they already fail with `ModuleNotFoundError` and none is loadable. The only reader is defensive (`getattr(result, "fit_failed", False)` at tlf_plot.py:89), which is what keeps this MINOR rather than IMPORTANT - but the `getattr` is load-bearing and nothing says so. | Either give `TLFResult` the guard by dropping `slots=True`, or note at tlf_plot.py:89 that the `getattr` default is required because `TLFResult` is a slots dataclass.
+
+VERIFIED | tlf_plot.py:86-116,243-253 | `fit_failed` is bound at :89 on the straight-line path through `render`, before its uses at :113 and :247 - no branch reaches :247 with it unbound. `means2_axis = np.asarray([])` in the failed branch correctly short-circuits :118, :146 and :155, so the lobe annotation, `lobe_khz` and the per-lobe lines all fall to their existing "n/a" paths, and `covs2_axis`/`weights2` (only referenced at :158-159, inside `len(means2_axis) >= 2`) are never touched unbound. Behaviour for a pre-change pickle with `gmm2 = gmm1` is unchanged: `fit_failed` is False, `means2` has one element, and the figure takes the same "n/a" branches it already took.
+
+MINOR | tlf.py, tlf_plot.py, recipes.py | Change 8 is entirely untested. `grep -rln "tlf\|TLF" tests/` returns nothing: there is no test for `tlf.run` at all, so the required `seed`, the `fit_failed` field, the `bic_delta=None` path and the suppressed GMM(2) curve are all unpinned. | One test: `run(..., seed=1)` twice is identical; a values array that forces a singular 2-component fit gives `fit_failed is True and bic_delta is None and gmm2 is None`.
+
+## Reviewed (patch 3)
+- [x] src/quebra/analyzers/tlf.py
+- [x] src/quebra/recipes.py
+- [x] src/quebra/plots/tlf_plot.py
+
+### instrument_validation.py + jobs/active/instrument_validation.py + tests
+
+CRITICAL | jobs/bench/results/instrument_report.md:29,30,34 | Change 9 moves the three tier-3 numbers but the COMMITTED artifact that publishes them is not regenerated. The tracked file still reads "size measured at n=20: 0.0342" (C1), "0.0292" (C2), "0.0383" (CvM) - both the values AND the `n=`/`tau=` label are stale. Proven: `python3 jobs/bench/instrument_report.py` on this working tree rewrites exactly those three cells to "size measured at tau=20: 0.0708 / 0.0700 / 0.0642". The file's own header says "GENERATED by `jobs/bench/instrument_report.py`", and `measure_asymptotic_size`'s docstring justifies its whole existence as "the tier-3 rows quote a number this run produced rather than one a docstring remembers" - which is now false of the shipped artifact, in the opposite direction (it claims CONSERVATIVE where the code says ANTI-CONSERVATIVE). | Re-run `python3 jobs/bench/instrument_report.py` and commit the result in the same commit.
+
+VERIFIED | instrument_validation.py:124-165 | Change 9 is statistically correct and the numbers reproduce. Measured on this tree: NEW = C1 0.0708, C2 0.0700, CvM 0.0642. Reimplementing the old generator (`g = rng.exponential(size=20); Segment(x=g, tau=g.sum()+g.mean())`, seed 777, 1200 reps) gives exactly 0.0342 / 0.0292 / 0.0383 - the before-values are confirmed. `_exponential_segment` IS a correct time-truncated HPP observation: `kept = gaps[:searchsorted(cumsum(gaps), tau, "left")]` keeps every gap whose cumulative endpoint is strictly below a tau fixed in advance, so N is random (measured mean 19.99, min 4, max 41 over 20000 draws at tau=20) and the residual `tau - sum(x)` is the one censored gap. The docstring's diagnosis of the old scheme is exactly right: conditional on N=n, the ordered event times of an HPP on [0,tau] are uniform order statistics, so `T_n/tau ~ Beta(n,1)`; `tau = T_n(1+1/n)` pins that ratio at `n/(n+1)`, i.e. at the mean of the correct distribution with zero variance, and eq (7)'s tail term depends on it. Using the same generator as `size_vs_n`/`validation_curve` also makes the tier-3 rows commensurate with the bench numbers quoted beside them.
+
+VERIFIED | instrument_validation.py:154, calibration_summary.py:297 | The pool cannot exhaust. `size = int(tau + 10*sqrt(tau) + 50)` is 114 at tau=20; `P(Gamma(114,1) < 20) = 2.0e-47`. At the bench's largest, n=355, the pool is 593 and `P = 6.8e-31`. So the question "can it exhaust before reaching tau" answers NO for every value shipped. There is still no guard: if it ever did, `searchsorted` returns `len(gaps)` and the segment is returned silently truncated at the pool's end rather than at tau - a silent fallback with no marker. | Add `if cumsum[-1] < tau: raise` in `_exponential_segment` (that file is outside this diff's scope; note it for the next patch).
+
+VERIFIED | instrument_validation.py:154 | `n_censored_dropped=1` is right for this use. A time-truncated observation has exactly one incomplete final gap (the residual `tau - sum(x)`), which is what the field documents at `checks/result.py:88-91,116-119`. It is a pure diagnostic: grep shows it is only summed into `CheckResult.n_censored_dropped` by c1/c3/c5/c6 and never enters a statistic, so it changes no number.
+
+IMPORTANT | instrument_validation.py:432,452,513 | The report quotes 4 decimals on a number whose Monte Carlo standard error is 0.0074. At 1200 replicates and p ~ 0.07, `sqrt(p(1-p)/1200)` = 0.00741 / 0.00737 / 0.00707 for C1 / C2 / CvM - measured. So `:.4f` overstates the precision by roughly 75x; the third decimal is already noise and the fourth is pure formatting. Only the coarse verdict survives: (0.0708 - 0.05)/0.0074 = 2.8 sigma, so "anti-conservative" is real, but "0.0708" is not. The same file's bench rows beside these DO carry an SE column (`size_table.csv`). | Quote 2 decimals with the SE, e.g. "0.071 +- 0.007 (1200 replicates)", or raise `ASYMPTOTIC_SIZE_REPLICATES` to ~20000 (SE 0.0018) if the fourth decimal is wanted. Whichever, `test_instrument_validation.py:268`'s `(0\.\d{4})` regex and `abs=5e-5` tolerance move with it.
+
+IMPORTANT | tests/test_tier3_calibration.py:226-252 | `test_the_size_generator_truncates_on_TIME_not_on_events` CANNOT FAIL on the change it claims to pin, and neither can its companion. It asserts properties of `_exponential_segment`, which lives in `calibration_summary.py` - a file this diff does not touch at all (`git diff --stat` on it is empty), so the test passes identically before and after and would have passed at HEAD. PROVEN: monkeypatching `measure_asymptotic_size` back to the old generator while KEEPING the `tau` parameter name and the "tau=20" label reproduces 0.0342 / 0.0292 / 0.0383, and both `test_the_size_generator_truncates_on_TIME_not_on_events` and `test_the_tier_3_rows_quote_a_number_this_run_produced` still pass (2 passed). The second test is self-consistent, not anchored: it recomputes `expected` from the same reverted code it is checking. `test_the_asymptotic_size_is_in_the_documented_range`'s 0.005..0.20 bound also admits 0.0342. So the only thing standing between a semantic revert and green gates is the literal string "n=" vs "tau=". | Assert on the function that changed: `measure_asymptotic_size` must produce a varying event count. E.g. capture the segments it builds (or expose the generator as an injectable parameter) and assert `len(set(counts)) > 1`; or pin the three sizes against the report's own numbers loaded from `jobs/bench/results/instrument_report.md` so the artifact and the code cannot drift apart silently.
+
+MINOR | instrument_validation.py:432,452,513 | The tier-3 detail strings hardcode "tau=20" while the value comes from the `asymptotic_size_tau` parameter. A job passing `asymptotic_size_tau=30.0` would publish a size measured at 30 under a "tau=20" label. `test_instrument_validation.py:268-276` happens to catch it (it recomputes at the label's value and compares), but the string itself is a lie waiting for a parameter change. Pre-existing with `n=20`, but the diff rewrote these exact three lines. | `f"size measured at tau={asymptotic_size_tau:g}: ..."`.
+
+MINOR | instrument_validation.py:154 | `_exponential_segment` is annotated `(n: int, ...)` and its parameter is named `n`, and the new call passes `tau: float = 20.0`. It works (`float(20.0)`, `int(20.0 + ...)`), but the helper's name and type now contradict the meaning the caller was just renamed to state. `mypy` will not catch it: `make types` is scoped to `src/quebra/core` only. | Rename the helper's parameter to `tau: float` in the next patch (that file is out of scope here), or the rename this commit exists for is only half done.
+
+MINOR | instrument_validation.py:157 | `rejected += int(p is not None and p <= alpha)` silently counts a `p_value=None` replicate as a non-rejection, which deflates the measured size - the exact "silence is not a pass" case. Pre-existing, but change 9 makes N random, so a too-small draw is now possible where n was formerly fixed at 20. Measured at tau=20/seed 777: 0 of 1200 replicates return None for any of the three modules and min N is 7, so it does not fire today. The adjacent risk is worse: at N < 2 the checks RAISE (`this check needs at least 2 complete gaps in a segment`), aborting the whole job; `P(N<2) = e^-20 * 21 = 4.3e-8` per replicate, ~1.5e-4 over the 3600 replicates the report runs. Deterministic under seed 777 and it does not happen, but a seed or replicate-count change could hit it and the old generator could not. | `if p is None: raise` (nothing legitimate produces None here), and either guard `_exponential_segment` for N>=2 or state the risk.
+
+MINOR | instrument_validation.py:143 | An analyzer now imports a PRIVATE name from a sibling analyzer (`from quebra.analyzers.calibration_summary import _exponential_segment`). `lint-imports --no-cache` passes (1 contract kept, layering is package-level), so no rule is broken, and sharing the generator is the right call for commensurability with the bench. But `_exponential_segment` is now a two-caller shared contract wearing a private name. | Drop the underscore, or move it to a shared `checks/_nulls.py`.
+
+VERIFIED | jobs/active/instrument_validation.py:47,80 | The rename reaches the declared job parameters and therefore the identity and the provenance label: `ASYMPTOTIC_SIZE_TAU = 20.0` is a module constant in the job file (hashed into `job_code_hash`) AND a step kwarg (`asymptotic_size_tau=ASYMPTOTIC_SIZE_TAU`), so `parameter_row` and `runner._format_step` both carry it. Contrast the `tlf_seed` finding above - this is how it should be done, in the same diff.
+
+VERIFIED | docs/JOBS.md:52 | Matches the generator. `python3 scripts/make_job_manifest.py` on this tree reproduces the diff's line byte-for-byte (`ASYMPTOTIC_SIZE_SEED=777`<br>`ASYMPTOTIC_SIZE_TAU=20.0`), and the regenerated file leaves `git diff --stat` at exactly 1 insertion / 1 deletion. File restored to the working-tree state after the check.
+
+VERIFIED | tests/test_instrument_validation.py:268,276 | The regex/`float()` change is consistent: the label renders "tau=20", `(\d+)` captures "20", `float("20")` is 20.0 and `measure_all_asymptotic_sizes(tau=20.0)` is what the artifact used. No stale `n=` reference remains in either test file.
+
+## Reviewed (patch 3)
+- [x] src/quebra/analyzers/instrument_validation.py
+- [x] jobs/active/instrument_validation.py
+- [x] tests/test_tier3_calibration.py
+- [x] tests/test_instrument_validation.py
+- [x] docs/JOBS.md
+
+## Manifest (patch 3) - empty, all files reviewed
+
+### Empirical confirmation on the real shipped dataset (100423_6D2S_qubit1)
+
+VERIFIED | end-to-end | `_load_dataset` -> `lookup_prior` -> `filter.run` -> `interpolate.run` -> `tlf.run` on the real 2024-read dataset: every row-aligned column has ZERO non-finite values (`T2star_error_s`, `T2star_s`, `chi_squared`, `delta_hz`, `qubit_frequency_hz`, `rabi_hz`, `raw_frequency_hz`, `t_rel_s`), `meta["n_nonfinite_dropped"]` is absent, and no new raise fires. Confirms that changes 1, 2, 3, 4, 5 are all inert on shipped data: with `finite` all-True, `_interpolate_finite` reduces to the old `pchip_interpolate(t_rel_s, nan_to_num(v), x)` bit-for-bit, so change 1 moves no committed number.
+
+VERIFIED | end-to-end | The norm's actual key set is `['T2star_error_s','T2star_s','chi_squared','delta_hz','meta','raw_frequency_hz','t_rel_s']` plus `qubit_frequency_hz`/`rabi_hz` from `lookup_prior`. Four of the seven row-aligned columns are NOT in `filter._ROW_ALIGNED_KEYS`, and the set's `t_unix_s` is not among them - the incompleteness finding above, confirmed against real data rather than inferred.
+
+VERIFIED | tlf | On the real values, `random_state=None` repeated 5x and seeds 0/1/20260902 all give `bic_delta = 1999.35945` and identical `means_`. So change 8 also moves no committed number; the seed is hardening, not a correction.
+
+VERIFIED | gates | Could not falsify. `ruff check .` clean, `ruff format --check .` 148 files formatted, `mypy src/quebra/core` clean, `lint-imports --no-cache` 1 contract kept, `deptry .` clean, `pytest -m "not slow and not heavy and not real and not r"` 433 passed / 2 skipped in 30s. Note what the gates do NOT cover: nothing under `tests/`, `Makefile` or `.github/workflows/` references `instrument_report.md`, so the CRITICAL artifact drift above passes `make check` silently.
+
+## Verdicts (patch 3)
+1 interpolate NaN masking .......... CORRECT-BUT-INCOMPLETE (pct_real_points not recomputed against the reduced support)
+2 generic-loop except removal ...... CORRECT-BUT-INCOMPLETE (2-D row-aligned column now IndexErrors; disagrees with filter.py on ragged values)
+3 t_rel_s / raw_frequency_hz raises  CORRECT (unfirable on shipped data; nothing relied on the drop)
+4 _ROW_ALIGNED_KEYS ................ CORRECT-BUT-INCOMPLETE (4 real row-aligned keys missing, 1 dead entry, first stated hazard not actually closed)
+5 sigma stage finite handling ...... CORRECT (and inert: delta_hz cannot be non-finite downstream of RamseySeriesSchema)
+6 cumulative NaN padding ........... CORRECT (real crash fix, correctly wired, complete; untested)
+7 interior-censored guard .......... CORRECT-BUT-INCOMPLETE (calendar clock unguarded; fires before the min_events drop)
+8 TLF seed + fit_failed ............ CORRECT-BUT-INCOMPLETE (seed absent from parameter_row and the provenance label; slots-unpickle hazard; untested)
+9 time-truncated size null ......... CORRECT (the null is right and the numbers reproduce) but the COMMITTED ARTIFACT WAS NOT REGENERATED and the new test cannot fail
+
+## Patch 3 verdict: DO NOT SHIP
+## (1 CRITICAL: jobs/bench/results/instrument_report.md still publishes 0.0342/0.0292/0.0383
+## under an "n=20" label, contradicting the code in the opposite direction. Plus one test
+## proven unable to fail on the change it names, and the tlf seed missing from parameter_row.)
+
+# PATCH COMMIT 4 of 4 - BEHAVIOUR
+SCOPE: tests/test_transform_guards.py (new), tests/test_windows_not_interpolated.py,
+analyzers/checks/_multiprocess.py, transforms/interpolate.py, plots/tlf_plot.py,
+panels/_check_ledger_render.py (+check_ledger.py context), tests/test_instrument_validation.py
+COMMIT: ff4a8c5
+
+## Manifest (patch 4)
+
+## Reviewed (patch 4)
+- [x] tests/test_transform_guards.py  (NEW, untracked)
+- [x] tests/test_instrument_validation.py  (+5)
+- [x] src/quebra/panels/_check_ledger_render.py  (+1)
+- [x] src/quebra/plots/tlf_plot.py  (+4)
+- [x] src/quebra/transforms/interpolate.py  (+9)
+- [x] src/quebra/analyzers/checks/_multiprocess.py  (+23)
+- [x] tests/test_windows_not_interpolated.py  (+92/-?)
+
+## Findings (patch 4)
+
+### tests/test_windows_not_interpolated.py  (change 1)
+
+VERIFIED | tests/test_windows_not_interpolated.py:58-67 | `discover(jobs/)` yields exactly the
+12 files carrying a module-level `JOB_ID`; the 8 `jobs/bench/*.py` study modules, 4
+`__init__.py` and `jobs/reference|rscripts` are skipped. Collection is 16 tests = 12 params +
+3 controls + the non-vacuity test. `independence_survey` IS reached: 206 nodes, 34 windows
+nodes, 34 labels, `_unexpected` empty on all 34. No import-time I/O in the composite, so the
+widening does not make the test depend on `data/real_private/`.
+VERIFIED | tests/test_windows_not_interpolated.py:116-123 | Loop terminates on every degenerate
+name and fails CLOSED on all of them: `interpolate`, `_final`, `final_`, `_`, `__`, `___`,
+`a_`, `_a`, `filter_`, `windows_x_` all land in `unexpected`. `base` loses at least one
+segment per iteration and the guard is `while suffix and base`, so no infinite loop is
+reachable.
+VERIFIED | tests/test_windows_not_interpolated.py:116-121 | The `final` / `final_filter_stage`
+overlap does NOT mis-strip here: the loop tries every right-to-left split and accepts if ANY
+(base in whitelist, suffix in labels) pair holds, so `final_filter_stage_040423_6D2S_qubit1`
+is accepted via the long prefix and `final_smoothed_q1_040423` is still rejected. Confirmed by
+running km_poster_6d2s and the survey.
+VERIFIED | src/quebra/recipes.py:145-152 | `_final_stage` unwraps `FilterResult.final_norm`;
+it resamples nothing, so adding `"final"` to the whitelist is factually justified.
+
+IMPORTANT | tests/test_windows_not_interpolated.py:89-95 | `_carve_labels` is self-justifying,
+and demonstrably defeatable. `_windows_nodes` matches ANY node whose `fn_name` contains
+"windows", so a resampling step named `windows_pchip` sitting between `filter` and `windows`
+(a) enters `_windows_nodes`, (b) contributes its own label `pchip`, and (c) is then vouched
+for by that label when the real carve's ancestry is checked. Executed: `_unexpected(job,
+"windows") == set()` and `_unexpected(job, "windows_pchip") == set()` - the guard passes on a
+graph that carves from a resampled series. Same mechanism without any "windows" in the
+resampler's name: the pair (`filter_smoothed`, `windows_smoothed`) also passes, i.e. the exact
+name the new control at :225 asserts is rejected becomes accepted the moment the carve node
+echoes it, which is the natural thing for a job author to write. | Two parts. (i) Pass the
+root's own label into `_unexpected` instead of the job-wide union, so one chain's label cannot
+vouch for another chain's node - that alone kills the `windows_pchip` case. (ii) A label set
+derived from the graph's own names can never be a check on those names: intersect the derived
+labels with an external source (dataset stems, as before, UNION an explicit
+`SURVEY_LABELS = {"q1_040423", ...}` constant listing the 34), so admitting a new label stays
+a deliberate edit to this file.
+
+IMPORTANT | tests/test_windows_not_interpolated.py:142-156 | The widened guard is vacuous on 6
+of the 12 jobs (check_calibration, instrument_validation, mtbc_q6, mtbf_q1,
+ramsey_2x2_q1_030723, check_ledger_q1, compare_t2star_0704_vs_1004 have zero windows nodes),
+and nothing asserts the matcher still matches anywhere. Rename the carve step from `windows`
+to e.g. `segments` and all 12 parametrised cases pass with an empty loop while the three
+controls keep passing on their hardcoded names - all 16 green, zero real coverage. This is the
+precise failure mode the module docstring says was already hit once by `fidelity_windows`. |
+Extend `test_there_are_jobs_to_check` to assert the carving jobs are still seen, e.g.
+`{"km_poster_6d2s", "independence_survey", "t2star_q1_070423", "t2star_q1_100423",
+"ramsey_q1_100423"} <= {f.stem for f in _job_files() if _windows_nodes(_load_job(f))}`.
+
+MINOR | tests/test_windows_not_interpolated.py:108-111 | The blacklist runs BEFORE the
+whitelist membership test and `continue`s, so the second layer overrides the first: a name
+containing a token can never be whitelisted. Executed: re-adding `"fidelity_interp"` to
+`OBSERVED_ANCESTORS` still yields `_unexpected(...) == {"fidelity_interp"}`. The failure
+message at :152-156 tells the reader to "add it to OBSERVED_ANCESTORS deliberately", a remedy
+that silently does not work for any name containing interp/resample/regrid/uniform/decimate/
+rebin - and "uniform" is a plausible substring of a non-resampling step (a uniform prior). |
+Move the `name in OBSERVED_ANCESTORS` test above the token scan, so an explicit whitelist
+entry wins over the heuristic layer.
+
+MINOR | tests/test_windows_not_interpolated.py:92-94 | `_carve_labels` adds a label for EVERY
+whitelisted prefix that matches, not the longest. Adding `"final"` made two entries prefixes
+of a third, so a carve node named `final_filter_stage_q1` now contributes both `q1` and the
+bogus `filter_stage_q1`, and the bogus one then vouches for any `{whitelisted}_filter_stage_q1`
+name. Inert today (no carve node uses a `final*` prefix) but activated by any future rename. |
+Strip only the longest matching prefix: `known = max((k for k in OBSERVED_ANCESTORS if
+name.startswith(f"{k}_")), key=len, default=None)`.
+
+### src/quebra/analyzers/checks/_multiprocess.py  (change 2)
+
+VERIFIED | _multiprocess.py:294-331 | `interior_censored` is bound on every path reaching the
+guard: `clock` is validated against the two constants at :238-241, so the if/else at :294/:311
+is total, and both arms assign it. No `UnboundLocalError` is reachable.
+VERIFIED | _multiprocess.py:305,325 | Condition meaning unchanged. Old
+`bool((~complete[:-1]).any())` vs new `int((~complete[:-1]).sum())` in a boolean context are
+identical, including the single-window block where `complete[:-1]` is empty (sum 0, any False).
+Executed: a one-row `gap_start` block still yields a Segment, not a raise.
+VERIFIED | _multiprocess.py:320-331 | Ordering behaves as intended. Executed: a 2-row block
+with an interior `gap_start` and `min_events=2` now returns `([], 1)` instead of raising; a
+5-row block with the same defect still raises naming position 0; the calendar clock with the
+same frame does not raise and yields tau=9.0.
+VERIFIED | _multiprocess.py:325 | The guard still cannot fire from a real job. `windows.carve`
+derives BOTH `DEATH_GAP_START` (windows.py:184) and `diagnostics["gap_spans_s"]`
+(windows.py:496-498) from the SAME `is_gap` mask, so every gap that can censor a window is in
+the list; `_segment_starts` then splits at the first birth at/after each gap end, which puts
+every `gap_start` death last in its block. `DEATH_SCAN_END` is only reachable for the final
+window. All three real call sites (recipes.py:196, recipes.py:380, check_ledger.py:200) pass
+`diagnostics.get("gap_spans_s")`, and an empty list is only possible when there are no gaps
+and therefore no `gap_start` deaths. Defensive only, as claimed.
+VERIFIED | _multiprocess.py:325 | The added `clock == CLOCK_IN_SPEC` conjunct is redundant with
+`interior_censored = 0` on the calendar arm, but harmless and it keeps the invariant local.
+
+MINOR | _multiprocess.py:320-331 | The reorder makes the SAME data-integrity defect fatal or
+invisible depending on block size: a caller that forgets `gap_spans_s` and produces an
+interior-censored block of 5 windows aborts the run, while the identical defect in a 2-window
+block is folded into `n_dropped` alongside ordinary too-short blocks and is never surfaced. No
+wrong number reaches an artifact (the block contributes nothing either way), so it is minor,
+but the drop reason is now conflated. | Count them separately, e.g. return the interior-
+censored drop count in the diagnostics, or `print` the position once when a dropped block also
+had `interior_censored`.
+
+MINOR | _multiprocess.py:325-331 | Untested on both sides of the move. `grep` over `tests/`
+finds no test that provokes the interior-censored raise and none that asserts a small
+interior-censored block is dropped rather than aborting - i.e. the behaviour this change exists
+to create has no regression guard, and a future revert to the pre-drop position would be green.
+| Add the two cases exercised above to `tests/test_checks_statistics.py`.
+
+### src/quebra/transforms/interpolate.py  (change 3)
+
+VERIFIED | interpolate.py:174-183 | No real path now raises where it previously passed
+through. On the recipe path (recipes.py:239-243) interpolate is fed `_final_stage(FilterResult)`
+and `filter._subset_norm` (filter.py:47-54) has already raised on any un-arrayable value, so
+the new arm is unreachable there. On the filter-less user path a loaded Norm comes through
+`RamseySeriesSchema`/pandera as ndarray columns, so it is unreachable in practice too. The
+revert is the right call: fail-closed and, on the only path where it can fire, it is the only
+guard there is.
+VERIFIED | interpolate.py:176 | Executed: with numpy 2.4.4 only a ragged nested sequence
+actually raises (ValueError). dict / generator / set / str / bare object / an object with a
+broken `__len__` all box to a 0-d object array and take the `arr.ndim == 0` passthrough at
+:186. So the arm is neither too broad in effect nor mislabelled for the case it catches.
+
+IMPORTANT | interpolate.py:185-188 | The parity with `filter._subset_norm` that this change
+invokes is only half achieved, and the missing half is the silent one. `_subset_norm` RAISES on
+a row-aligned column whose length disagrees (filter.py:57-62); interpolate still passes it
+through untouched. Executed on a filter-less Norm: `t_rel_s` of length 4 and `chi_squared` of
+length 3 gives an output whose `chi_squared` is still length 3 against a 4-point uniform grid,
+no error, no diagnostic. That is exactly the "user job wires interpolate alone" case cited to
+justify the raise nine lines above, and it is a misalignment rather than an unresampled value.
+Pre-existing, but the reasoning that reinstated the neighbouring guard applies verbatim here. |
+Raise for `arr.ndim > 0 and len(arr) != len(order)` with the same message shape
+`_subset_norm` uses, since after interpolate the grid length is `len(order)` too, so no
+legitimate column can have another length.
+
+MINOR | interpolate.py:176 | `TypeError` in the tuple is dead code under numpy 2.x for the
+reason measured above, and a hostile `__array__` raising anything else (measured: RuntimeError)
+escapes the named message. Harmless - it still fails loudly - but the arm is narrower than it
+reads. | Catch `Exception` and re-raise named, or drop `TypeError`.
+
+### src/quebra/plots/tlf_plot.py  (change 4)
+
+VERIFIED | tlf_plot.py:88 | No construction path lacks the attribute. `TLFResult` has only two
+construction sites (tlf.py:69, tlf.py:199), both keyword dataclass calls, so the
+`fit_failed: bool = False` slot is always set; and `TLFPlot` has exactly one call site
+(recipes.py:294) fed by the `tlf` node, which returns a `TLFResult`. Semantics unchanged:
+`bool(x) or y is None` parses as `bool(x) or (y is None)` exactly as before.
+VERIFIED | tlf_plot.py:88 | The `slots=True` unpickle hazard is not reachable from any artifact
+on disk. `fit_failed` and `slots=True` both predate this commit (present at HEAD), and all 140
+`output/**/*tlf*.pkl` files fail to load at all with `ModuleNotFoundError: No module named
+'analyzers'` (they predate the src-layout move), so `runner.py:362`'s reuse loader can never
+hand the plot a slot-less instance from the existing tree. Any newly written pickle carries the
+slot. The `getattr` was defending nothing.
+
+### src/quebra/panels/_check_ledger_render.py  (change 5)
+
+VERIFIED | _check_ledger_render.py:24 | The key is right: `battery.ROW_KEYS` uses exactly
+`"cvm_cramer_von_mises"` (battery.py:64, :76) and `check_ledger.py:497` writes
+`check_id = result.check`, so the entry is live rather than dead.
+VERIFIED | check_ledger.py:59-71,149-171 | Nothing breaks at six. Rendered the panel with all
+six check ids: the ladder draws 6 lines + the alpha axhline, the legend reads
+`['C1 LR','C2 AD','C3 cop','C5 rank','C6 exch','CvM']`, and `ordered_color(i, n)` is a
+continuous colormap sample (theme.py:253-265) with no palette length to exhaust and no wrap.
+Legend row count is unchanged: `ncol=2` gives ceil(5/2) == ceil(6/2) == 3 rows.
+VERIFIED | _check_ledger_render.py:30 | The TABLE does not gain columns. `ledger_grid` pivots
+every row present, so the two CvM columns were already drawn under the `check_id[:7]` fallback
+label `cvm_cra a` / `cvm_cra p`; the change only renames them to `CvM a` / `CvM p`. Confirmed
+in the render: 12 columns before and after.
+VERIFIED | tests, artifacts | Nothing pins the old count or the old label: no test imports
+`CHECK_SHORT`, `column_label` or `ledger_grid` (grep over `tests/`), and no figure artifact is
+tracked in git.
+
+IMPORTANT | panels/check_ledger.py:152-171 (activated by _check_ledger_render.py:24) | The
+sixth line makes the ladder's y-axis claim wrong for the check the project just promoted.
+`statistic_series` (_check_ledger_render.py:83-88) takes the MIN p-value over calibrations at
+each rung, and CvM has BOTH an asymptotic and a permutation row in `ROW_KEYS`. So a point
+labelled "CvM" on an axis labelled "p-value", read against the alpha reference line, can be the
+asymptotic value - the calibration the battery itself refuses when tau is event-determined
+(tests/test_checks_statistics.py:310) and the one the whole size bench exists to distrust at
+small n. Nothing in the legend or the marker says which calibration a point came from, and the
+line also ignores `verdict`, so an `underpowered` or `not interpretable` cell is drawn as
+ordinary evidence. Pre-existing for C1/C2; this change makes it true of CvM. | Restrict the
+ladder to `calibration == CALIB_PERMUTATION` rows (add the filter in `statistic_series`), or
+key the series on (check, calibration) so the two are separate lines.
+
+MINOR | panels/check_ledger.py:162 | Six categorical series sampled from a SEQUENTIAL ramp:
+the rendered colours are `#002b62, #3b496c, #646770, #8b8778, #b6a96f, #e5cf52`, whose middle
+four are near-indistinguishable greys, and `ordered_color`'s own docstring says it is for
+quantities with a natural order. Marginal at five, worse at six. | Use a categorical palette
+for the ladder (check identity has no order), or add per-check markers.
+
+### tests/test_instrument_validation.py  (change 6)
+
+VERIFIED | test_instrument_validation.py:213-215 (deleted) | The deleted line was
+`assert ("2 levels" in render_tier_table_markdown(data) or True)`, unconditionally true, so
+nothing relied on it. The preceding `assert data.divergence_levels == {35: 2.0, 355: 2.0}`
+carries the whole check, and it fails if `divergence_levels` regresses (verified by reading the
+FINEST-crossing sibling test, which pins the same field the other way).
+VERIFIED | test_instrument_validation.py:26,151,171 | `render_tier_table_markdown` is still
+imported and still called twice, so no unused import and no dead helper. The deleted call was
+the only render of a data with FINITE divergence in that test, but `_build()` (rendered at :151)
+also yields finite values (measured: `divergence_tie_fraction == {35: 0.9, 355: 0.9}`), so the
+finite-crossing render path keeps its smoke coverage.
+
+### tests/test_transform_guards.py  (NEW, 16 tests)
+
+All 16 pass as shipped (`pytest tests/test_transform_guards.py -q` -> 16 passed). Each was
+attacked by mutating the guard in a COPY of the source and re-running the assertion.
+
+VERIFIED (guard removal proven red), 13 of 16:
+- :52 failed-fit-not-zero-filled - mutant that zero-fills before the finite mask: no
+  `n_nonfinite_dropped` key (KeyError) AND `grid == 0.0` present. RED.
+- :81 outside-support-is-NaN - mutant with the `outside` NaN-ing deleted: `grid[0]` finite and
+  `finite.min() == 99.99999999999997`, so both assertions fire. RED.
+- :110 non-finite timestamp, :118 too-few-finite, :131 raw_frequency length - each keys on a
+  distinct `pytest.raises(match=...)` against a raise that is the only thing producing that
+  message. RED by construction.
+- :140 / :147 / :170 / :194 filter - the `filter cannot mask` length raise, the
+  all-columns-same-length control (regresses to `{t_rel_s: 9, T2star_s: 10}` if a column is
+  left unmasked), the propagating-mean regression (mu = NaN makes the mask all-False and
+  `kept == 0`), and the all-non-finite raise. RED.
+- :180 both-transforms-reject-a-ragged-column - ran HEAD's `interpolate.run` on the same input:
+  no raise, `out["odd"] == [[1, 2], [3]]` passed straight through. RED at HEAD, so this test is
+  the actual regression guard for change 3.
+- :210 the-seed-reaches-both-estimators - monkeypatched `GaussianMixture` to drop
+  `random_state`: `gmm1.random_state` becomes None and the assertion FAILS. The replacement
+  does what the old agreement form could not. RED.
+- :245 failed-fit-reports-fit_failed - the three assertions all read fields set only in the
+  `except` block, so either regression (no catch -> ValueError escapes; or the historical
+  `gmm2 = gmm1, bic_delta = 0.0`) is red.
+- :252-263 `_FailsOnTwo.__getattr__` delegation verified by direct exercise: `bic(X)`,
+  `predict(X)`, `means_`, `covariances_`, `weights_`, `random_state` all reach `_inner`, and
+  the n=2 arm raises before touching it. The monkeypatch target is right - `tlf.py:60` uses the
+  bare module-global name, and patching `tlf_module.GaussianMixture` demonstrably reaches it
+  (the seed experiment above used the same route).
+
+IMPORTANT | tests/test_transform_guards.py:125-128 | `test_a_row_aligned_companion_column_is_
+resampled_to_the_grid` CANNOT FAIL, so the file's opening claim ("Every assertion in this file
+was checked by removing the guard it covers") is false for this one. Proven: a mutant whose
+generic column loop is reduced to `out[key] = value` - literally the passthrough the test says
+is forbidden - still satisfies the assertion, because `x_uniform` is built with
+`num=len(t_rel_s)` (interpolate.py:130), so the grid length ALWAYS equals the input length and
+`len(out["T2star_s"]) == len(out["t_rel_s"])` is `10 == 10` either way. Tightening it to a
+value comparison does not help with this fixture either: `_norm`'s clock is already uniform
+(`np.arange(n) * 10.0`), so resampling is the identity - measured, `out["T2star_s"]` is
+`array_equal` to the raw input. | Give the fixture a NON-uniform clock (e.g.
+`t_rel_s=[0,10,20,25,40,...]`) and assert the companion column's values equal the pchip of the
+companion column on the grid, not merely its length. The same fixture weakness makes
+`test_a_clean_input_is_untouched_by_the_masking` (:70) a control over an identity map.
+
+MINOR | tests/test_transform_guards.py:227-235 | `test_the_same_seed_gives_the_same_verdict` is
+decoration with respect to the seed, as suspected. Measured under the seed-dropping mutant:
+all three assertions still pass, and six unseeded runs return a bit-identical
+`bic_delta = 870.932251`. It retains only residual value as a determinism smoke test of the
+dwell/BIC arithmetic. The docstring calls it "weaker ... a sanity floor", which is honest, so
+this is a note rather than a defect. | Keep it, or fold it into the seed test as a second
+assertion so the file does not carry a test that cannot fail on the property it names.
+
+MINOR | tests/test_transform_guards.py:241 | `pytest.raises(TypeError)` with no `match`: the
+test passes if `run_tlf` raises TypeError for ANY reason, e.g. a future `np.asarray` type
+error on `values`. The real message is "missing 1 required keyword-only argument: 'seed'". |
+`pytest.raises(TypeError, match="seed")`.
+
+MINOR | tests/test_transform_guards.py:262-263 | `__getattr__` recurses instead of raising when
+`_inner` is unset - measured: `_FailsOnTwo.__new__(_FailsOnTwo).means_` gives RecursionError.
+Unreachable in this test (both constructions complete), but it turns any future construction
+failure inside the wrapper into an unreadable stack. | Guard with
+`if name.startswith("_"): raise AttributeError(name)`.
+
+MINOR | tests/test_transform_guards.py | The file is UNTRACKED. `git add` it before committing
+or the whole change-3 regression guard ships as nothing; and note `provenance.is_tree_clean`
+uses `--untracked-files=no`, so the tree reports clean while it is missing.
+
+### Cross-check: behaviour hiding in the files labelled "prose"
+
+Method: for every modified `.py` outside this scope, parsed HEAD and worktree, stripped every
+docstring and (via `ast.unparse`) every comment, and compared. Six files differ, and all six
+differ ONLY in human-readable message strings:
+- `_permutation.py`, `battery.py`, `test_checks_c3_bridge.py`, `test_r_cross_implementation.py`
+  - error text, a `pytest.skip` message and an assertion message. No test matches on the old
+  wording (`grep` for the removed phrases across `tests/ src/ jobs/` is empty). Inert.
+- `battery.py`'s new counts check out against the code: `ROW_KEYS` has 9 rows, 6 of them
+  `CALIB_PERMUTATION` ("Six of its nine"), and `include_tau_checks=False` leaves 4
+  (pinned by tests/test_checks_statistics.py:312), i.e. drops 5. Correct.
+
+VERIFIED (this is the class that sank patch 3) | jobs/bench/report.py, analyzers/
+instrument_validation.py | The two changed strings are the ones that get WRITTEN into committed
+artifacts, and this time code and artifact AGREE: `report.py` now emits
+"# Promotion report - the six checks against the calibration bench" and "**Five checks are
+assessed, not six.**", which is verbatim `jobs/bench/results/promotion_report.md` lines 1 and 5;
+`instrument_validation.py` now emits "`promotion_report.md`, which scores five checks - C3 has
+no bench cell.", verbatim `jobs/bench/results/instrument_report.md:23`. Both artifacts are
+tracked and unmodified, so these edits close a code/artifact divergence rather than opening one.
+
+MINOR | tests/test_transform_guards.py:202-207,219-220,230-232,240 | Unit-suffix rule: the new
+`timestamps` local (and the returned `values`, which are Hz) carry no unit suffix, and
+`_bimodal` builds them as `np.arange(...) * 24.0` seconds. Mirrors `tlf.run`'s existing
+parameter names, so it is consistent rather than novel, but it is new code under a hard rule. |
+`t_rel_s` / `values_hz` in the fixture, keeping the call keyword-free as now.
+
+## Patch 4 verdict: see the final report. Behaviour of all 6 listed changes is sound; the
+## defects are in the GUARDS (one test that cannot fail, one guard defeatable by naming, one
+## ladder line that plots min-over-calibrations under a bare "p-value" label).
+<!-- PATCH4-BEHAVIOUR-FINDINGS-END -->
+
+--- PATCH COMMIT 4 of 4 — PROSE (comments/docstrings/markdown only), appended 2026-09-02 ---
+
+SCOPE: prose in the ADDED lines of: AGENTS.md, README.md, CONTRIBUTING.md, CLAUDE.md (new
+symlink), docs/PANEL_CONTRACT.md, docs/TIME_SEMANTICS.md, docs/FIGURE_STANDARD.md,
+docs/WRITING_A_JOB.md, docs/iid_checks/*, docs/iid_checks/CvM_cramer_von_mises.md (NEW),
+the chronology purge across src/**, jobs/**, tests/**, scripts/**, conftest.py,
+pyproject.toml, and src/quebra/analyzers/checks/battery.py's COUNTS.
+COMMIT: ff4a8c5 (working tree, uncommitted)
+NOTE: Makefile, .gitignore and .github/** are UNCHANGED in this diff despite being named in
+scope; nothing to review there. CITATION.cff / quebra.toml / this ledger skipped per scope.
+
+## Manifest (patch 4 prose)
+- [ ] CLAUDE.md (new symlink)
+- [ ] AGENTS.md
+- [ ] README.md
+- [ ] CONTRIBUTING.md
+- [ ] src/quebra/analyzers/checks/battery.py
+- [ ] docs/PANEL_CONTRACT.md
+- [ ] docs/FIGURE_STANDARD.md
+- [ ] docs/TIME_SEMANTICS.md
+- [ ] docs/WRITING_A_JOB.md
+- [ ] docs/iid_checks/iid_checks_basics.md
+- [ ] docs/iid_checks/C2_anderson_darling.md
+- [ ] docs/iid_checks/C6_exchangeability.md
+- [ ] docs/iid_checks/LIMITATIONS.md
+- [ ] docs/iid_checks/CvM_cramer_von_mises.md (NEW)
+- [ ] src/** chronology purge (grouped)
+- [ ] jobs/** chronology purge (grouped)
+- [ ] tests/** chronology purge (grouped)
+- [ ] scripts/**, conftest.py, pyproject.toml (grouped)
+
+## Reviewed (patch 4 prose)
+
+## Findings (patch 4 prose)
+
+### CLAUDE.md (new)
+VERIFIED | CLAUDE.md | `readlink CLAUDE.md` -> `AGENTS.md`. It is a relative symlink to
+AGENTS.md, exactly as AGENTS.md:14 now claims. No content of its own. Nothing to trim.
+
+### AGENTS.md
+VERIFIED | AGENTS.md:14 | "`CLAUDE.md` is a symlink to it so it loads every session" - true,
+and AGENTS.md is the only agent-facing file (`find . -name 'AGENTS.md' -o -name 'CLAUDE.md'`
+returns only these two).
+VERIFIED | AGENTS.md:15 | `spec/quebraplan.md` exists. Old `spec/PLAN.md` does not.
+VERIFIED | AGENTS.md:25,28 | `data/real_private/` exists in the checkout and holds
+`6D2S/`, `2x2/`, `companion/`, `calibration_logs/`, `MANIFEST.toml`.
+FALSE | AGENTS.md:29 | "`data/simulated/` holds regenerable payloads" - the directory is
+EMPTY on disk and `git ls-files data/` returns exactly one path (`real_private/MANIFEST.toml`).
+Present tense claim about content that does not exist. Also silently drops `data/real_public/`,
+which DOES exist, so the sentence describes two thirds of a three-way split. | "The embargoed
+records live under `data/real_private/`, inside the checkout. `data/real_public/` and
+`data/simulated/` are the redistributable and regenerable halves."
+VERIFIED | AGENTS.md:69 | `analyzers/within_calibration_compute.build_within_calibration_panel_data`
+- module exists, `def build_within_calibration_panel_data` at line 395. Old
+`panels/_within_calibration_compute` is gone.
+VERIFIED | AGENTS.md:193-197 | Layout block: `analyzers/within_calibration_compute.py`,
+`analyzers/within_calibration_data.py`, `panels/_within_calibration_render.py`,
+`panels/within_calibration.py` all exist; `panels/_within_calibration_compute.py` and
+`panels/_within_calibration_data.py` do not.
+VERIFIED | AGENTS.md:231-232 | `scripts/` holds exactly `acceptance.sh`, `promote_run.py`,
+`make_data_manifest.py`, `make_fixtures.py`, `make_job_manifest.py`. List is complete and
+correct.
+VERIFIED | AGENTS.md:234-235 | provenance note: `_git` runs with `cwd=Path.cwd()` and both
+`get_git_commit` and `is_tree_clean` go through it, so the cwd-anchoring claim is true.
+VERIFIED | AGENTS.md:252-253 | `data/real_private/6D2S/` and `data/real_private/companion/`
+both exist.
+FALSE | AGENTS.md:159 | "Fourteen lines remain in `*.py` for that reason." Fourteen is the
+count at HEAD. The shipping tree has FIFTEEN (`grep -rn repairable --include='*.py'`), because
+this same commit added the `# FROZEN VOCABULARY.` comment at
+tests/test_artifact_guard.py:297. The number was counted against the wrong tree state. It is
+also a liability by the author's own rule (2): nothing regenerates or asserts it
+(`grep -rn 'Fourteen' tests/ scripts/ Makefile` is empty), and it will be wrong again on the
+next comment edit. | Delete the sentence. `panels/across_calibration.py` carries the canonical
+note; a running tally of grep hits adds nothing a reader can act on.
+IMPORTANT | AGENTS.md:189-190 | The `checks/` layout list is now incomplete in a way that
+makes the count on the next line unreadable: it names "C1 ..., C2 ..., C3 copula-via-R ...,
+C5 ..., C6 ..." and omits CvM, then line 191 says "the five permutation checks". A reader
+counts the five listed and concludes C3 is one of them. C3 is not in `ROW_KEYS` at all and is
+never run by the battery; CvM is. | Add ", CvM Cramer-von Mises" to the list after C2.
+VERIFIED | AGENTS.md:191 | "the five permutation checks" - `ROW_KEYS` has six
+CALIB_PERMUTATION rows across five distinct check names (c1, c2, c5, c6, cvm). "Five checks"
+is right; "five rows" would have been wrong.
+IMPORTANT | AGENTS.md:234 | Over-correction. The deleted note - "`provenance.py` reports the
+tree clean while it changes" - was a live hazard for the reader this file addresses: an agent
+writes untracked files constantly, and `is_tree_clean` passes `--untracked-files=no`, so a
+tree carrying brand-new untracked modules still reports clean and artifact reuse still fires.
+The replacement note answers a different question (which repo the helpers describe) and the
+hazard now survives only in the `is_tree_clean` docstring. | Keep both: append "Untracked
+files do not make the tree dirty, so reuse can fire on a tree holding new untracked code."
+MINOR | AGENTS.md:154 | Chronology the purge missed, and the exact banned form: "The rename
+landed on 2026-08-23 (SPEC 0001 R0.4)." Spec number plus requirement id plus date. | "The
+rename is ours."
+MINOR | AGENTS.md:171 | Chronology the purge missed: "SPEC 0002 moved the packages under
+`src/quebra/`." | "The packages live under `src/quebra/`."
+
+### README.md
+FALSE | README.md:125,132 | "`--all` ... runs the ones declaring `JOB_SWEEP = True`" and the
+inline comment "# every job declaring JOB_SWEEP = True". `discovery.py:126` reads
+`sweep=True if sweep is None else sweep`, so a job that declares NOTHING is swept. The
+condition is opt-OUT, not opt-in, and `discovery.py:167` says so in its own docstring
+("everything not opting out via `JOB_SWEEP = False`"). Two occurrences. | comment: "# every
+job that does not opt out"; prose: "runs every job that does not declare `JOB_SWEEP = False`
+- composites opt out."
+VERIFIED | README.md:130-131 | "`--all` discovers every job under `./jobs`" - cli.py:150-175
+walks `jobs/` (not `jobs/active`), errors if `jobs/` is absent, and filters on `d.sweep`.
+The old "sweeps `./jobs/active`" was the false claim; the directory half of the fix is right.
+VERIFIED | README.md:72 | The stray `**` on its own line before "Identity is content" is
+fixed and the bold now renders. Real defect, correctly repaired.
+VERIFIED | README.md:87-89 | The duplicated "Feedback is welcome..." sentences are removed
+from the run-on paragraph and survive once, below. Correct de-duplication.
+SHOULD | README.md:113-116 | Four sentences to say one thing, and the last one argues with an
+imagined reader. "`scripts/acceptance.sh` checks the same claim from a harsher angle: it
+builds a wheel, installs THAT into a throwaway virtualenv outside the repository, and runs
+the suite from a directory that is not the checkout. If a packaging mistake makes the steps
+above work only from a git clone, that script is what catches it." The second sentence is the
+first sentence with a justification attached - the recognisable shape. | "`scripts/
+acceptance.sh` runs these steps against a built wheel, in a throwaway virtualenv outside the
+repository, from a directory that is not the checkout." (Verified against the script below.)
+MINOR | README.md:113 | "from a harsher angle" and the shouting "THAT" are register drift in
+the one file aimed at strangers. The mechanism carries the point without either.
+
+### CONTRIBUTING.md
+VERIFIED | CONTRIBUTING.md:36-37 | `make check` is `check: lint types arch test` where
+`lint` = ruff check + ruff format --check, `types` = mypy, `arch` = `lint-imports --no-cache`
+(the import contract), `test` = `pytest $(FAST)`. `.github/workflows/ci.yml:43-47` runs
+`make check` then `make deps`. "what CI runs" is accurate. `make deps` is `deptry .`.
+VERIFIED | CONTRIBUTING.md:8 | Repository renamed qretool -> quebra consistently; matches
+the `quebra` console script and package name.
+MINOR | CONTRIBUTING.md:26 | "Response is best effort, be kind <3" replaces "Response is
+best effort. This is thesis work, not a funded project." The deleted half was the REASON the
+response is best effort, which is the only part a stranger opening an issue needs; the
+emoticon is register drift in a contributor-facing contract. | "Response is best effort.
+This is thesis work, not a funded project."
+
+### src/quebra/analyzers/checks/battery.py
+FALSE | battery.py:107-108 | NEW false claim, and the file contradicts itself 33 lines later.
+"`include_tau_checks=False` drops the three asymptotic rows - C1, C2 and CvM - leaving the
+six permutation-calibrated ones." The `if include_tau_checks:` block at battery.py:153-197
+contains FIVE rows: c1-asymptotic, c1-PERMUTATION, c2-asymptotic, cvm-asymptotic and
+c2-PERMUTATION. So the flag drops 5 of 9 and leaves 4 - c5-studentized, c5-raw, c6, and
+cvm-by-permutation - not 6. battery.py:143 and battery.py:217-221 both state correctly that
+only CvM's permutation row survives the flag. | "`include_tau_checks=False` drops C1 and C2
+entirely, both calibrations, along with CvM's asymptotic row. Four rows survive: the three
+rank rows and CvM by permutation."
+FALSE | battery.py:9-10 | The row count was updated and the measurement it labels was not.
+"sharing it cuts a full nine-row replicate at N = 355 from 362 ms to 197 ms, and the whole
+6-point n sweep from 613 ms to 341 ms." 362/197/613/341 ms were measured on a SEVEN-row
+replicate; relabelling them "nine-row" makes four numbers describe a configuration nothing
+ever timed. Rule (2) exactly. | Drop the milliseconds and keep the ratio-free claim:
+"sharing it cuts a full replicate at N = 355 and the 6-point n sweep to roughly half."
+Re-measure only if the figures are wanted.
+VERIFIED | battery.py:100 | "Up to nine results in `ROW_KEYS` order." `ROW_KEYS` has 9
+entries. Correct.
+VERIFIED | battery.py:106 | "the other eight rows are still wanted" - dropping
+c2-asymptotic leaves 8 of 9. Correct.
+VERIFIED | battery.py:128 | "Six of its nine rows are permutation-calibrated" - CALIB_
+PERMUTATION appears 6 times in `ROW_KEYS` (c1, c2, c5-stud, c5-raw, c6, cvm). Correct.
+MINOR | battery.py:8-9 | Adjacent to an edited line and now false by omission: "C1, C2,
+C5-studentized, C5-raw and C6 all want the identical one". CvM wants it too - battery.py:144
+passes `permuted=permuted` to `cvm.run` - so six things share the matrix, not five. | Add
+"and CvM" to the list.
+MINOR | battery.py:108-109 | The rewrite left a ragged wrap with an orphan "It" ending line
+108 and "is for records where" starting 109. | Re-wrap the paragraph.
+VERIFIED | battery.py:143 | "so this is not gated on that flag alone" replaces "can no longer
+be gated on that flag alone" - chronology removed, present tense true, no information lost.
+
+### tests/test_windows_not_interpolated.py  [reviewed]  - CHANGE 1
+
+IMPORTANT | tests/test_windows_not_interpolated.py:74 | The blacklist is NOT sufficient compensation for dropping the stem requirement, and the gap includes this repo's OWN interpolator. Measured old-vs-new over a 45-name corpus: the rule went from "suffix must be a dataset stem" to "any suffix", and the token list catches only 5 of the 20 plausible resampling names I could construct. ACCEPTED BY THE NEW RULE, REJECTED BY THE OLD: `filter_pchip`, `filter_spline` (transforms/interpolate.py:63 literally calls `scipy.interpolate.pchip_interpolate`, so `pchip` is the most likely name a second resampling recipe would carry), `filter_downsample`, `filter_upsampled`, `windows_downsampled` (the list has `resample` but not `sample`, so two thirds of the standard verb family escape), `filter_binned` / `filter_bin_10ms` (`rebin` only matches `rebin`), `filter_grid` / `filter_gridded` / `filter_onto_grid` (`regrid` only matches `regrid`), `filter_smooth`, `filter_nearest`, `filter_asfreq`, `filter_reindexed`, `filter_zoh`, `filter_evenly_spaced`, `filter_rolling_mean`, `filter_lowpass`, `filter_ffill`, `filter_imputed`. | Minimal: `RESAMPLING_TOKENS = ("interp","sample","grid","decimate","rebin","bin","pchip","spline","smooth","uniform")` - note `sample` subsumes `resample`/`upsample`/`downsample`/`subsample` and `grid` subsumes `regrid`. `bin` and `fill` are unsafe as bare substrings (`combined`, `binary` contain `bin`), so if they are wanted, split on `_` and match TOKENS rather than substrings.
+
+IMPORTANT | tests/test_windows_not_interpolated.py:84-88 | A name-independent check is available and was not used, which is what makes the loosening avoidable rather than necessary. Measured: `job.dag[n].fn.__qualname__` is `_interpolate_step.<locals>.step` for the interpolate node and `_filter_step.<locals>.step` for the filter node - the closure factories ARE distinguishable, contradicting the premise at :117-119 (which is only true of `fn.__name__`). So the one resampling step that exists in this repo can be caught by identity regardless of what a job calls the node, and the name blacklist would only need to cover FUTURE resamplers. | Add, beside the token check: `assert not any(job.dag[a].fn.__qualname__.startswith("_interpolate_step") for a in _ancestors(...))`, or more generally reject any ancestor whose `fn.__module__`/qualname reaches `quebra.transforms.interpolate`. Keep the token list as the secondary net.
+
+MINOR | tests/test_windows_not_interpolated.py:86-88 vs :6-10,144 | The token check runs BEFORE the whitelist and `continue`s, so the whitelist is no longer primary and the documented escape hatch does not work. A legitimate step whose name contains a token can NOT be fixed by "add it to OBSERVED_ANCESTORS deliberately" (the failure message at :144) - the entry would be dead, which is exactly why `fidelity_interp` had to be deleted from the whitelist in this diff. C1's null is stated as "events uniform on [0, tau]" (c1_lewis_robinson.py:19), so `uniform` is the plausible false positive: a step named `filter_uniform_null` fails unfixably. Fails loudly and in the safe direction, hence MINOR. | Either check the whitelist first and the tokens only on the non-whitelisted remainder, or amend the failure message to say a token-bearing name must be RENAMED, not whitelisted.
+
+MINOR | tests/test_windows_not_interpolated.py:111-112 | Dead code. The `while` exits either by `break` (which happens only when `base in OBSERVED_ANCESTORS`) or by exhausting the condition (which runs the `else` and `continue`s), so line 111 is reached only with `base` already whitelisted and the `if` is never true. | Delete :111-112.
+
+VERIFIED | tests/test_windows_not_interpolated.py:103-110 | The new prefix loop terminates and is correct on the degenerate names. Each iteration strictly shortens `base` (`rpartition` on a present `_`), so no infinite loop. Measured: no underscore (`foo`) -> `while` body never runs -> `else` -> rejected; `"_"` -> base `""` -> rejected; `"___"` -> three iterations -> rejected; leading underscore `_filter` -> base `""` -> rejected (same as old). One trivial loosening: trailing underscore `filter_` is now ACCEPTED (old rejected it, because `suffix` was empty and the `while` guard failed). Harmless.
+
+VERIFIED | tests/test_windows_not_interpolated.py:58-67 | `discover` really skips every non-job file. Only 12 files under `jobs/` declare `JOB_ID` (9 in `active`, 3 in `composite`); all 8 `jobs/bench/*.py` and the 3 `__init__.py` are skipped, and `discover` skips `__init__.py` by name before parsing (discovery.py:137). Parametrised cases: 9 BEFORE -> 13 NOW (adds `check_ledger_q1`, `compare_t2star_0704_vs_1004`, `independence_survey`); file total 12 -> 16 tests, all passing in 1.7 s. New coupling, acceptable: a SyntaxError in any `jobs/**.py` now raises `UnreadableJobFile` during COLLECTION of this file, where before only `jobs/active` could break it.
+
+VERIFIED | tests/test_windows_not_interpolated.py:136 | The 34 survey chains are genuinely reached, not nominally. `independence_survey` builds 206 nodes, `_windows_nodes` finds 34 (`windows_q1_040423` ...), and their union of ancestors is 170 nodes spanning `load_*`, `filter_*`, `final_*`, `t2star_*`, `windows_*`. The chain is `load -> filter_{label} -> final_{label} -> t2star_{label} -> windows_{label}` (independence_survey.py:242-248), and `_final_stage` (recipes.py) only unwraps `FilterResult.final_norm` - no resampling, so `final` is a correct whitelist addition. Under the OLD rule 3 x 34 = 102 of those names were unmatchable, so the widening genuinely could not have landed without loosening something.
+
+VERIFIED | tests/test_windows_not_interpolated.py:42 | Deleting `fidelity_interp` from the whitelist is inert AND forced. `grep -rn fidelity_interp` over the whole repo returns nothing, so no job names such a node; and with the token check placed first the entry could never have matched anyway. It was also a rule violation while it lasted (a whitelisted "observed, never resampled" entry whose name says otherwise). `ramsey_q1_100423`'s `fidelity_windows` ancestors are `{fidelity_raw, filter, final_filter_stage, load, load_df, lookup_prior}` - `interpolate` is NOT among them, confirmed by construction.
+
+VERIFIED | tests/test_windows_not_interpolated.py:190-209 | The new positive control does fail on the hole it names: `_unexpected` returns `{"filter_then_interpolate"}` with the token list present, and returns `set()` (test fails) with `RESAMPLING_TOKENS = ()`. It is not decoration.
+
+## Reviewed (patch 4)
+- [x] tests/test_windows_not_interpolated.py
+
+### docs/FIGURE_STANDARD.md
+VERIFIED | FIGURE_STANDARD.md:6-8 | Axis-label attribution is now correct.
+`panels/comparison.py:34` (`x_label: str = "Elapsed time (h)"`) and
+`plots/interpolation_stage_plot.py:107,129` (`set_xlabel("Elapsed time (h)")`) are the two
+places with that label; `panels/across_calibration.py:191` has
+`set_ylabel("Inter-event interval (h)")`. `panels/within_calibration.py` has neither, so
+dropping it from the list was right. Both labels are ruled out by the table at
+FIGURE_STANDARD.md:49 (`scan clock | wall time, elapsed time`) and :45
+(`window | interval, period, span`).
+SHOULD | FIGURE_STANDARD.md:8 | The inventory is presented as complete and is not:
+`panels/across_calibration.py:190,223` also `set_xlabel("Elapsed time (days)")`. The new
+precision about `(h)` is what creates the gap - it buys nothing and excludes a real
+violation. | "`panels/comparison.py`, `plots/interpolation_stage_plot.py` and
+`panels/across_calibration.py` all label an axis `Elapsed time`, and
+`panels/across_calibration.py` labels one `Inter-event interval (h)`."
+MINOR | FIGURE_STANDARD.md:9 | The rewrite broke the wrap: line 9 is 152 characters where
+the rest of the file wraps near 90. Also `; and` splices two clauses that were separate
+sentences. | Re-wrap and split at "rules out. No panel yet reports how much data it dropped."
+
+### docs/PANEL_CONTRACT.md
+VERIFIED | PANEL_CONTRACT.md:56-58 | The Kaplan-Meier rewrite is true on both halves.
+`src/quebra/analyzers/kaplan_meier.py` exists; its only importers are
+`plots/km_survival_plot.py` and `jobs/active/km_poster_6d2s.py`, and
+`panels/within_calibration.py` does not import it - so "the estimator exists but this panel
+does not consume it" holds. `ReliabilityBand` declares `cumulative_hazard`, `band_lower`,
+`band_upper` as `None` defaults (reliability_band.py:70-72) and the only construction site
+is `ReliabilityBand(estimator=ESTIMATOR_CRUDE)` at :187, so "are `None` here" holds.
+VERIFIED | PANEL_CONTRACT.md:202-203 | "`analyzers/kaplan_meier.py` uses the censored windows
+rather than discarding them" - kaplan_meier.py:10 "Right-censored windows are kept, not
+dropped", and it carries `censor_time_min` / `censor_survival` / `n_censored`. True. The
+crude path does discard them (reliability_band.py:218). Correct contrast.
+VERIFIED | PANEL_CONTRACT.md:290 | `analyzers/fidelity.py::make_panel_data(result:
+FidelityResult, windows, reads, ...)` exists at fidelity.py:222 and returns
+`WithinCalibrationPanelData`. The old `plots/fidelity_plot.py` does not exist. Correct fix.
+IMPORTANT | PANEL_CONTRACT.md:310-311 | Half-fixed sentence, so it still names a file that
+does not exist. The compute path was corrected to `analyzers/within_calibration_compute.py`
+but the same sentence still says "`_within_calibration_data.py` is the typed contract".
+`src/quebra/panels/` holds only `within_calibration.py` and `_within_calibration_render.py`;
+the typed contract is `analyzers/within_calibration_data.py`, as AGENTS.md:196 now says. |
+"...and `analyzers/within_calibration_data.py` is the typed contract."
+SHOULD | PANEL_CONTRACT.md:310 | "The split is partly done:" is status narration, the
+author's rule (4), and it replaced status narration ("The split it proposed has since
+happened in part") rather than removing it. The paragraph does not need a progress verb at
+all. | "`analyzers/within_calibration_compute.py` builds the artifact, ..."
+SHOULD | PANEL_CONTRACT.md:17-19 | The rewrite left a sentence that is half rule and half
+obituary, and the middle clause stayed in the past: "`FidelityPlot` and `T2StarPlot` must
+not build panel data inside `build_matplotlib`, where no DAG node could supply the window
+tables; both are gone and jobs use `WithinCalibrationPanel` directly". If both classes are
+gone, a prohibition addressed to them is unreadable. | "No plot builds panel data inside
+`build_matplotlib`: no DAG node can supply the window tables there. Jobs use
+`WithinCalibrationPanel` directly off a panel-data step."
+OPTIONAL | PANEL_CONTRACT.md:57-58 | "wiring it in changes only that band" argues a
+counterfactual nothing can check. The two verified sentences before it carry the point. |
+Delete the clause.
+MINOR | PANEL_CONTRACT.md:307 | Chronology the purge missed, in the paragraph it edited:
+"The number in this paragraph read "~650" until 2026-08-23; the file had grown and the doc
+had not." | Delete the sentence.
+OPTIONAL | PANEL_CONTRACT.md:306 | Adjacent typed number, off by one: "is 1057 lines";
+`wc -l` says 1056. Nothing regenerates or asserts it. "still the largest module in the tree"
+IS true (next largest is `analyzers/instrument_validation.py` at 704). | "is over five times
+the project's 200-line guideline" - drop the exact count.
+
+### docs/TIME_SEMANTICS.md
+VERIFIED | TIME_SEMANTICS.md:34,64,94 | All three dataset paths corrected correctly.
+`data/real_private/companion/` and `data/real_private/6D2S/` exist and hold the named
+patterns. No `.hdf5` exists anywhere in the checkout, so "outside the checkout" is true.
+VERIFIED | TIME_SEMANTICS.md:38-39 | Smart quotes in the `python` block replaced with
+straight quotes. That block was not valid Python before; real fix.
+VERIFIED | TIME_SEMANTICS.md:61 | "There is no `t_s` key; downstream steps use `t_rel_s`."
+`grep -rn '"t_s"' src/ jobs/ tests/` is empty. True, and the chronology ("no longer
+emitted") is gone without losing the fact.
+VERIFIED | TIME_SEMANTICS.md:128 | Deleting "(`_check_unix_s` is a deprecated alias and will
+be removed.)" loses nothing: only `check_unix_s` exists
+(`transforms/lookup_prior.py:16`); the underscore alias is gone.
+SHOULD | TIME_SEMANTICS.md:77 | Over-correction that breaks the section's own contract. The
+heading is under "## Verified Dataset Types" and lists "**Verified fields**", but
+`frequency_cal_q1.hdf5` was replaced with "core-tools `.hdf5`, outside the checkout" - so
+nobody can tell which file the verification was performed against, and the verification
+becomes unreproducible. "core-tools" also now appears twice in one heading. | "### 2)
+core-tools HDF5 calibration sweeps (`frequency_cal_q1.hdf5`, outside the checkout)"
+OPTIONAL | TIME_SEMANTICS.md:34 and AGENTS.md:253 | `data/real_private/companion/` holds
+exactly one file, `qubit1.pickle`. `qubit*.pickle` is an honest glob; AGENTS.md's
+`qubit{N}.pickle` implies a family that is not there. | AGENTS.md: `qubit1.pickle`.
+
+### docs/iid_checks/iid_checks_basics.md
+VERIFIED | iid_checks_basics.md:13,103 | "all six" and "the six checks" -
+`src/quebra/analyzers/checks/` holds c1_lewis_robinson, c2_anderson_darling,
+c3_serial_copula, c5_rank_autocorr, c6_exchangeability, cvm_cramer_von_mises. Six.
+VERIFIED | iid_checks_basics.md:104 | "runs the five permutation checks off ONE permutation
+set" - `battery.ROW_KEYS` has six CALIB_PERMUTATION rows over five distinct check names
+(c1, c2, c5, c6, cvm). Five checks is correct.
+VERIFIED | iid_checks_basics.md:112-113 | "There is no C4. Lin-Wei-Ying is the fourth check
+in the source's numbering and is not implemented here" -
+`.claude/qre_checks_reference.tex:790` is titled "C4 -- Lin-Wei-Ying, and why it is not in
+the battery", and :92 says it "is documented in Section~\ref{sec:lwy} and not implemented".
+Both halves true.
+VERIFIED | iid_checks_basics.md:110-111 | All six per-check pages linked exist on disk,
+including the new `CvM_cramer_von_mises.md`.
+SHOULD | iid_checks_basics.md:113 | "; nothing in the battery depends on it." A check that
+is not implemented cannot be depended on, so the clause carries no information - it is the
+closing-clause-that-argues shape. The reference explains WHY it is out (it tests a fitted
+regression model, a different tier); that would be worth a clause, this is not. | "There is
+no C4. Lin-Wei-Ying is the fourth check in the source's numbering; it tests a fitted
+regression model, not the durations, and is not implemented here."
+
+### docs/iid_checks/LIMITATIONS.md
+VERIFIED | LIMITATIONS.md:1 | "all six checks" - correct, six modules on disk.
+
+### docs/iid_checks/C6_exchangeability.md
+VERIFIED | C6_exchangeability.md:13 | "the natural reference among the six" - correct.
+
+### docs/iid_checks/C2_anderson_darling.md
+SHOULD | C2_anderson_darling.md:30 | The chronology went, an empty assertion took its place:
+"That distinction matters and is load-bearing - see the limitations below." "Matters" and
+"is load-bearing" are the same claim twice, and neither says anything the bolded sentence
+before it did not. | "**Both force `gamma = 1`, so neither pins the shipped path.** See the
+limitations below."
+
+### docs/iid_checks/CvM_cramer_von_mises.md (NEW, 73 lines)
+Nothing on this page is invented. Every functional, function name, test, row and gate checks
+out against the code. Three claims are wrong and one pointer is wrong.
+
+VERIFIED | CvM:5 | "The third functional" is CORRECT and the CODE is wrong.
+`.claude/qre_checks_reference.tex:278-281` tabulates the class as LR (4), Kolmogorov-Smirnov
+(5), Cramer-von Mises (6), Anderson-Darling (7). CvM is third by both table order and
+equation number. `cvm_cramer_von_mises.py:3` and `battery.py:69` both say "the FOURTH
+functional"; those two are the errors. | Fix the two code comments to "third", not the doc.
+SHOULD | CvM:5-13 | The ordinal and the code block contradict each other for the reader: the
+page says "third" and then shows a three-line block in which CvM is listed FIRST and
+Kolmogorov-Smirnov (the second of the four) is absent. | Add `sup_s |W0(s)|   <- Kolmogorov-
+Smirnov, not implemented` to the block, or reorder it (4)(5)(6)(7).
+FALSE | CvM:15-17 | The equation citation was dropped rather than corrected, so a transcribed
+formula now cites no equation - the project's own statistical hard rule. "The reference
+prints its middle term as `- i N (T^2_{i+1} - T^2_i)/tau`". The reference's CvM statistic is
+eq (6) (`\label{eq:cvm}` at tex:589). `cvm_cramer_von_mises.py:16` cites "its eq (7) middle
+term", and eq (7) is Anderson-Darling - so the module cites the wrong equation and the page
+cites none. | "The reference prints eq (6)'s middle term as ...".
+FALSE | CvM:67-68 | The pointer is wrong and LIMITATIONS.md disclaims it in its own second
+line. "Shared with C1 and C2, and set out in `LIMITATIONS.md`: the asymptotic calibration
+divides by an estimated `gamma_hat` ...". `grep -n gamma docs/iid_checks/LIMITATIONS.md` is
+EMPTY; that file's eight sections are cross-cutting ones and it opens "Per-check limitations
+live on the per-check pages." The gamma_hat caveat is on `C2_anderson_darling.md:34-38` (with
+measured figures) and `C1_lewis_robinson.md:47`. | "Shared with C1 and C2, and stated on
+their pages: the asymptotic calibration divides by an estimated `gamma_hat`, so ..."
+SHOULD | CvM:49-51 | Mechanism misattributed, and the mechanism is the point of the
+paragraph. "On the in-spec clock of a carved record `tau == T_N`, which makes eq (7) singular
+and silences C1 and C2". Eq (7) is C2's alone; C1 is eq (4) and has no `1/(s(1-s))` weight.
+`c1_lewis_robinson.py:120-155` has no `tau == T_N` guard and always returns a p-value - only
+`c2_anderson_darling.py:89,147,165` declines. C1 goes dark because the CALLER turns off
+`include_tau_checks`, not because its formula fails. | "On the in-spec clock of a carved
+record `tau == T_N`. That makes eq (7) singular, so C2 declines outright, and it makes the
+truncation time event-determined, so C1's asymptotic null is void too. CvM's integrand
+carries no `1/(s(1-s))` weight, so its statistic stays finite there."
+SHOULD | CvM:49 | "It also survives a case C2 cannot" is true only of the permutation row,
+and the page's own next section says so. Stated unqualified four lines earlier it is the
+kind of claim this commit exists to remove. | "Its permutation row also survives a case C2
+cannot."
+MINOR | CvM:55-56 | "The asymptotic row is gated with C1's and C2's - `include_tau_checks`
+and a single segment". C1's asymptotic row is NOT gated on a single segment
+(`battery.py:154-171` emits it for any m); only C2's and CvM's are. | "gated with C2's -
+`include_tau_checks` and a single segment - and, like C1's, dropped when the tau gate is off".
+VERIFIED | CvM:33-34 | `analyzers/checks/cvm_cramer_von_mises.py` defines `statistic` (:172),
+`statistic_batch` (:191), `cvm_limiting_cdf` (:107) and `run` (:208). All four names correct.
+VERIFIED | CvM:36-39 | All four pinned directions exist in `tests/test_checks_cvm.py`:
+`test_at_gamma_one_it_is_the_classical_cramer_von_mises` (:34, against
+`scipy.stats.cramervonmises`), `test_the_bracket_is_the_bridge_integral` (:43, via
+`scipy.integrate.quad`), `test_the_limiting_cdf_reproduces_the_published_critical_values`
+(:61), `test_statistic_batch_reproduces_the_statistic_under_the_identity` (:84).
+VERIFIED | CvM:28-29 | The `gamma_hat = 1` identity claim matches the test exactly:
+`cramervonmises(np.cumsum(seg.x) / seg.tau, "uniform")`, i.e. `u_i = T_i/tau`.
+VERIFIED | CvM:43-45 | The `m > 1` reversal and the quotation are the source paper's, per
+`.claude/qre_checks_reference.tex:598-600`: "for several processes we do not include the
+Anderson-Darling test as the Cramer-von Mises test had better level properties in this case".
+`C2_anderson_darling.md:53-55` says the same. Quote is accurate word for word.
+MINOR | CvM:43 | Attribution slip on the sentence that carries the quote. "The reference
+reverses its own single-process preference" - the reference document reports that the PAPER
+reverses ("But for m > 1 the paper reverses the preference", tex:597). Everywhere else on
+this page "the reference" means the project's reference document. | "The source paper
+reverses its own single-process preference for `m > 1`".
+VERIFIED | CvM:55 | "Two of the nine in `battery.ROW_KEYS`: one asymptotic, one
+permutation-calibrated" - `ROW_KEYS` entries at battery.py:64 and :76. Correct.
+VERIFIED | CvM:69-70 | "`test_tier3_calibration.py` measures that level and asserts only a
+wide bound, deliberately" - :212-226 parametrizes `["c1", "c2", "cvm"]` and asserts
+`0.005 <= size <= 0.20`; the module docstring at :11-13 says no direction is asserted.
+VERIFIED | CvM:73 | "`run_battery` raises rather than defaulting one" - battery.py:127.
+SHOULD | CvM:61-63 | A hazard is stated and never resolved, so the page reads as a warning
+about itself. "`ROW_KEYS` is the schema of the bench tables, so registering a check without
+re-running the bench makes `bench_acceptance_at_n` return None and every ledger row read
+`underpowered / no bench cell`." The reader is not told this was avoided. The bench WAS
+re-run: `jobs/bench/results/size_table.csv` holds 219 CvM rows (counted; the figure in
+`cvm_cramer_von_mises.py:38` is right). Also `underpowered / no bench cell` is backticked as
+a literal and is a paraphrase - the code has `VERDICT_UNDERPOWERED = "underpowered"`
+(check_ledger.py:56) and `"no bench cell for this check at this event count"` (:252). |
+"`ROW_KEYS` is the schema of the bench tables, so a check must be registered and the bench
+re-run together or every ledger row reads underpowered. `size_table.csv` carries CvM cells."
+STRUCTURE | CvM | Diverges from its five siblings. C1, C2, C3, C5 and C6 all run
+`The equation`/`What it computes` -> `Where it lives` -> `Limitations` -> `What we do`. This
+page has no `What we do` section - the one section that tells a reader how to USE the row -
+and adds two the siblings do not have (`Why it is in the battery`, `Its rows`). At 73 lines
+it is longer than every sibling (48-68). | Fold `Why it is in the battery` into two sentences
+under `The equation`, keep `Its rows` (it is genuinely new information), and add `What we do`.
+That lands near 60 lines.
+NOTE | CvM | Dash-asides: 3 constructions (CvM:46, :56 pair, :72 pair) in ~40 prose lines,
+against 22 in 58 last pass. The shape is much reduced but not gone. Does not read as
+generated: the derivation, the quote and the gating are all specific and all check out.
+
+### CORRECTION - the file changed UNDER the review at 17:30:57
+
+The findings above were written against the version of `tests/test_windows_not_interpolated.py`
+that was on disk when this pass started (prefix-only match, `RESAMPLING_TOKENS` as the gate).
+That version was replaced mid-review by a `_carve_labels` version that RESTORES a suffix
+requirement. The four IMPORTANT/MINOR items above about the blacklist being the only gate no
+longer apply. Re-reviewed below. (Working tree is being edited while under review - re-run
+the manifest before trusting any part of this section.)
+
+### tests/test_windows_not_interpolated.py  [re-reviewed, _carve_labels version]  - CHANGE 1
+
+IMPORTANT | tests/test_windows_not_interpolated.py:71-95 | The docstring's claim that taking
+labels from the carve nodes "gives up nothing" is false, and the names it gives up are the
+exact ones the new control cites. The anchor moved from EXTERNAL (a dataset path the job
+loads) to INTERNAL (a name the same author gave a sibling node), so a self-vouching PAIR now
+passes. MEASURED: a job with `filter_pchip` -> `windows_pchip` gives `_carve_labels == {"pchip"}`
+and `_unexpected == set()`; same for `filter_smoothed`/`windows_smoothed` and
+`filter_downsampled`/`windows_downsampled`. Under the OLD rule all three were REJECTED, because
+`pchip`/`smoothed`/`downsampled` are not stems of any dataset the job loads. The tokens do not
+save it: the list has `resample` but not `sample`, so `downsampled` passes, and
+`transforms/interpolate.py:63` calls `scipy.interpolate.pchip_interpolate`, so `pchip` is the
+likeliest name a second resampler would carry. The control at :219-231 only proves those three
+names fail when the carve is named `windows_x`; rename the carve to match and they pass. | Cheapest real fix, and it removes the whole naming game: check callable IDENTITY, not names. `job.dag[n].fn.__qualname__` is `_interpolate_step.<locals>.step` for the resampler and `_filter_step.<locals>.step` for the filter - MEASURED, so the closure factories ARE distinguishable and the premise at :144-146 (`fn.__name__` is always `step`) does not extend to `__qualname__`. The whole `independence_survey` graph, 206 nodes, uses only 8 distinct callables. Add `assert not any(job.dag[a].fn.__qualname__.startswith("_interpolate_step") for a in _ancestors(job, node_id))` and the name rules become a secondary net rather than the guard.
+
+MINOR | tests/test_windows_not_interpolated.py:70-73 | `RESAMPLING_TOKENS` is completely unpinned: setting it to `()` and running all 16 tests in this file gives 16 PASSES. MEASURED. So the second layer can be deleted with green gates, and the control at :207 that reads as if it pins the token list actually passes for the suffix reason (`then_interpolate` is not a carve label). | One assert on the tokens alone: a job with carve `windows_q1` and step `filter_q1_interp` (suffix IS built from a real label, so only the token list can reject it) must be flagged.
+
+MINOR | tests/test_windows_not_interpolated.py:97-113 | The label set is a UNION over the whole job, so a label minted by dataset A's carve vouches for a step in dataset B's chain. In a 34-iteration loop the classic bug is exactly that - `windows_q5_070623` carved from `filter_q1_040423` - and neither the old nor the new rule can see it. MEASURED clean today: for every one of the survey's 34 carves, no ancestor name ends in a different chain's label (0 cross-wired ancestors). Worth pinning now that the survey is in scope. | Per-carve rather than per-job labels: derive the label from THIS carve node's own name and require every suffixed ancestor of it to carry that same label.
+
+VERIFIED | tests/test_windows_not_interpolated.py:97-113 | Equal-strength on every pre-existing job, so the widening costs nothing on today's graphs. MEASURED label sets: `km_poster_6d2s` -> exactly its 5 dataset stems, i.e. identical to the old `_dataset_stems`; every other `jobs/active` job and both other composites -> the EMPTY set, so their ancestors must be exact whitelist entries as before; `independence_survey` -> its 34 readable labels. `fidelity_windows` and bare `windows` contribute no label (no `{known}_` prefix matches), so no job accidentally widens itself.
+
+VERIFIED | tests/test_windows_not_interpolated.py:216-231 | The new control DOES kill the prefix-only mutant. Replacing `_unexpected` with the pure-prefix version and re-running the three controls fails `test_the_check_catches_a_resample_hidden_behind_a_whitelisted_prefix`. So the suffix half of the rule is genuinely pinned. `_carve_labels` calling `_windows_nodes`, which is defined later in the file, is fine (resolved at call time).
+
+## Reviewed (patch 4)
+- [x] tests/test_windows_not_interpolated.py (re-reviewed after mid-review rewrite)
+
+--- RESUME (prose pass, 2026-09-02 late) ---
+NOTE ON RESUME: the previous prose pass wrote per-file findings for README.md, CONTRIBUTING.md,
+battery.py, PANEL_CONTRACT.md, FIGURE_STANDARD.md, TIME_SEMANTICS.md, iid_checks_basics.md,
+LIMITATIONS.md, C6, C2 and the new CvM page, but died before ticking the manifest. All those
+files are UNCHANGED on disk since that pass (mtimes 17:17-17:25, ledger 17:37), so those
+findings stand and are NOT redone. Only AGENTS.md moved (22:37, the three fixes). Manifest
+below updated accordingly; remaining real work is AGENTS.md past 191, WRITING_A_JOB.md and the
+chronology purge groups.
+
+## Manifest (patch 4 prose) - UPDATED
+- [x] CLAUDE.md (new symlink)
+- [x] AGENTS.md (three findings fixed + rest swept, this resume)
+- [x] README.md
+- [x] CONTRIBUTING.md
+- [x] src/quebra/analyzers/checks/battery.py
+- [x] docs/PANEL_CONTRACT.md
+- [x] docs/FIGURE_STANDARD.md
+- [x] docs/TIME_SEMANTICS.md
+- [ ] docs/WRITING_A_JOB.md
+- [x] docs/iid_checks/iid_checks_basics.md
+- [x] docs/iid_checks/C2_anderson_darling.md
+- [x] docs/iid_checks/C6_exchangeability.md
+- [x] docs/iid_checks/LIMITATIONS.md
+- [x] docs/iid_checks/CvM_cramer_von_mises.md (NEW)
+- [ ] src/** chronology purge (grouped)
+- [ ] jobs/** chronology purge (grouped)
+- [ ] tests/** chronology purge (grouped)
+- [ ] scripts/**, conftest.py, pyproject.toml (grouped)
+
+### AGENTS.md - re-verification of the three fixes, and the sweep past 191
+
+VERIFIED | AGENTS.md:25-30 | Fix 1 landed and is true. `data/real_private/`, `data/real_public/`
+and `data/simulated/` all exist; the new sentence asserts no contents, so the empty-directory
+problem is gone. `real_private/` holding the embargoed records is true (6D2S/, 2x2/,
+companion/, calibration_logs/, MANIFEST.toml).
+VERIFIED | AGENTS.md:159 | Fix 2 landed: the tally sentence is deleted outright. HEAD said
+"Twelve", the mid-review tree said "Fourteen"; neither is now asserted.
+VERIFIED | AGENTS.md:189-192 | Fix 3 landed and is true on both halves. CvM is named; "C3
+copula-via-R (needs Rscript; not in ROW_KEYS, so the battery never runs it)" matches
+`battery.ROW_KEYS` (no c3 entry, no c3 import); "the five permutation checks" matches 6
+CALIB_PERMUTATION rows over 5 distinct names (c1, c2, c5, c6, cvm).
+
+FALSE | AGENTS.md:53-55 | Stale claim, now false in both halves, on the page that opens by
+telling the reader not to describe unshipped things as shipping. "`make types` and `make arch`
+exist in the Makefile but do not pass yet: they depend on the `src/` layout (SPEC 0002) and the
+import-linter contract (SPEC 0004). A failure from those two tells you which phase you are in."
+MEASURED: `make arch` -> "Layered architecture KEPT. Contracts: 1 kept, 0 broken."; `make types`
+-> "Success: no issues found in 11 source files". Both pass. Also two spec numbers and a phase
+pointer, rule (1). | "`make lint`, `make test` and `make clean` wrap the first two. `make types`
+runs mypy over `core/`; `make arch` runs the import-linter contract. `make check` is all four."
+FALSE | AGENTS.md:279 | Inventory presented as complete and is 3 of 7. "`docs/` holds reference
+docs: `TIME_SEMANTICS`, `PANEL_CONTRACT`, `FIGURE_STANDARD`." On disk: also `JOBS.md`,
+`WRITING_A_JOB.md`, `WRITING_A_SCHEMA.md` and `iid_checks/` (8 files, one added by this commit).
+A reader told to "refresh docs" cannot refresh what the list hides. | "`docs/` holds the
+reference docs, including `TIME_SEMANTICS`, `PANEL_CONTRACT`, `FIGURE_STANDARD`,
+`WRITING_A_JOB` and `iid_checks/`."
+MINOR | AGENTS.md:155-156 | Chronology the purge missed, exactly the banned form (date + spec +
+requirement id): "The rename landed on 2026-08-23 (SPEC 0001 R0.4)." | "The rename is ours."
+MINOR | AGENTS.md:172 | Chronology missed: "SPEC 0002 moved the packages under `src/quebra/`." |
+"The packages live under `src/quebra/`."
+MINOR | AGENTS.md:206-208 | Chronology missed, and it is the useful kind badly framed: "Moved
+out of jobs/ in SPEC 0002: it is reusable library code, and leaving it in jobs/ forced the CLI
+to put the caller's directory on sys.path, which R1.1.4 forbids." The hazard is worth keeping;
+the move and the requirement id are not. | "Library code, not a job: a job here would force the
+CLI to put the caller's directory on sys.path."
+MINOR | AGENTS.md:216 | Chronology missed: "tests/  TRACKED since 2026-08-23 (SPEC 0001 R0.1)" |
+"tests/  TRACKED"
+MINOR | AGENTS.md:281-282 | Chronology missed: "The blanket `*.md` and `.*` ignore rules were
+removed in SPEC 0001 R0.1, so `.md` needs no `!` exception." | "Nothing in `.gitignore` blanks
+`.md`, so it needs no `!` exception."
+IMPORTANT | AGENTS.md:234-235 | Over-correction, unfixed from the earlier pass and repeated here
+because it is the one that costs a reader something. The deleted note - "`provenance.py` reports
+the tree clean while it changes" - warned about a live hazard for exactly this reader: an agent
+writes untracked files constantly and `is_tree_clean` passes `--untracked-files=no`, so a tree
+carrying brand-new untracked modules reports clean and artifact reuse still fires. The
+replacement answers a different question (which repo the helpers describe). | Keep the new
+sentence and append: "Untracked files do not make the tree dirty, so reuse can fire on a tree
+holding new untracked code."
+OPTIONAL | AGENTS.md:262 | "The six-tier layout lives in `spec/quebraplan.md` Phase 5" - a phase
+number survives, on a line this commit edited. | "...lives in `spec/quebraplan.md` and is not
+built".
+
+### src/** chronology purge  [reviewed]
+
+MUST | src/quebra/schemas/ramsey_series.py:3-4 | LOGICAL INVERSION introduced by the rewrite:
+the sentence now says the opposite of the truth. "Keeping this out of
+`quebra.core.job._load_dataset` is what keeps the generic loading path Ramsey-specific".
+Keeping it out is what keeps the path GENERIC. The old line ("used to live inside
+`_load_dataset`, which made the generic loading path Ramsey-specific") had the subject the
+predicate belonged to; the purge swapped the subject and left the predicate. The three
+following clauses are also stranded in the past ("required", "was involved", "could not
+use"). | "Keeping this out of `quebra.core.job._load_dataset` is what keeps the generic
+loading path generic: inside it, `job.load` would require `timestamp` and `frequency`
+columns and a resolvable run-start time whether or not a schema was involved, so a job with
+nothing to do with frequency tracking could not use `job.load` at all."
+MUST | src/quebra/core/discovery.py:43-45 | Botched rewrite: the replacement line duplicates
+the tail of the line it replaced, so the comment reads "and dropping the distinction entirely
+/ dropped the distinction entirely". Also two fragments in a row ("Not the DIRECTORY (...):"
+then "A declaration rather than a directory") saying the same thing twice, and the surviving
+half no longer says WHOSE mistake widened `--all`. | "# Declared, not encoded in the DIRECTORY
+(`jobs/active` swept, `jobs/composite` not). Dropping the distinction entirely silently
+widens `--all` from 9 jobs to 12." (9 -> 12 VERIFIED: 9 `JOB_ID` files in `jobs/active`, 3 in
+`jobs/composite`, and only the composites declare `JOB_SWEEP = False`.)
+SHOULD | src/quebra/core/closure.py:3-6 | Present-tense rewrite of a measured fact now reads
+as a claim about CURRENT behaviour, and the behaviour it claims is the one this module exists
+to prevent: "appending a line to `analyzers/t2star.py` leaves `t2star_q1_070423`'s identity
+byte-identical." It does not, as of this module. The mixed tense in the same sentence
+("would let ... while the digest asserted nothing had") is the tell. | "Identity over
+`hash(job file) + dataset hashes + child identities` alone would let the analyzer that
+produced the numbers change completely while the digest asserted nothing had: appending a line
+to `analyzers/t2star.py` would leave `t2star_q1_070423`'s identity byte-identical."
+SHOULD | src/quebra/core/closure.py:248-249 | Same tense break, plus a ragged wrap the rewrite
+left behind (line 248 ends "two jobs differing", 30 characters short of the paragraph). "Without
+it, two jobs differing only by `x=1` versus `x=999` both produced `93f7286634eef03b`." Also
+`93f7286634eef03b` is asserted by nothing: `grep` finds it in this docstring, in
+`tests/test_identity_closure.py:155`'s DOCSTRING, and in `spec/`. Rule (2). | "Without it, two
+jobs differing only by `x=1` versus `x=999` collide on one digest." Re-wrap.
+SHOULD | src/quebra/core/dataset.py:17-21 | The rewrite made the first clause hypothetical and
+left the whole body in the past, so a reader cannot tell whether the crash is a live defect or
+an averted one: "Merging them is a defect rather than a simplification: `extra` was forwarded
+to the loader AND read back as metadata, so ... reached `pd.read_csv(path, **extra)` and raised
+`unexpected keyword argument`. It only ever worked because every in-repo caller used
+`.pickle`". Also a ragged wrap at :17. | "Merging them would be a defect rather than a
+simplification: `extra` would be forwarded to the loader AND read back as metadata, so
+`extra={'run_start_unix_s': ...}` - the value `_load_dataset`'s own error message tells you to
+set - would reach `pd.read_csv(path, **extra)` and raise `unexpected keyword argument`, and
+only `.pickle` callers would escape it, because that loader discards the dict."
+SHOULD | src/quebra/core/discovery.py:8-9 | Grammatically broken conditional: "**`JOB_FAMILY`**
+- the category. A directory would mean recategorising costs moving a file, which under logical
+IDs must stop being meaningful." | "A directory would make recategorising a file move, which
+under logical IDs means nothing."
+SHOULD | src/quebra/core/runner.py:49 | Over-correction that invents a design intent. "the
+value model is deliberately untyped" replaces "stays untyped this phase". Nothing supports
+"deliberately"; the original said the opposite (a temporary state). | "the value model is
+untyped".
+SHOULD | src/quebra/analyzers/checks/_multiprocess.py:305-307 | The new comment gives the WRONG
+reason for the guard's scope, and the right reason is checkable. "the guard below is in-spec
+only, because what the calendar clock's tau should be when a block ends at a gap is an open
+question." The guard's stated hazard is corrupted EVENT TIMES, not tau: on the calendar clock
+`x = np.diff(t_birth)` (:315), so events come from birth times and an interior censored window
+cannot shift them. Tau ambiguity is a different issue and does not explain the scope. |
+"# Not applicable on this clock: `x` comes from birth times, so an interior censored window
+cannot shift the event times."
+SHOULD | src/quebra/analyzers/independence_survey.py:256 | The purge deleted the numbers'
+provenance and kept the numbers, which is the wrong half. "Measured on the shipped artifact
+before this fix: the 1 us and 10 us columns were 34/34 absent" became "Without this the 1 us
+and 10 us columns are 34/34 absent in EVERY one of the seven figures - 132 of 340 cells per
+grid silently blank." Now four measured figures hang off a counterfactual nothing can rerun.
+Keep the word that anchors them. | "Measured: without the blanket rows the 1 us and 10 us
+columns come back 34/34 absent in every one of the seven figures - 132 of 340 cells per grid
+silently blank."
+SHOULD | src/quebra/panels/within_calibration.py:7-9 | Chronology the purge MISSED, in the
+paragraph directly above the one it rewrote, and it is the banned form (a bare date): "The
+re-export was load-bearing until 2026-08-23: artifacts materialized before the band split
+name `panels.non_repairable.NonRepairablePanelData` in their pickle stream, and output/ is
+append-only, so dropping it would have broken reloading them." With the following paragraph
+rewritten to the present, the two now contradict each other: para 1 says the re-export is
+load-bearing, para 2 says nothing can reach those artifacts. | Delete para 1 and open with:
+"Artifacts materialized before the band split name
+`panels.non_repairable.NonRepairablePanelData` in their pickle stream. That module does not
+exist, so they raise ModuleNotFoundError and no re-export here can reach them: the module they
+name is gone, not the symbol."
+MINOR | src/quebra/panels/within_calibration.py:11 | Information dropped that a reader acting
+on this docstring wanted: "82 pickles under output/ and the backups are affected." The
+paragraph tells the reader to recover by re-running jobs but no longer says how much there is
+to re-run. Defensible under rule (2) (nothing asserts 82), so MINOR - but if any number in
+this file survives, this is the one worth keeping.
+MINOR | src/quebra/analyzers/checks/_permutation.py:76-78 | Tense break under the new
+counterfactual: "Defaulting it to `np.random.default_rng()` would make every permutation
+p-value a fresh random variable: three consecutive calls on identical input returned p =
+0.3860 / 0.4040 / 0.3790." Those three numbers can no longer be regenerated by anything (the
+default is now impossible), so they are rule-(2) liabilities under a "would". | "...a fresh
+random variable: three consecutive calls on identical input measured p = 0.3860 / 0.4040 /
+0.3790."
+MINOR | src/quebra/analyzers/checks/_permutation.py:89-92 | User-facing error message with a
+three-way tense break and a ragged wrap the edit left: "None would draw OS entropy, which made
+permutation p-values irreproducible across runs while the run identity stayed unchanged." |
+"None draws OS entropy, which makes permutation p-values irreproducible across runs while the
+run identity stays unchanged." Re-wrap.
+MINOR | src/quebra/plots/targets.py:50-51 | Tense break: "static and academic would otherwise
+write the same {name}.pdf, so academic clobbered static while the prov record listed both
+targets." | "...so academic would clobber static while the prov record listed both targets."
+MINOR | src/quebra/analyzers/checks/battery.py:68 | Chronology the purge missed inside a file
+this commit edited, and the banned form: "# CvM, promoted 2026-08-14." | "# CvM."
+MINOR | src/quebra/cli.py:152-153 | Chronology left on the two lines under the one that was
+purged: "The directory is presentation only now. `jobs/archived/` does not exist and its glob
+was dead, so `--include-archived` is gone with it." | "The directory is presentation only.
+There is no `jobs/archived/`, so there is no `--include-archived`."
+MINOR | src/quebra/recipes.py:180 | "it is a design change, not a rename. Placeholder for
+future work." replaced "and it is Increment C work" with status narration (rule 4), and it can
+be misread as saying `XI_SEED`'s VALUE is a placeholder - it is the live seed. | Delete the
+sentence; "it is a design change, not a rename." is the whole point.
+MINOR | src/quebra/recipes.py:327-328 | Past tense left where present tense is both true and
+checkable: "two job files that were byte-identical once the date and the run duration were
+normalised". MEASURED today: `jobs/active/t2star_q1_070423.py` and `t2star_q1_100423.py` are
+34 lines each and differ at exactly two lines, `PREFIX` and `duration_h`. Present tense turns
+an obituary into an assertion a reader can check in one command. Also a ragged wrap. | "Collapses
+the family: the two T2* job files are byte-identical once the date and the run duration are
+normalised."
+VERIFIED | src/quebra/core/job.py:150-153, :167-172 | The two best rewrites in the commit.
+Both convert history into a live hazard in the present tense, keep the error string and the
+mechanism, and lose nothing. No change wanted.
+VERIFIED | src/quebra/analyzers/checks/c2_anderson_darling.py:82 | "a nan statistic would slip
+past the positivity guard" - correct counterfactual, correct tense, hazard intact.
+VERIFIED | src/quebra/analyzers/checks/result.py:45-47 | "`validate_segment` would check
+`tau > np.sum(x)`" is a true counterfactual: the shipped guard is
+`segment.tau <= total * (1.0 + TAU_MARGIN)` (:175) against `last_event_time`, not `np.sum`.
+VERIFIED | src/quebra/plots/km_survival_plot.py:25 and mtbc_hist_plot.py:17 | "no longer
+visible" -> "not visible". Chronology gone, claim unchanged, both still true (the counts are
+on the materialized artifacts and absent from the images).
+VERIFIED | src/quebra/analyzers/fidelity.py:188-190 | "Kept out of the render layer: building
+panel data inside build_matplotlib happens at draw time, where no DAG node can supply the
+window and read tables." Matches PANEL_CONTRACT.md:17-19 and the live layout; the deleted
+pointer to `plots/fidelity_plot.py` named a file that no longer exists, so nothing was lost.
+VERIFIED | src/quebra/panels/_within_calibration_render.py:11 and within_calibration.py:15 |
+`analyzers.within_calibration_compute` is the real module and `build_within_calibration_panel_data`
+is really there. Both pointers now correct.
+VERIFIED | src/quebra/panels/_check_ledger_render.py:24 | `"cvm_cramer_von_mises": "CvM"` -
+the key matches `CHECK_NAME` as written into `CheckResult.check` (cvm_cramer_von_mises.py:255)
+and matches the `ROW_KEYS` entries.
+VERIFIED | src/quebra/transforms/interpolate.py:176-179 | The cross-reference is true:
+`filter._subset_norm` raises `"filter cannot mask '{key}': it is neither a scalar nor an array
+({type})..."` on exactly this input class (filter.py:50-54), and the new message mirrors it.
+OPTIONAL | src/quebra/panels/_within_calibration_render.py:8-9 | Adjacent pre-existing breakage
+in the docstring the commit edited: "They do arithmetic - `adaptive_ylim` takes
+`observed_slices` searches for cut indices - but only to decide where to put ink". Two verb
+phrases collided; the line is also ~110 characters against a file that wraps at 90. | "They do
+arithmetic - `adaptive_ylim` picks limits, `observed_slices` searches for cut indices - but
+only to decide where to put ink."
+OPTIONAL | src/quebra/panels/_within_calibration_render.py:9 | "which CLAUDE.md places on the
+renderer's side of the line" - `CLAUDE.md` is now a symlink to `AGENTS.md`, and AGENTS.md is
+the file that carries the rule. Source should cite the real file. | "which AGENTS.md places...".
+
+## Reviewed (patch 4 prose) - src/** chronology purge: DONE
+
+### jobs/**, scripts/**, conftest.py, pyproject.toml, docs/WRITING_A_JOB.md  [reviewed]
+
+MUST | jobs/bench/report.py:299 | NEW FALSE CLAIM, and the code contradicts it twice. "the
+"0.25" arm realises 0.167-0.169 throughout, so the realised value is printed, never the label."
+MEASURED: report.py:322-324 builds column headers as
+`f"target {c:g} (realised {realised...:.3f})"` - the label IS printed, beside the realised
+value - and report.py:210 prints `c={worst['censoring_target']}`, the label ALONE, in
+`worst_cell`. | "the "0.25" arm realises 0.167-0.169 throughout, so every table prints the
+realised value beside the target label." (Line is also 99 chars against a file wrapping at 88.)
+MUST | jobs/active/t2star_q1_070423.py:5-6 AND jobs/active/t2star_q1_100423.py:5-6 | Broken
+sentence in both files: deleting "128" left the noun behind. "Everything shared lives in the
+recipe; these were lines each and byte-identical once the date and the run duration were
+normalised." "these were lines each" is not a sentence. | "Everything shared lives in the
+recipe: the two files are byte-identical once the date and the run duration are normalised."
+MEASURED: both files are 34 lines and differ at exactly two lines (`PREFIX`, `duration_h`), so
+the present tense is checkable in one command and the past tense is not.
+MUST | jobs/rscripts/reference_values.R:76-77 | Botched rewrite: the replacement duplicates the
+phrase from the line below it. Reads "Our estimator uses the tie-corrected eq (8), not the
+tie-free reduction; / the tie-corrected eq (8), and no shipped window exercises it". Also
+"the only external evidence that the change was made correctly" now refers to a change with no
+antecedent. | "# THE CASE THAT MATTERS. Our estimator uses the tie-corrected eq (8), not the
+tie-free / # reduction, and no shipped window exercises it - all 309 are tie-free. This is the
+only / # external evidence that the tie-corrected path is right." (Line 76 is 100 chars.)
+SHOULD | jobs/bench/probe_unresolved.py:45 | The rewrite inverted the warning and lost the
+hazard. "Writing through repo_root() must point at `jobs/bench/results/`." `repo_root()` does
+not point there and this code deliberately does not use it; the original said writing through
+`repo_root()` landed in a `bench/results/` that does not exist. MEASURED: there is no
+top-level `bench/` in the checkout, so the mistake is still available to make. | "# Beside
+this file, like every other bench output: `repo_root()` would resolve to a top-level
+`bench/results/`, which does not exist."
+SHOULD | jobs/bench/report.py:557-558 | Verb deleted with the chronology, leaving a noun
+phrase and a dangling conjunction: "# Computed, not typed: hand-written ranges ("44-90 null
+cells", "z_crit 3.3-3.5") and both were wrong." | "# Computed, not typed: hand-writing these
+two ranges got both of them wrong ("44-90 null cells", "z_crit 3.3-3.5")."
+SHOULD | conftest.py:50 | "so it is not a small edit. Placeholder for future work." The
+docstring already opens with "FUTURE:", so the added sentence is the third marker of the same
+status in five lines, and it is rule (4) narration. Second occurrence of this exact phrase in
+the commit (see recipes.py:180). | Delete "Placeholder for future work."; end at "so it is not
+a small edit."
+SHOULD | scripts/acceptance.sh:4 | Chronology/status the purge missed on the line under the one
+it fixed: "The claim this phase makes is ..." | "The claim is "a reviewer runs the documented
+install steps on a machine that has never seen this repository"."
+MINOR | jobs/active/*.py, jobs/composite/*.py (8 files) | The `# SPEC 0005 R5.2/R5.4:` fix left
+a ragged two-line wrap in all eight ("# The logical name and category. `include` resolves
+JOB_ID, so this" / "# file can move without breaking any composite; recategorising costs one
+string edit."), and the same 16 lines of boilerplate are duplicated across eight job files to
+explain a convention `docs/WRITING_A_JOB.md` already documents under "What a job file
+declares". | Delete the comment from all eight files (16 lines), or collapse each to one line:
+"# Logical name and category; `include` resolves JOB_ID, so this file can move."
+MINOR | scripts/make_data_manifest.py:3, make_fixtures.py:12, make_job_manifest.py:3,
+promote_run.py:3 | Four module docstrings now open with a short orphan line where the spec id
+was cut, against paragraphs that wrap at 88. Correct edits, unreflowed. | Re-wrap the four
+paragraphs.
+MINOR | jobs/bench/report.py:350 | Same unreflowed wrap: "Criterion 4 is scored here rather
+than asserted in prose: for every" then "row, ...". Also "Criterion 4" is a bench requirement
+id of the kind rule (1) targets, and it is now unattributed - nothing in the file says what
+criterion 4 is. | Re-wrap, and name it: "This scores what the bench's criterion 4 asks for
+rather than asserting it in prose: for every row, ...".
+VERIFIED | pyproject.toml:57-59 | `qretool` -> `quebra` in all three project URLs, consistent
+with `CITATION.cff:15-16` and `README.md:100`. No stale name left in the file.
+VERIFIED | docs/WRITING_A_JOB.md:246 | "the directory decides nothing; the declaration does" -
+true: `discovery` reads `JOB_ID`/`JOB_FAMILY`/`JOB_SWEEP` statically and `cli.py` walks all of
+`jobs/`, so no code branches on `active` vs `composite`.
+VERIFIED | scripts/make_job_manifest.py:6 | "That argument holds at 12 jobs" - 12 files under
+`jobs/` declare `JOB_ID` (9 active, 3 composite). Correct.
+VERIFIED | jobs/bench/report.py:449 | "a hand-typed driver string would print 0.999" - correct
+counterfactual; the code takes the mean (`directed["rejection_rate"].mean()`), so 0.999 is not
+printed today.
+VERIFIED | jobs/bench/report.py:350 and scripts/*.py, acceptance.sh:2,72 | All seven spec-id
+deletions removed only the id. No factual claim changed and no pointer went stale.
+OPTIONAL | src/quebra/core/closure.py:240, core/discovery.py:16, scripts/make_job_manifest.py:3 |
+The purge removed `SPEC 000N RN.N` everywhere but kept `quebraplan.md` section numbers
+("3.1 asks for", "3.5 suggests", "3.4 makes the argument") in three places. Defensible - they
+are citations to a live document, not chronology - but state the rule once in AGENTS.md so the
+next pass does not delete them as a fourth defect class.
+
+## Reviewed (patch 4 prose) - jobs/**, scripts/**, conftest.py, pyproject.toml,
+## docs/WRITING_A_JOB.md: DONE
+
+### THE CHECK COUNTS - the one the commit missed
+
+MUST | src/quebra/analyzers/checks/c3_serial_copula.py:27-28 | The commit updated
+"five checks"->six and "four permutation checks"->five in AGENTS.md, the docs and battery.py,
+and left the OTHER count untouched, where it is now false in the direction that hides
+evidence. "the other four checks must still run. The promotion report scores four checks, not
+five." With CvM in `ROW_KEYS`, five other checks run (C1, C2, C5, C6, CvM) and the report
+scores five, not four. | "the other five checks must still run. The promotion report scores
+five checks, not six."
+MUST | src/quebra/analyzers/instrument_validation.py:619 | Same count, in the string that
+WRITES the shipped report, and it is measurably false: "`promotion_report.md`, which scores
+four checks - C3 and CvM have no bench cell." MEASURED: `jobs/bench/results/size_table.csv`
+carries 219 CvM rows and `power_table.csv` carries 348. CvM has bench cells. This is the exact
+claim `tests/test_instrument_validation.py:136-140` was written to forbid, one file over. |
+"`promotion_report.md`, which scores five checks - C3 has no bench cell."
+IMPORTANT | jobs/bench/results/instrument_report.md:23 and
+jobs/bench/results/promotion_report.md:1,5 | The committed artifacts carry the same stale
+count: "which scores four checks - C3 and CvM have no bench cell", "# Promotion report - the
+five checks", "**Four checks are assessed, not five.**". Six checks exist and five are
+assessed. Not a prose edit - these regenerate - but nothing in this commit regenerated them,
+so the promotion lands with three published sentences contradicting it. | Re-run the report
+builders in the same commit as the count change.
+MINOR | tests/test_checks_c3_bridge.py:64-65 | The skip message edited by this commit now
+points at the stale count: "C3 is assessable, and the promotion report's four-check scope
+needs revisiting on this machine." | "...and the promotion report's scope needs revisiting on
+this machine." (Drop the number; the report owns it.)
+
+### tests/** chronology purge  [reviewed]
+
+MUST | tests/test_checks_statistics.py:132-133 | Subject deleted with the chronology, leaving
+ungrammatical text: "not borrowed from a nearby run - a borrowed value would be / passed only
+because the tolerance is 4 SE wide." | "not borrowed from a nearby run - a borrowed value
+would pass anyway, because the tolerance is 4 SE wide." Re-wrap (line 133 currently ends on an
+orphan "This").
+MUST | tests/test_identity_closure.py:84-86 | Broken sentence with a capital mid-clause and a
+doubled "so": "The T2* jobs were the original measurement for this, but / Both collapse onto
+`recipes.configure_t2star_job`, so all their steps / live in a `quebra.*` module, so they do
+not exercise this path." | "Uses `mtbf_q1`, not a T2* job: both T2* jobs collapse onto
+`recipes.configure_t2star_job`, so all their steps live in a `quebra.*` module and they do not
+exercise this path."
+MUST | tests/test_identity_closure.py:154-155 | Broken: "so without the / parameter row was
+folded these produced ONE digest — measured, both `93f7286634eef03b`." Also the digest is
+asserted nowhere (this docstring, `closure.py:249` and `spec/` only). | "so without the
+parameter row folded in, these two collide on one digest."
+MUST | tests/test_independence_survey.py:136-137 | Tense collapse mid-sentence: "That is what
+a test building its own copy of the ladder does: it asserts the / T2* job matched IT, so
+mutating the SURVEY's ladder changed nothing and the test passed." | "That is what a test
+building its own copy of the ladder does: it asserts the T2* job matches ITS copy, so mutating
+the SURVEY's ladder changes nothing and the test still passes."
+MUST | tests/test_instrument_validation.py:138-139 | Two sentences fused into a run-on by the
+rewrite: "The tier-3 detail must not read "no bench cell exists for CvM" once the bench
+carries CvM rows that sentence is false, and a report repeating it would understate the
+evidence". | "The tier-3 detail must not read "no bench cell exists for CvM": once the bench
+carries CvM rows that sentence is false, and a report repeating it would understate the
+evidence."
+MUST | tests/test_instrument_validation.py:136 | Chronology MISSED, and the identical sentence
+one file over WAS purged - so the commit fixed one copy and left the other. Here:
+"PROMOTED 2026-08-14; this test pinned the opposite and is inverted, not deleted."
+`tests/test_checks_cvm.py:137` got "CvM is promoted; this test pins the promoted behaviour...".
+| Delete the sentence: the test name already says `test_cvm_is_promoted_and_...`.
+MUST | tests/test_job_discovery.py:143-145 | Verbless fragment: "Replacing the
+`jobs/active/*.py` glob with "every discovered / job", which silently widened `run --all` from
+9 jobs to 12 — pulling in the three / composites...". | "Replacing the `jobs/active/*.py` glob
+with "every discovered job" silently widens `run --all` from 9 jobs to 12 — pulling in the
+three composites that ...". (9 -> 12 VERIFIED against disk.)
+MUST | tests/test_r_cross_implementation.py:20-21 | Botched rewrite that duplicates the phrase
+below it and produces gibberish: "`chatterjee_xi` uses the tie-corrected eq (8), not the
+tie-free / reduction to the tie-corrected eq (8)." Same defect as
+`jobs/rscripts/reference_values.R:76`, from the same edit. "that change" at :21 and "the change
+was made correctly" at :23 then refer to a change no longer named. | "**The headline case is
+`xi_tied`.** `chatterjee_xi` uses the tie-corrected eq (8), not the tie-free reduction, and no
+shipped window exercises it: all 309 window-rows on the T2* ladder are tie-free. This file is
+the ONLY external evidence that eq (8) is right, and `XICOR::xicor(ties = TRUE)` is the
+reference." (Line 20 is 100 chars.)
+MUST | tests/test_tier3_calibration.py:205-207 | Broken beyond repair by clause-splicing: "The
+measurement lives in `analyzers/instrument_validation.py` and is IMPORTED here, not / defined
+here rather than in three docstrings and the report's / tier-3 verdicts claimed the report
+imported it - it did not, and the pipeline cannot / import `tests/`, so those verdicts rested
+on no number at all." | "# The measurement lives in `analyzers/instrument_validation.py` and
+is IMPORTED here, not defined / # in `tests/`. The pipeline cannot import `tests/`, so a
+measurement defined there would leave / # the report's tier-3 verdicts resting on no number at
+all. Importing it in this direction is / # what makes "the figure and the test measure the same
+thing" true rather than asserted."
+SHOULD | tests/test_data_unavailable.py:3 | Uses a phrase on the author's own banned list, on
+the line the purge edited: "Before this, both situations raised the same `FileNotFoundError`".
+| "Without the distinction, both situations raise the same `FileNotFoundError`: a reviewer who
+lacks an embargoed record and a user who mistyped a path get identical output, and only the
+first is in a position to do anything about it."
+SHOULD | tests/test_paths_dataset_fallback.py:36-39 | Banned phrase left in the paragraph the
+purge edited: "The earlier / version asserted that THIS checkout's dataset root lacked the
+table, which held only / while the root was the repo's parent; it is now the repo itself".
+Three tenses and an obituary to say one thing. | "Driven from an explicit empty root rather
+than `default_dataset_root()`: asserting that THIS checkout's dataset root lacks the table
+holds only when the root is the repo's parent, and here it is the repo itself. `tmp_path`
+tests the fallback itself, under every configuration."
+SHOULD | tests/test_bench_isolation.py:3-4 | Chronology missed on the very line that was
+rewritten, and the replacement clause is a non-sequitur. "The rule changed shape in P4b and it
+is worth being precise about what it now protects, because a docstring is not a guard." "P4b"
+is a phase id; "it is worth being precise" is filler; and if a docstring is not a guard, that
+is an argument for LESS docstring, not more precision. | Delete both lines. The next paragraph
+("**What moved.**") already carries the content.
+SHOULD | tests/test_checks_statistics.py:219-220 | Present-tense rewrite now contradicts the
+test body directly under it: "Clamping a materially negative eq (10) variance to zero reports
+it as "every gap is identical", which is a different and false diagnosis." The shipped code
+does not clamp, and the test asserts the two messages differ. | "Clamping a materially
+negative eq (10) variance to zero would report it as "every gap is identical", a different and
+false diagnosis."
+SHOULD | tests/test_checks_cvm.py:137-138 | The purge removed the date and left the
+chronology-about-itself: "this test pins the promoted behaviour and is inverted, not deleted,
+so the change of decision is visible in the history rather than silent." A test does not need
+to narrate its own edit history. | Delete the sentence; start the docstring at "Registration
+alone is not the promotion."
+SHOULD | tests/test_load_dataset_contract.py:127-129 | Over-correction: a false NUMBER was
+replaced by a vague quantifier when the true number is one and is stated in the next clause.
+"It is NOT relied on by many call sites: every `job.load` in `jobs/` names a schema, and
+`tests/test_windows_not_interpolated.py` is the only site that reaches the default." VERIFIED
+true: all six `job.load` sites in `jobs/` pass a Dataset carrying a schema, and
+`test_windows_not_interpolated.py:190` is the only `Dataset(...)` with no schema. | "Exactly
+one site relies on it: every `job.load` in `jobs/` names a schema, and
+`tests/test_windows_not_interpolated.py` is the only site that reaches the default."
+SHOULD | tests/test_checks_statistics.py:20-21 and :330 | The same rewritten sentence appears
+twice in one file, and both copies are awkward: "The second is where a defect merging renewal
+segments across unobserved read gaps is invisible to inspection." A location is not where a
+defect "is invisible". | Keep one, at :20: "The second covers `segments_from_windows`, where a
+gap-merge defect - renewal segments spliced across unobserved read gaps - cannot be caught by
+reading the code." Delete the :330 copy.
+MINOR | tests/test_bench_isolation.py:37-39 | Ragged wrap left by the id deletion, plus a
+stranded past conditional: "`jobs/` deliberately sits at the root, because ... and moving it
+would have put `output/` inside site-packages." | "...and moving it would put `output/` inside
+site-packages." Re-wrap.
+MINOR | tests/test_bench_isolation.py:92-93 | Half-purged: "which does not match "jobs.bench"
+now that the package moved - so the guard admitted a real, working bench import." Present tense
+then "now that ... moved" then "admitted". | "which does not match "jobs.bench", so the guard
+admits a real, working bench import."
+MINOR | tests/test_path_resolution.py:33-34 | The contrast now names a file that does not
+exist anywhere in the tree: "the repo root is the / directory holding pyproject.toml, not the
+one holding main.py." | "the repo root is the directory holding pyproject.toml." Re-wrap.
+MINOR | tests/test_path_resolution.py:39, test_independence_survey.py:180 | "now" survives in
+two purged sentences ("`quebra.toml` now declares", "which is where the T2* job now gets it").
+| Drop both "now"s.
+MINOR | tests/test_independence_survey.py:80-82 | Half-purged: "Both T2* jobs go through
+`recipes.configure_t2star_job`, so these three moved from inline step kwargs into the recipe's
+signature. Reading only the job file would now find nothing". | "...so these three live in the
+recipe's signature rather than in inline step kwargs. Reading only the job file finds
+nothing".
+MINOR | tests/test_identity_closure.py:45 | Chronology left directly under the docstring line
+the purge fixed: "Until the within-calibration compute was moved out of `panels/`,
+`analyzers.t2star` reached `plots.base` ...". | "With the within-calibration compute in
+`panels/`, `analyzers.t2star` reaches `plots.base` ...".
+MINOR | tests/test_data_manifest.py:3, test_job_manifest.py:3, test_packaged_fixtures.py:3,
+test_promote_run.py:3, test_paths_dataset_fallback.py:8, test_job_discovery.py:3,
+test_path_resolution.py:33 | Seven more docstrings opening on a short orphan line where the
+spec id was cut. Correct edits, unreflowed. | Re-wrap.
+VERIFIED | tests/test_checks_statistics.py:14-16 | "The distinction matters: reading the gate
+as proof of the whole implementation hides that the shipped asymptotic path is measurably
+oversized at small n (0.0634 against 0.05 at n = 20)." Best rewrite in the tests group: the
+chronology is gone, the claim is present tense and true, and 0.0634 is ASSERTED - :125
+parametrizes `[(20, 0.0634), (50, 0.0514)]`. Both numbers regenerate.
+VERIFIED | tests/test_bench_isolation.py:93 | "planting that line in jobs/active/ left all 19
+tests passing" - `pytest --collect-only` reports exactly 19 tests in this file today. The
+number is still current.
+VERIFIED | tests/test_job_discovery.py:165, test_load_dataset_contract.py:60,
+test_within_calibration_builder.py:30, test_r_cross_implementation.py:84,169,
+test_identity.py:1, test_provenance_graph.py:1, test_reuse_gate.py:1, test_path_resolution.py:1 |
+Clean rewrites: increment/spec labels removed, no claim changed, nothing stranded.
+VERIFIED | tests/test_paths_dataset_fallback.py:8 | "This checkout's data lives under `data/`,
+so its declared root is the repo itself and the two candidates coincide HERE." True, and the
+"property of one configuration" caveat is preserved.
+
+## Reviewed (patch 4 prose) - tests/** chronology purge: DONE
+## ALL MANIFEST ITEMS COMPLETE

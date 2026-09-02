@@ -4,20 +4,19 @@ WithinCalibrationPanelData (the contract) lives in _within_calibration_data and 
 here, which stays the public import surface. Pure view arithmetic lives in
 _within_calibration_render.
 
-The re-export was load-bearing until 2026-08-23: artifacts materialized before the band
-split name `panels.non_repairable.NonRepairablePanelData` in their pickle stream, and
-output/ is append-only, so dropping it would have broken reloading them.
+Artifacts materialized before the band split name
+`panels.non_repairable.NonRepairablePanelData` in their pickle stream, and `output/` is
+append-only.
 
-The vocabulary rename of 2026-08-23 broke that anyway. `panels.non_repairable` no longer
-exists, so those artifacts raise ModuleNotFoundError and no re-export here can reach them:
-the module they name is gone, not the symbol. 82 pickles under output/ and the backups are
-affected. They are recovered by re-running their jobs, not by editing this file.
+`panels.non_repairable` does not exist, so those artifacts raise ModuleNotFoundError and no
+re-export here can reach them: the module they name is gone, not the symbol. They are
+recovered by re-running their jobs, not by editing this file.
 `tests/test_artifact_guard.py` pins that outcome rather than hiding it.
 
 Two halves:
   - WithinCalibrationPanelData is the COMPLETE typed artifact, composed of three bands
     (signal, distinguish, reliability) plus meta. Built solely by
-    panels._within_calibration_compute.build_within_calibration_panel_data.
+    analyzers.within_calibration_compute.build_within_calibration_panel_data.
   - WithinCalibrationPanel is a PURE renderer: it reads fields and draws. It performs no
     data arithmetic; only axis/theme concerns (decade-guide ticks, bin geometry,
     colors) live here.
@@ -639,7 +638,7 @@ class WithinCalibrationPanel(BasePlot):
                     median_key, float("nan")
                 )
             )
-            # 5-tuple since P5: the trailing element is the calibration label that
+            # A 5-tuple: the trailing element is the calibration label that
             # produced the pooled p-value. The renderer uses only the counts.
             _xi, _p, n_reads, n_windows, _method = (
                 pd_.distinguish.pooled_xi_per_threshold.get(

@@ -101,7 +101,7 @@ def statistic_batch(
     """Eq (16) for every permutation, vectorised over the `(B, total)` index matrix.
 
     `permuted` lets a caller supply the `(B, total)` gathered matrix it already built.
-    At n = 355 that gather is a 355k-element copy and four checks want the identical one,
+    At n = 355 that gather is a 355k-element copy and every permutation row wants the same one,
     so `checks/battery.py` builds it once and hands it round; passing None rebuilds it.
     """
     check_permuted(perm, permuted, "c1.statistic_batch")

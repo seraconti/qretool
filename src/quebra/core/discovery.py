@@ -1,11 +1,11 @@
 """Find jobs and read their declared identity and family WITHOUT importing them.
 
-SPEC 0005 R5.2 and R5.4. Two things used to be encoded in the filesystem and are now
+Two things that could be encoded in the filesystem are instead
 declared in the file:
 
 - **`JOB_ID`** — the logical name. `job.include("jobs/active/t2star_q1_070423.py")` made every
   reorganisation a breaking change to every composite that included it.
-- **`JOB_FAMILY`** — the category. It used to be the directory, so recategorising meant moving
+- **`JOB_FAMILY`** — the category. A directory would mean recategorising costs moving
   a file, which under logical IDs must stop being meaningful.
 
 **Nothing here imports a job.** Importing a job file BUILDS its graph — that is the whole
@@ -16,7 +16,7 @@ walks sources without importing them.
 
 **Not `pkgutil`**, which `quebraplan.md` 3.5 suggests. It enumerates *importable* packages,
 which contradicts the no-import rule above, and `jobs/` is deliberately outside the wheel
-(SPEC 0002 D1) with `sys.path` manipulation forbidden (R1.1.4), so it could not reach the
+with `sys.path` manipulation forbidden, so it could not reach the
 tree from an installed copy anyway.
 """
 
@@ -40,9 +40,8 @@ class DiscoveredJob:
     path: Path
     # Whether a bare `run --all` includes this job. Composites `include` other jobs, so
     # sweeping them re-runs every sub-job; `independence_survey` additionally costs ~6.5 h.
-    # This used to be encoded in the DIRECTORY (`jobs/active` swept, `jobs/composite` not),
-    # which R5.4 replaced with a declaration - and the first version of that replacement
-    # dropped the distinction entirely, silently widening `--all` from 9 jobs to 12.
+    # Declared, not encoded in the DIRECTORY (`jobs/active` swept, `jobs/composite` not).
+    # Dropping the distinction entirely silently widens `--all` from 9 jobs to 12.
     sweep: bool = True
 
 

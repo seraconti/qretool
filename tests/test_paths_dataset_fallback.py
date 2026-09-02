@@ -5,7 +5,7 @@ repo-root fallback was added for tracked in-repo tables that are genuine data in
 `jobs/bench/results/size_table.csv`, which a figure job declares as a Dataset so its sha256
 enters provenance and the run identity.
 
-SPEC 0003 moved this checkout's data under `data/`, so its declared root is now the repo
+This checkout's data lives under `data/`, so its declared root is the repo
 itself and the two candidates coincide HERE. That is a property of one configuration, not of
 the resolver, which is why the control below drives an explicit root rather than reading this
 checkout's.
@@ -35,7 +35,7 @@ def test_without_the_fallback_that_path_would_not_exist(tmp_path, in_repo):
 
     Driven from an explicit empty root rather than `default_dataset_root()`. The earlier
     version asserted that THIS checkout's dataset root lacked the table, which held only
-    while the root was the repo's parent; SPEC 0003 made it the repo itself, and the control
+    while the root was the repo's parent; it is now the repo itself, and the control
     started failing for a configuration reason rather than a resolver one. Using `tmp_path`
     tests the fallback itself, under every configuration.
     """

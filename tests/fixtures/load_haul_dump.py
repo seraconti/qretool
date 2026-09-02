@@ -70,7 +70,7 @@ def gaps_h() -> np.ndarray:
 
 
 # Kvaloy and Lindqvist Table 2, single process. Values as printed in the paper, taken from
-# the P5 brief; the bibliographic details come from the reference document's own
+# the brief; the bibliographic details come from the reference document's own
 # bibliography and the table/section numbers have not been checked against the journal.
 #
 # The first four are reproduced by this code; the last three diverge by a known and
@@ -103,7 +103,7 @@ PUBLISHED = {
 # for m > 1 is self-consistency.
 #
 # The raw periods are in neither the Kvaloy-Lindqvist paper nor any repository or R package
-# located so far (searched 2026-08-12). The published summary statistics are recorded here
+# located. The published summary statistics are recorded here
 # so the test activates the day the data arrive.
 SMALL_BOWEL_PUBLISHED = {
     "n_subjects": 19,

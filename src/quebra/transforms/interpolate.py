@@ -173,15 +173,29 @@ def run(norm: Mapping[str, object], config: Mapping[str, object]) -> Norm:
             continue
         try:
             arr = np.asarray(value)
-        except (TypeError, ValueError):
-            # Not array-shaped at all - ragged, or an object numpy cannot box.
+        except (TypeError, ValueError) as exc:
+            # Named rather than left to numpy, and raised rather than passed through, so this
+            # matches `filter._subset_norm` on the same input class. A user job can wire this
+            # step without a filter upstream, so it cannot lean on that ordering.
+            raise ValueError(
+                f"interpolate cannot resample '{key}': it is neither a scalar nor an array "
+                f"({type(value).__name__}). A Norm value has to be one or the other."
+            ) from exc
+
+        # Scalars carry no time axis, so there is nothing to resample in them.
+        if arr.ndim == 0:
             out[key] = value
             continue
 
-        # Not row-aligned with the time axis, so there is nothing to resample.
-        if arr.ndim == 0 or len(arr) != len(order):
-            out[key] = value
-            continue
+        # Every array a Norm carries is one value per read, so a length disagreeing with the
+        # time axis is a defect rather than a column with nothing to resample. Passing it
+        # through would leave it at its input sampling against the new grid - the same silent
+        # misalignment `filter._subset_norm` raises on, which is the parity that matters.
+        if len(arr) != len(order):
+            raise ValueError(
+                f"interpolate cannot resample '{key}': length {len(arr)} against a time axis "
+                f"of {len(order)}. Leaving it unresampled would misalign it against the grid."
+            )
 
         # Row-aligned from here. Passing the array through unresampled would keep the input
         # sampling at the grid length - misaligned against its own time axis, at a length

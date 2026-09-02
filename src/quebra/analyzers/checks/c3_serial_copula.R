@@ -6,7 +6,7 @@
 # Reads a one-column CSV of durations, runs the empirical-copula serial independence test,
 # and writes a one-row CSV with `statistic` and `p_value`.
 #
-# EXERCISED since 2026-08-13 (Rscript 4.5.3); the note below described the state before that.
+# Exercised under Rscript 4.5.3.
 # Historic: R was absent on the machine this was written on, so this script had never
 # run. It is written to exit non-zero on any surprise rather than to write a plausible
 # number, because the Python side turns a non-zero exit into a traceback and a written

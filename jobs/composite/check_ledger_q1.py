@@ -22,7 +22,7 @@ from quebra.core.dataset import Dataset
 from quebra.core.job import Job
 from quebra.panels.check_ledger import CheckLedgerPanel
 
-# SPEC 0005 R5.2/R5.4: the logical name and category. `include` resolves JOB_ID, so this
+# The logical name and category. `include` resolves JOB_ID, so this
 # file can move without breaking any composite; recategorising costs one string edit.
 JOB_ID = "check_ledger_q1"
 JOB_FAMILY = "independence"

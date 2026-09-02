@@ -16,7 +16,7 @@ from quebra.core.job import Job
 from quebra.recipes import configure_ramsey_job
 from quebra.schemas.track912 import track912Schema
 
-# SPEC 0005 R5.2/R5.4: the logical name and category. `include` resolves JOB_ID, so this
+# The logical name and category. `include` resolves JOB_ID, so this
 # file can move without breaking any composite; recategorising costs one string edit.
 JOB_ID = "ramsey_2x2_q1_030723"
 JOB_FAMILY = "ramsey"

@@ -1,6 +1,6 @@
 # The iid checks - what they test, and what their answers are worth
 
-Temporary working reference for the P4b cycle. It documents `analyzers/checks/` and the
+Working reference for `analyzers/checks/` and the
 calibration study in `jobs/bench/`. When the licence wiring is decided, the durable parts fold
 into `docs/PANEL_CONTRACT.md` (how a check reaches a panel) and the rest is deleted.
 
@@ -10,7 +10,7 @@ reader checking the transcription needs to know which equation, in which paper.
 
 ---
 
-## The question all five are asking
+## The question all six are asking
 
 The panel carves a metric into in-spec **windows**. Reliability arithmetic on those windows
 - occupancy, survival, mean time between failures - assumes the durations behave like a
@@ -87,7 +87,7 @@ over 336 cells and 480,000 replicates. Its verdicts:
 | C1, C2 permutation | PROMOTE | size holds across 80 null cells; mean power 0.60/0.61 at n = 100 |
 | C1, C2 asymptotic | REJECT | oversized inside the envelope (worst z = 10.8 and 7.0) |
 | C5, C6 | HOLD | correctly calibrated, but underpowered where it matters |
-| C3 | RUNS, UNCALIBRATED | first contact 2026-08-13 (Rscript 4.5.3, `copula`); smoke-tested on iid input only - no bench cell, no size or power evidence |
+| C3 | RUNS, UNCALIBRATED | exercised under Rscript 4.5.3 with `copula`; smoke-tested on iid input only - no bench cell, no size or power evidence |
 
 **The number to read before trusting a non-rejection**: at the dependence this instrument
 actually shows (duration lag-1 0.12-0.15), C5 and C6 have 6-13% power below n = 75 and
@@ -100,8 +100,8 @@ p-value-only rule.
 
 ## Files
 
-- `analyzers/checks/` - the five checks, the permutation harness, the segment mapping
-- `analyzers/checks/battery.py` - runs the four permutation checks off ONE permutation set
+- `analyzers/checks/` - the six checks, the permutation harness, the segment mapping
+- `analyzers/checks/battery.py` - runs the five permutation checks off ONE permutation set
 - `analyzers/check_ledger.py` - scores each answer against event count, calibration, ties
 - `jobs/bench/` - the calibration study; `jobs/bench/results/promotion_report.md` is its output
 - `analyzers/calibration_summary.py` - the shared definition of "calibrated at this n"
@@ -109,7 +109,11 @@ p-value-only rule.
 ## Per-check pages
 
 [C1](C1_lewis_robinson.md) - [C2](C2_anderson_darling.md) - [C3](C3_serial_copula.md) -
-[C5](C5_rank_autocorr.md) - [C6](C6_exchangeability.md) - [limitations](LIMITATIONS.md)
+[C5](C5_rank_autocorr.md) - [C6](C6_exchangeability.md) -
+[CvM](CvM_cramer_von_mises.md) - [limitations](LIMITATIONS.md)
+
+There is no C4. Lin-Wei-Ying is the fourth check in the source's numbering and is not
+implemented here; nothing in the battery depends on it.
 
 ## Sources
 

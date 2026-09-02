@@ -1,7 +1,6 @@
 # Panel Contract
 
 Defines the interface between metric modules and `WithinCalibrationPanel`.
-Last updated: R1 (2026-05-26).
 
 ---
 
@@ -14,7 +13,7 @@ domain-specific knowledge lives in adapter functions beside their analyzer
 that convert a typed result into `WithinCalibrationPanelData`.
 
 Those adapters are called by a job STEP, never at draw time. `FidelityPlot` and
-`T2StarPlot` used to build panel data inside `build_matplotlib`, where no DAG node
+`T2StarPlot` must not build panel data inside `build_matplotlib`, where no DAG node
 could supply the window tables; both are gone and jobs use `WithinCalibrationPanel`
 directly off a panel-data step.
 
@@ -53,15 +52,16 @@ they differ, that difference is the finding.
 
 **`estimator` is a field.** The reliability band declares which estimator produced its
 survival curve and the axis label is derived from it, so the label cannot go stale.
-`cumulative_hazard`, `band_lower` and `band_upper` are reserved and are `None` until
-Kaplan-Meier lands; when it does, only that band changes.
+`cumulative_hazard`, `band_lower` and `band_upper` are reserved and are `None` here. The
+estimator exists - `analyzers/kaplan_meier.py` - but this panel does not consume it; wiring
+it in changes only that band.
 
 **Occupancy is fraction of OBSERVED time**, gap intervals excluded. There is one
 definition: `reliability.occupancy` and the renderer's >=5% timeline cull read the same
 number, and `_cumulative_time_out_of_spec` uses the same denominator. Counting gap time
 credited unobserved hours to whichever state held at the left edge.
 
-**Dropped in P3**: the detail/zoom view and the 30-minute median/IQR/p90 view, with
+**Not drawn**: the detail/zoom view and the 30-minute median/IQR/p90 view, with
 `binned_stats_per_trace` and `adaptive_ylim`. Extra `traces` are now overlaid on the
 signal axis rather than in a subplot of their own.
 
@@ -103,7 +103,7 @@ class WithinCalibrationPanelData:
     include_cumulative_damage: bool  # render cumulative damage subplot (default True)
     include_mttr: bool               # include first-crossing times in summary text (default True)
 
-    # P2 additions (from the window/read tables)
+    # from the window/read tables
     primary_sigma: np.ndarray | None
         # per-read 1-sigma on primary_series, same units. Drawn as error bars under
         # the trace; snapshotted y-limits keep it from driving autoscale.
@@ -198,8 +198,8 @@ Both are correct for what they measure. Do not read the summary `count` as the n
 windows in the window table.
 
 `window_survival_per_threshold` is an empirical survival function over **uncensored**
-window lengths only: `S(x) = #{w >= x} / n`. Kaplan-Meier, which would use the censored
-windows rather than discard them, is deferred.
+window lengths only: `S(x) = #{w >= x} / n`. `analyzers/kaplan_meier.py` uses the censored
+windows rather than discarding them; this field does not, and the two are not interchangeable.
 
 ---
 
@@ -286,7 +286,7 @@ metric that supplies these inputs automatically gets all three views.
 
 ## Fidelity adapter
 
-`plots/fidelity_plot.py::make_fidelity_panel_data(result: FidelityResult, dataset_id: str) -> WithinCalibrationPanelData`
+`analyzers/fidelity.py::make_panel_data(result: FidelityResult, ...) -> WithinCalibrationPanelData`
 
 Decisions made by the adapter:
 - `primary_series` = infidelity (clipped to ≥ 1e-16 for log scale)
@@ -302,12 +302,12 @@ Decisions made by the adapter:
 
 ## File size note
 
-`panels/within_calibration.py` is 1057 lines, five times the project's 200-line
-guideline. The number in this paragraph read "~650" until 2026-08-23; the file had
-grown and the doc had not.
+`panels/within_calibration.py` is five times the project's 200-line guideline. A line count
+written here goes stale silently, so it is not repeated; `wc -l` is the source.
 
-The split it proposed has since happened in part: `panels/_within_calibration_compute.py`
-builds the artifact, `_within_calibration_render.py` holds the functions-of-axes half, and
-`_within_calibration_data.py` is the typed contract. What remains in the main file is the
+The split is partly done: `analyzers/within_calibration_compute.py`
+builds the artifact, `analyzers/within_calibration_data.py` is the typed contract, and
+`panels/_within_calibration_render.py` holds the functions-of-axes half. What remains in the
+main file is the
 drawing sequence, which is still the largest module in the tree. A further split does not
 change any public API and can be done at any time.

@@ -148,7 +148,7 @@ def main() -> None:
         if args.family is not None and not args.all:
             parser.error("--family selects among discovered jobs and requires --all")
         if args.all:
-            # SPEC 0005 R5.4: select by the declared JOB_FAMILY constant, read statically.
+            # Select by the declared JOB_FAMILY constant, read statically.
             # The directory is presentation only now. `jobs/archived/` does not exist and its
             # glob was dead, so `--include-archived` is gone with it.
             jobs_root = Path.cwd() / "jobs"

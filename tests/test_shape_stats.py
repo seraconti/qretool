@@ -15,7 +15,7 @@ The xi tests come in two groups, and the distinction is the point:
   the real T2* ladder, EVERY window is tie-free on both axes (0 of 279 at 3 us), so these
   are the tests that pin current behaviour.
 - **Tied**: the two forms diverge, and only eq (8) is correct. These are the tests that
-  would have failed before the fix.
+  would fail against the tie-free reduction.
 """
 
 from __future__ import annotations
@@ -146,7 +146,7 @@ def test_the_implementation_matches_eq8_on_TIED_data(seed):
     """The one behaviour this increment changed, pinned against the formula.
 
     Everything else here compares the implementation to the tie-FREE form, which it also
-    satisfied before the change. Without this test the tied path - the entire point of
+    satisfied by the tie-free reduction. Without this test the tied path - the entire point of
     correcting the estimator - is unpinned, and an analyzer edit would not move the run
     identity to signal it.
     """

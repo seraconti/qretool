@@ -1,9 +1,9 @@
 """The set of `quebra` modules a job's steps can actually reach, and their content hashes.
 
-SPEC 0005 R5.1. Identity used to be `hash(job file) + dataset hashes + child identities`, which
-meant the analyzer that produced the numbers could change completely while the digest asserted
-nothing had. Measured before the change: appending a line to `analyzers/t2star.py` left
-`t2star_q1_070423`'s identity byte-identical.
+Identity over `hash(job file) + dataset hashes + child identities` alone would let the
+analyzer that produced the numbers change completely while the digest asserted nothing had:
+appending a line to `analyzers/t2star.py` would leave `t2star_q1_070423`'s identity
+byte-identical.
 
 This computes the other half. Hashing all of `src/quebra/` would fix the over-claim and
 recreate the blast radius the plan warned about - editing a plot module would invalidate every
@@ -245,12 +245,12 @@ def parameter_row(nodes: Sequence[object]) -> list[str]:
     file covers them for free; the moment a job family moves its rows into a manifest,
     identity stops covering them. And `Identity` is `code + data + children` with no
     `job.name`, so two family members sharing a definition file and differing only by a
-    parameter would collide on one digest. Measured before this existed: two jobs differing
+    parameter would collide on one digest. Without it, two jobs differing
     only by `x=1` versus `x=999` both produced `93f7286634eef03b`.
 
     `Dataset` values are skipped: their content hash is already the `data` contribution, and
     their repr carries a schema class whose module name embeds an absolute path for a schema
-    defined inside a job file - machine-dependent, and exactly what R5.1.3 forbids keying on.
+    defined inside a job file - machine-dependent, and must never be keyed on.
     """
     from quebra.core.dataset import Dataset
 

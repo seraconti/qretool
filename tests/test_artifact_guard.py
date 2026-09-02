@@ -1,4 +1,4 @@
-"""Staleness guard for materialized panel-data artifacts (Increment 2.5a).
+"""Staleness guard for materialized panel-data artifacts.
 
 A pre-split pickle restores __dict__ without the derived fields; the guard must
 fail loudly at the pickle boundary instead of crashing mid-render or silently
@@ -35,7 +35,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def _carved(t_h, series, thresholds):
     """Carve through the real analyzer, as a job does.
 
-    The builder no longer carves: it consumes the window and read tables, so a test
+    The builder does not carve: it consumes the window and read tables, so a test
     that constructs panel data has to produce them the same way production does.
     """
     result = windows.run(
@@ -102,7 +102,7 @@ def test_stale_state_raises(cls, make, derived_field) -> None:
 
 
 def test_missing_cv_alone_raises() -> None:
-    # cv used to be a plain class default: a stale instance silently drew CV=nan.
+    # As a plain class default, cv lets a stale instance silently draw CV=nan.
     # With default_factory + the guard, its absence must raise like any field. It now
     # lives on the signal band, so this exercises the NESTED guard.
     band = _valid_within_calibration().signal
@@ -251,8 +251,8 @@ def test_real_pre_split_artifact_raises() -> None:
     did not match the current contract, and `StaleArtifactGuard` said so.
 
     `ModuleNotFoundError` is a rename. THREE have now landed: the vocabulary rename of
-    2026-08-23 (`panels.non_repairable` -> `panels.within_calibration`), the SPEC 0002
-    src-layout move (`panels.*` -> `quebra.panels.*`), and the SPEC 0005 R5.0.4 move of the
+    (`panels.non_repairable` -> `panels.within_calibration`), the
+    src-layout move (`panels.*` -> `quebra.panels.*`), and the move of the
     within-calibration COMPUTE out of the render package
     (`panels._within_calibration_{data,compute}` -> `analyzers.within_calibration_{data,compute}`),
     which is where `WithinCalibrationPanelData` is defined and therefore what a pickle names.
@@ -284,16 +284,21 @@ def test_real_pre_split_artifact_raises() -> None:
             assert "stale" in str(exc) and "--reuse-deps" in str(exc)
             stale_errors.append(str(exc))
         except (ModuleNotFoundError, AttributeError) as exc:
-            # TWO renames now put artifacts out of reach, and both are accepted losses:
-            #   2026-08-23  vocabulary: panels.non_repairable -> panels.within_calibration
-            #   SPEC 0002   layout:     panels.*              -> quebra.panels.*
+            # Two renames put artifacts out of reach, and both are accepted losses:
+            #   vocabulary: panels.non_repairable -> panels.within_calibration
+            #   layout:     panels.*              -> quebra.panels.*
             # Assert the failure names one of the modules those renames removed, so this
             # clause cannot swallow an unrelated packaging break.
             missing = str(exc)
-            # Match the MODULE PATHS the two renames removed, not bare package names. An
-            # earlier version accepted the token "panels", which would also swallow a wheel
-            # that simply failed to ship `quebra/panels/` - the test would then pass on a
-            # broken distribution. These strings only appear in a pre-rename pickle.
+            # Match the MODULE PATHS the renames removed, not bare package names: the token
+            # "panels" would also swallow a wheel that simply failed to ship
+            # `quebra/panels/`, and the test would pass on a broken distribution.
+            #
+            # FROZEN VOCABULARY. `panels.non_repairable` and `panels.repairable` are not our
+            # words any more - AGENTS.md forbids them - but these are not identifiers. They
+            # are quoted data about bytes already on disk, and renaming them to
+            # within/across-calibration would stop this clause matching the very pickles it
+            # exists to recognise. Leave them.
             assert any(
                 token in missing
                 for token in (

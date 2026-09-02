@@ -42,7 +42,7 @@ K_VALUES = (0.5, 1.0, 2.0)
 LADDER_SPACING_S = 1e-6  # the ladder steps in 1 µs
 DATASET_SUBDIR = "data/real_private/6D2S"
 # Beside this file, like every other bench output. Writing through repo_root()
-# pointed at the pre-move `bench/results/`, which no longer exists.
+# must point at `jobs/bench/results/`.
 OUT_CSV = Path(__file__).resolve().parent / "results" / "probe_unresolved_out.csv"
 
 

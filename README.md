@@ -69,8 +69,8 @@ arguments, and could not be cached.
 **Jobs are declarative**. A job is a Python file that names its datasets and wires steps
 together. It describes a graph; it does not execute one. Nothing computes until a sink
 resolves, which is either a figure or an explicit request to materialize an artifact.
-**
-Identity is content, not filename**. A run is identified by hashes of its inputs and of the
+
+**Identity is content, not filename**. A run is identified by hashes of its inputs and of the
 code that transformed them, folded transitively through the graph. Change a threshold, and it is
 a different run. Edit an analyzer and everything downstream of it is a different run. A cached
 result is reused when, and only when, the content that produced it is identical.
@@ -84,7 +84,9 @@ made it, and that changing one parameter recomputes only what changed.
 
 ### Status
 
-QUEBRA is in active development alongside an MSc thesis, and the documentation is under construction. Interfaces may change. Parts of the methodology described above are not implemented yet and are marked as such where they appear. Feedback is welcome, particularly from anyone who runs long characterization campaigns and disagrees with how this frames the problem. Open an issue, including for questions and for merely confusing things. See CONTRIBUTING.md.
+QUEBRA is in active development alongside an MSc thesis, and the documentation is under
+construction. Interfaces may change. Parts of the methodology described above are not
+implemented yet and are marked as such where they appear.
 
 Feedback is welcome, particularly from anyone who runs long characterization campaigns and
 disagrees with how this frames the problem. Open an issue, including for questions and for
@@ -94,20 +96,23 @@ merely confusing things. See CONTRIBUTING.md.
 
 QUEBRA installs as a package. Python 3.11 or newer.
 
-git clone https://github.com/seraconti/qretool.git
-cd qretool
+```bash
+git clone https://github.com/seraconti/quebra.git
+cd quebra
 
-an isolated environment, so QUEBRA's dependencies stay out of your system Python
+# an isolated environment, so QUEBRA's dependencies stay out of your system Python
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
 pip install .                      # or: pip install -e ".[dev]" to work on it
 pip install pytest                 # the test runner is not a runtime dependency
 pytest tests/
+```
 
-These are the steps `scripts/acceptance.sh` performs, in a throwaway virtualenv created
-outside the repository. If they stop working, that script fails. Nothing is documented here
-that the script does not do.
+`scripts/acceptance.sh` checks the same claim from a harsher angle: it builds a wheel,
+installs THAT into a throwaway virtualenv outside the repository, and runs the suite from a
+directory that is not the checkout. If a packaging mistake makes the steps above work only
+from a git clone, that script is what catches it.
 
 There is no `requirements.txt`. Dependencies are declared in `pyproject.toml` and derived
 from the imports that actually appear under `src/quebra/`.
@@ -117,13 +122,16 @@ that one check reports not computed, and nothing else is affected.
 
 Running a job
 
+```bash
 quebra run jobs/active/t2star_q1_070423.py   # run one job
-quebra run --all                             # run every active job in ./jobs/active
+quebra run --all                             # every job except those opting out
 quebra inspect jobs/active/km_poster_6d2s.py # print the graph without running it
+```
 
 `quebra` is installed by pip as a console script. It anchors on the working directory: run
-directories are written to `./output`, and `--all` sweeps `./jobs/active`. Pass
-`--output-root` to send them elsewhere.
+directories are written to `./output`, and `--all` discovers every job under `./jobs` and
+runs all of them except those declaring `JOB_SWEEP = False`, which is how the composites opt
+out. Pass `--output-root` to send them elsewhere.
 
 inspect is the fastest way to understand a job: it prints the step graph, including the
 keyword arguments that affect each result, without computing anything.

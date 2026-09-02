@@ -1,4 +1,4 @@
-"""Reuse gate + artifact completeness (Increment 5).
+"""Reuse gate + artifact completeness.
 
 The gate: an artifact is reusable only when its content identity AND git commit
 match the current run AND the working tree is clean; any mismatch re-runs fresh.

@@ -10,7 +10,7 @@ Rerun only when the fixture contract changes, and commit the result:
 
     python scripts/make_fixtures.py
 
-SPEC 0003 R3.6. Synthetic throughout - no measured value from any device appears here, which
+Synthetic throughout - no measured value from any device appears here, which
 is what lets these ship inside the wheel.
 """
 

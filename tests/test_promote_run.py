@@ -1,6 +1,6 @@
 """Promoting a run must commit the trail and never the artifacts.
 
-SPEC 0003 R3.5. `output/` is gitignored because it is hundreds of megabytes; the provenance
+`output/` is gitignored because it is hundreds of megabytes; the provenance
 is kilobytes and is what makes a published figure auditable. The failure this guards is a
 promotion command that quietly copies a 4 MB pickle into the tree, which would make the
 gitignore rule protecting `output/` pointless.

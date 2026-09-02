@@ -115,7 +115,7 @@ def test_every_tier_verdict_is_from_the_known_vocabulary():
 
 
 def test_c3_is_not_credited_with_calibration_it_does_not_have():
-    """C3 ran for the first time on 2026-08-13 and has NO bench cell.
+    """C3 runs and has NO bench cell.
 
     A smoke test on iid input is not calibration, and this pass has already had to correct
     five documents that implied otherwise. The report must not become the sixth.
@@ -133,11 +133,8 @@ def test_xi_tier_3_is_partial_because_the_closed_form_is_not_entitled_to_ties():
 
 
 def test_cvm_is_promoted_and_its_tier_3_no_longer_says_it_has_no_bench_cell():
-    """PROMOTED 2026-08-14; this test pinned the opposite and is inverted, not deleted.
-
-    The tier-3 detail used to read "no bench cell exists for CvM". Once the bench carries
-    CvM rows that sentence is false, and a report repeating it would understate the
-    evidence - the mirror image of the overclaiming this pass has been correcting.
+    """Once the bench carries CvM rows, "no bench cell exists for CvM" is false, and a
+    report repeating it understates the evidence it holds.
     """
     from quebra.analyzers.checks.battery import ROW_KEYS
 
@@ -213,9 +210,6 @@ def test_the_divergence_is_reported_in_levels_not_only_tie_fraction():
     frame["p_signed_diff_mean"] = [0.001, 0.002, 0.003, 0.050] * 2
     data = build_instrument_validation(GAPS, PUBLISHED, R_INPUTS, R_VALUES, frame)
     assert data.divergence_levels == {35: 2.0, 355: 2.0}
-    assert (
-        "2 levels" in render_tier_table_markdown(data) or True
-    )  # table uses tie fraction
 
 
 def test_divergence_levels_picks_the_FINEST_crossing_not_the_coarsest():
@@ -228,7 +222,7 @@ def test_divergence_levels_picks_the_FINEST_crossing_not_the_coarsest():
 
 
 def test_no_tier_verdict_claims_evidence_that_does_not_exist():
-    """The audit that produced the 2026-08-13 fixes, kept as a test.
+    """The audit, kept as a test.
 
     Four verdicts claimed more than their tier supported: two tier-4 `pass` cells with no
     independent implementation behind them (C2's reference is five hand-written lines in

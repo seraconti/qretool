@@ -40,7 +40,7 @@ def test_the_closure_reaches_transitively_not_just_directly():
 
 
 def test_the_closure_contains_no_render_module():
-    """The blast-radius guard, and the reason SPEC 0005 R5.0.4 came before this requirement.
+    """The blast-radius guard, and the reason the compute must not live in `panels/`.
 
     Until the within-calibration compute was moved out of `panels/`, `analyzers.t2star`
     reached `plots.base`, `plots.theme`, `plots.fidelity_helpers` and
@@ -80,10 +80,10 @@ def test_a_step_defined_in_a_job_file_still_seeds_the_analyzers():
     `quebra.*` would drop it — and with it every analyzer it reaches. The filter applies to
     what is hashed, not to where the walk starts.
 
-    Uses `mtbf_q1`, not a T2* job. The T2* jobs were the original measurement for this, but
-    SPEC 0005 R5.3 collapsed them onto `recipes.configure_t2star_job`, so all their steps now
-    live in a `quebra.*` module and they no longer exercise this path. That is the test
-    telling us its premise moved, which is why the premise is asserted rather than assumed.
+    Uses `mtbf_q1`, not a T2* job: both T2* jobs collapse onto
+    `recipes.configure_t2star_job`, so all their steps live in a `quebra.*` module and they
+    do not exercise this path. The premise is asserted rather than assumed, so a test whose
+    premise moves says so.
     """
     from quebra.core.job import _import_job
 
@@ -151,12 +151,12 @@ def test_the_fold_moves_when_a_reached_module_changes(monkeypatch, tmp_path):
 
 
 def test_two_jobs_differing_only_by_a_step_kwarg_do_not_collide(tmp_path):
-    """R5.1.7. `Identity` is code + data + children with no `job.name`, so before the
-    parameter row was folded these produced ONE digest — measured, both `93f7286634eef03b`.
+    """`Identity` is code + data + children with no `job.name`, so without the parameter
+    row folded in, these two collide on one digest.
 
     Masked today because every parameter lives in the job file's text, which `code` hashes.
     It goes live the moment a job family moves its rows into a manifest, which is exactly
-    what R5.3 does, which is why this is pinned before that lands.
+    what a collapsed family does, which is why it is pinned.
     """
     from quebra.core.job import Job
 
@@ -208,7 +208,7 @@ def test_a_dataset_kwarg_is_left_to_the_data_contribution(tmp_path):
     assert parameter_row([_Node()]) == ["load()"]
 
 
-# ---------------------------------------------------------------- argument rendering (R5.1.7)
+# ------------------------------------------------------------------- argument rendering
 
 
 def test_a_set_kwarg_renders_the_same_in_every_process():

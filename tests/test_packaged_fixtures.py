@@ -1,6 +1,6 @@
 """The packaged fixtures must work for someone who has none of our data.
 
-That is their whole reason to exist (SPEC 0003 R3.6), so these tests check the property a
+That is their whole reason to exist, so these tests check the property a
 reviewer depends on - the fixture is reachable from the installed package and runs the real
 pipeline - rather than the numbers in it.
 """

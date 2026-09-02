@@ -186,9 +186,9 @@ def run(inputs: FidelityInputs) -> FidelityResult:
 # ---------------------------------------------------------------------------
 # Panel-data factory
 #
-# Lifted out of plots/fidelity_plot.py, which built panel data inside
-# build_matplotlib - at draw time, where no DAG node could supply the window and
-# read tables. The adapter belongs beside its analyzer, as t2star's does.
+# Kept out of the render layer: building panel data inside build_matplotlib happens at draw
+# time, where no DAG node can supply the window and read tables. The adapter belongs beside
+# its analyzer, as t2star's does.
 # ---------------------------------------------------------------------------
 
 

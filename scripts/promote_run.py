@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Promote one run's provenance into the committed tree.
 
-SPEC 0003 R3.5. `output/` is gitignored because the artifacts are hundreds of megabytes, but
+`output/` is gitignored because the artifacts are hundreds of megabytes, but
 a figure that appears in a paper needs an auditable trail. The provenance records are
 kilobytes and carry the identity, the dataset digests, the pipeline steps, the git commit and
 the software version - enough to say exactly what produced a figure without shipping any of

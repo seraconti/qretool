@@ -215,7 +215,7 @@ def test_small_bowel_motility_multiprocess():
     if segments_data is None:
         pytest.skip(
             "raw Aalen-Husebye (1991) period lengths not obtainable; searched "
-            "2026-08-12. The m > 1 path therefore has no external validation. Add "
+            "The m > 1 path therefore has no external validation. Add "
             "SMALL_BOWEL_SEGMENTS to tests/fixtures/load_haul_dump.py to activate."
         )
     published = fx.SMALL_BOWEL_PUBLISHED

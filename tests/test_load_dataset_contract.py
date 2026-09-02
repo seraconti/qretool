@@ -57,7 +57,7 @@ def semicolon_csv(tmp_path):
 
 
 def test_a_job_with_no_qubit_and_no_ramsey_columns_can_use_load(semicolon_csv):
-    """The headline claim. Every element here was previously fatal."""
+    """The headline claim. Every element here is a case a Ramsey-only loader rejects."""
     norm = _load_dataset(
         Dataset(
             path=semicolon_csv,
@@ -125,7 +125,7 @@ def test_the_default_normaliser_still_applies_when_no_schema_is_given(tmp_path):
     """`schema=None` means the DEFAULT normaliser, not "no normalisation".
 
     Pinning this matters because the docs must not describe it as "no validation". It is NOT
-    relied on by ten call sites, as an earlier version of this docstring said: every
+    relied on by many call sites: every
     `job.load` in `jobs/` names a schema, and `tests/test_windows_not_interpolated.py` is the
     only site that reaches the default.
     """

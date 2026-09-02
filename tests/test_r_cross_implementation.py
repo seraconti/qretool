@@ -10,17 +10,17 @@ For three of these the R package is by the authors of the method: `XICOR` is Cha
 
 **The suite never runs R.** `rscripts/reference_values.R` writes two committed CSV fixtures
 and this file reads them. `pytest` therefore works on a machine with no R, which was the
-state of this project until 2026-08-13 and may be the state of a reviewer's machine.
+may be the state of a reviewer's machine.
 
 **The fixture carries the INPUT DATA, not just the answers.** Reproducing R's RNG stream
 from Python would be fragile, and a mismatch in the data generator would surface here as a
 statistical disagreement - the most misleading possible failure. Python reads the exact
 numbers R saw.
 
-**The headline case is `xi_tied`.** Increment B changed `chatterjee_xi` from the tie-free
-reduction to the tie-corrected eq (8). No shipped window exercises that change: all 309
-window-rows on the T2* ladder are tie-free. This file is the ONLY external evidence that
-the change was made correctly, and `XICOR::xicor(ties = TRUE)` is the reference
+**The headline case is `xi_tied`.** `chatterjee_xi` uses the tie-corrected eq (8), not the
+tie-free reduction, and no shipped window exercises it: all 309 window-rows on the T2* ladder
+are tie-free. This file is the ONLY external evidence that the tie-corrected path is right,
+and `XICOR::xicor(ties = TRUE)` is the reference
 implementation of the same equation.
 """
 
@@ -81,7 +81,7 @@ def test_xi_matches_XICOR_on_tie_free_data():
 
 
 def test_xi_lies_inside_the_XICOR_tie_break_distribution_on_TIED_data():
-    """THE headline check of Increment B, and the only external evidence for eq (8).
+    """The headline check, and the only external evidence for eq (8).
 
     EQUALITY IS NOT THE RIGHT TEST HERE, and finding that out was the point of running it.
     Eq (8) breaks ties in x uniformly AT RANDOM, so `XICOR::xicor` is a random variable on
@@ -166,7 +166,7 @@ def test_the_tie_free_case_is_genuinely_tie_free_and_the_tied_case_genuinely_tie
     ).sum() / (n**2 - 1)
     assert abs(reduction - chatterjee_xi(x_tied, y_tied)) > 0.01, (
         "the tie-free reduction and eq (8) agree on this case, so it cannot detect the "
-        "change Increment B made"
+        "tie-corrected form"
     )
 
 

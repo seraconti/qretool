@@ -13,7 +13,7 @@ one for the other.
 DEVIATION FROM docs/FIGURE_STANDARD.md, on the author's instruction: no caption and no
 in-panel count note. `IntervalHistogramResult` records `n_nonpositive_dropped`, and the
 builder raises if nothing is positive, so a dropped interval is still recoverable from the
-materialized artifact - but it is no longer visible to someone holding only the image.
+materialized artifact - but it is not visible to someone holding only the image.
 Restoring it means putting `_note` back. (On the shipped qubit 6 log that count is zero.)
 """
 
