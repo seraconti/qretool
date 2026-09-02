@@ -80,7 +80,7 @@ def ad_limiting_cdf(z: float | np.ndarray) -> np.ndarray:
     z = 1.933.
     """
     z = np.asarray(z, dtype=float)
-    # Finiteness FIRST: `nan <= 0.0` is False, so a nan statistic used to slip past the
+    # Finiteness FIRST: `nan <= 0.0` is False, so a nan statistic would slip past the
     # positivity guard and emerge as `p = 1 - nan = nan` on a CheckResult.
     if not np.all(np.isfinite(z)):
         n_bad = int((~np.isfinite(z)).sum())

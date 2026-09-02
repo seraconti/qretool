@@ -1,4 +1,4 @@
-"""Path resolution unification (Increment 2.5b).
+"""Path resolution unification.
 
 One dataset root feeds BOTH the loader and provenance hashing, resolved once per
 run in core/runner.run_job; everything anchors CWD-independently. These tests run
@@ -30,13 +30,13 @@ from quebra.provenance import hash_file
 
 def test_repo_root_is_the_tool_repo(in_repo) -> None:
     root = repo_root()
-    # The CLI moved into the package in SPEC 0002; the repo root is now the
+    # The CLI lives inside the package; the repo root is the
     # directory holding pyproject.toml, not the one holding main.py.
     assert (root / "pyproject.toml").exists()
 
 
 def test_default_dataset_root_follows_the_declared_root(in_repo) -> None:
-    """Was `== repo_root().parent`, which SPEC 0003 made false: the datasets moved inside the
+    """Not `== repo_root().parent`: the datasets live inside the
     checkout under `data/` and `quebra.toml` now declares `data_root = "."`.
 
     Asserting against the declared value rather than a fixed relationship is the point -

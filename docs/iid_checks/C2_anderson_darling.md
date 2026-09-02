@@ -27,7 +27,7 @@ uniformity on `[0, tau]`. The `1/gamma_hat^2` generalises it from Poisson to ren
   Marsaglia & Marsaglia's `adinf` over 6000 replicates.
 
 **Both force `gamma = 1`, so neither pins the shipped path.** That distinction matters and
-was previously blurred - see the limitations below.
+is load-bearing - see the limitations below.
 
 ## Limitations
 

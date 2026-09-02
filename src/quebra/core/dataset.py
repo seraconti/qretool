@@ -14,9 +14,9 @@ class Dataset:
     provenance. `loader_kwargs` is passed to the reader for this file's extension and is
     never read back.
 
-    They used to be one field, which was a defect rather than a simplification: `extra`
-    was forwarded to the loader AND read back as metadata, so `extra={'run_start_unix_s':
-    ...}` - the value `_load_dataset`'s own error message tells you to set - reached
+    Merging them is a defect rather than a simplification: one field would be forwarded to
+    the loader AND read back as metadata, so `extra={'run_start_unix_s': ...}` - the value
+    `_load_dataset`'s own error message tells you to set - would reach
     `pd.read_csv(path, **extra)` and raised `unexpected keyword argument`. It only ever
     worked because every in-repo caller used `.pickle`, whose loader discards the dict.
     """
@@ -31,4 +31,4 @@ class Dataset:
 
     def __post_init__(self) -> None:
         self.path = Path(self.path)
-        # keep path normalized; dataset no longer carries a 'companion' path
+        # keep path normalized; a companion path is a separate Dataset

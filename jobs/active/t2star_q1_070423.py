@@ -2,8 +2,8 @@
 
 One of the two members of the `t2star` family. The graph is
 `quebra.recipes.configure_t2star_job`; what is here is this run's parameter row, which is
-the part worth diffing against its sibling. Before SPEC 0005 R5.3 these two files were 128
-lines each and byte-identical once the date and the run duration were normalised.
+the part worth diffing against its sibling. Everything shared lives in the recipe: the two
+files are byte-identical once the date and the run duration are normalised.
 """
 
 from __future__ import annotations

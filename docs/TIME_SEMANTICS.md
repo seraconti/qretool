@@ -8,7 +8,7 @@ The goal is **documentation, not enforcement**: shared code should avoid guessin
 
 Every variable, dict key, column, or metadata field that carries a physical
 unit must end with the corresponding suffix. This applies to all new code and
-was extended in Fix 2 (2026-05-26) to cover frequency quantities.
+covers frequency quantities as well as time.
 
 ### Time suffixes
 
@@ -31,13 +31,13 @@ Canonical Norm frequency keys:
 | `qubit_frequency_hz` | Carrier/qubit frequency from calibration (was `qubit_frequency`) |
 
 
-**Source column names** in the calibration pickles (`FOR ZENODO/Main/Fig 2/qubit*.pickle`)
+**Source column names** in the calibration pickles (`data/real_private/companion/qubit*.pickle`)
 are not renamed - they remain `frequency` and `Rabi_frequency` as verified in the
 external data. The `aliases` argument to `lookup_prior` maps them to the
 correct norm keys:
 ```python
-fields=[“frequency”, “Rabi_frequency”],
-aliases={“frequency”: “qubit_frequency_hz”, “Rabi_frequency”: “rabi_hz”},
+fields=["frequency", "Rabi_frequency"],
+aliases={"frequency": "qubit_frequency_hz", "Rabi_frequency": "rabi_hz"},
 ```
 
 ## Run-Start Time Resolution Levels
@@ -58,11 +58,11 @@ When `Job.load()` produces the normalized mapping:
 
 - `t_rel_s`: relative time in seconds.
 
-`t_s` is no longer emitted; downstream steps must use `t_rel_s`.
+There is no `t_s` key; downstream steps use `t_rel_s`.
 
 ## Verified Dataset Types
 
-### 1) Calibration log pickles (`FOR ZENODO/Main/Fig 2/qubit*.pickle`)
+### 1) Calibration log pickles (`data/real_private/companion/qubit*.pickle`)
 
 **Verified fields:**
 
@@ -74,7 +74,7 @@ When `Job.load()` produces the normalized mapping:
 - `date` behaves like **lab-local wall clock** stored without timezone.
 - `uuid` is a real epoch timestamp; when converted to Europe/Rome and then made naive, it matches `date` up to small rounding/serialization error.
 
-### 2) core-tools HDF5 calibration sweeps (`FOR ZENODO/Main/Fig 1/frequency_cal_q1.hdf5`)
+### 2) core-tools HDF5 calibration sweeps (core-tools `.hdf5`, outside the checkout)
 
 **Verified fields:**
 
@@ -91,7 +91,7 @@ When `Job.load()` produces the normalized mapping:
 
 - When loaded via the built-in HDF5 loader, selected file attributes are preserved on the returned DataFrame as `df.attrs["hdf5"]` (including `measurement_time` and `uuid_ns`).
 
-### 3) 912days Ramsey pickles (`tool/datasets/.../*_qubit*.pickle`)
+### 3) 912days Ramsey pickles (`data/real_private/6D2S/*_qubit*.pickle`)
 
 **Observed fields:**
 
@@ -125,7 +125,7 @@ This is intentionally the “naive-as-UTC” representation (document it when us
 
 - If a dataset format provides an explicit experiment start (`measurement_time`, header timestamp, etc.), derive a **single** reference time and use it consistently.
 - Prefer passing `run_start_unix_s` explicitly via `Dataset.extra` for formats where `Job.load()` cannot infer a correct start.
-- Use `transforms.lookup_prior.check_unix_s(...)` in jobs when you derive unix seconds to catch obvious unit mistakes (ms vs s vs ns). (`_check_unix_s` is a deprecated alias and will be removed.)
+- Use `transforms.lookup_prior.check_unix_s(...)` in jobs when you derive unix seconds to catch obvious unit mistakes (ms vs s vs ns).
 
 ## Verified Calibration Lookup Example
 

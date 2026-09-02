@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate `docs/JOBS.md`, the human-readable view of what each job is.
 
-SPEC 0005 R5.5. `quebraplan.md` 3.4 makes the argument: explicit job files are trivially
+`quebraplan.md` 3.4 makes the argument: explicit job files are trivially
 greppable and diffable, and a parameterised definition hides per-job intent — so generate the
 readable view and reviewability survives the abstraction. That argument holds at 12 jobs as
 much as at the 63 the plan assumed.

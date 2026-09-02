@@ -1,7 +1,7 @@
 # C3 - copula-based serial independence
 
-**Runs, but uncalibrated.** R is installed and C3 has executed - first successful contact
-2026-08-13, Rscript 4.5.3 with `copula` from the user library, on iid exponential input at
+**Runs, but uncalibrated.** R is installed and C3 has executed - Rscript 4.5.3 with `copula`
+from the user library, on iid exponential input at
 `seed=1`: n=50 gives statistic 0.00579 / p 0.958 in 3.9 s, n=150 gives 0.00713 / p 0.904 in
 14.7 s, n=355 gives 0.00763 / p 0.866 in 130.2 s. The seed is part of the number - the R side
 simulates its own null, so the statistic is seed-invariant while the p-value is not (at
@@ -40,8 +40,8 @@ a machine without R, and here it must.
 graceful-absence behaviour: missing R returns `p_value=None` with `notes="R unavailable"`,
 nothing raises, and the ordinary data guards still fire. It cannot pin the numeric path.
 That code path HAS now run (see the top of this file), so the paragraph below describes a
-risk that has been partly discharged: the CSV round-trip, the exit-code handling and the
-result parsing were all exercised on 2026-08-13. What remains untested is everything the
+risk that is partly discharged: the CSV round-trip, the exit-code handling and the result
+parsing are all exercised. What remains untested is everything the
 bench would have measured - size, power, and behaviour on data that is NOT iid. Historic
 statement of the risk, kept because it is what the design defends against: the first machine
 with R installed gets a code path that has never run, including the CSV
@@ -61,7 +61,7 @@ this reason, though it has never fired on the T2* ladder.
 ## What we do
 
 Ship the bridge, call it, and report `not computed` when R is absent - which is every row
-in every ledger produced so far. The promotion report scores four checks, not five, and
+in every ledger produced so far. The promotion report scores five checks, not six, and
 says so at the top.
 
 If R is installed later: `tests/test_checks_c3_bridge.py::test_r_is_genuinely_absent_here`

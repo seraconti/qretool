@@ -1,11 +1,11 @@
 """The default normaliser: a timestamp/frequency series into a `Norm`.
 
-This code used to live inside `quebra.core.job._load_dataset`, which made the generic
-loading path Ramsey-specific: `job.load` required `timestamp` and `frequency` columns and
-a resolvable run-start time whether or not a schema was involved, so a job that had
-nothing to do with frequency tracking could not use `job.load` at all.
+Keeping this out of `quebra.core.job._load_dataset` is what keeps the generic loading path
+generic. Inside it, `job.load` would require `timestamp` and `frequency` columns and a
+resolvable run-start whether or not a schema was involved, so a job with nothing to do with
+frequency tracking could not use `job.load` at all.
 
-It is a schema now, which is what it always was. `job.load` dispatches to
+It is a schema, which is what it always was. `job.load` dispatches to
 `schema.to_norm(frame, dataset)` and this class is only the DEFAULT - pass your own schema
 and none of the requirements below apply to you. See `docs/WRITING_A_SCHEMA.md`.
 

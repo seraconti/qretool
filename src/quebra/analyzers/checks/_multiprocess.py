@@ -92,7 +92,7 @@ def gamma_hat(x: np.ndarray, tau: float, estimator: str = GAMMA_COMPLETE) -> flo
     if mean <= 0.0:
         raise ValueError(f"gamma_hat got a non-positive mean gap ({mean:.6g})")
     # A MATERIALLY negative variance is a different fact from float cancellation, and
-    # clamping both to zero used to report the wrong cause: eq (10) is a difference of two
+    # clamping both to zero reports the wrong cause: eq (10) is a difference of two
     # large terms and goes genuinely negative at small N (unit gaps truncated at tau = 5.5
     # give N = 5, mu = 1.1, sigma^2 = 1.05 - 1.21 = -0.16, i.e. 13% of scale), which is
     # nothing to do with "every gap is identical". Separate the two.
@@ -302,20 +302,16 @@ def segments_from_windows(
             # Reachable: `check_ledger.make_inputs_from_windows` takes `gap_spans_s` from
             # `diagnostics.get(...)`, so a caller that omits it splits on birth types alone.
             # `Segment` documents `n_censored_dropped` as 0 or 1 and nothing enforces it.
-            if bool((~complete[:-1]).any()):
-                interior = int((~complete[:-1]).sum())
-                raise ValueError(
-                    f"block at position {position} has {interior} censored window(s) before "
-                    f"its last. Only the final window of a block may be censored; without "
-                    f"gap_spans_s a gap flanked by out-of-spec reads leaves a censored death "
-                    f"mid-block, and every event time after it would be wrong."
-                )
+            interior_censored = int((~complete[:-1]).sum())
             x = durations[complete]
             # In-spec time does not accrue during a gap, so an interior block's tau is its
             # own accumulated in-spec time regardless of when the gap started.
             tau = float(durations.sum())
             n_censored = int((~complete).sum())
         else:
+            # Not applicable on this clock: the guard below is in-spec only, because what the
+            # calendar clock's tau should be when a block ends at a gap is an open question.
+            interior_censored = 0
             x = np.diff(t_birth)
             end_s = float(t_death[-1]) if block_end_s is None else block_end_s
             tau = float(end_s - t_birth[0])
@@ -324,5 +320,14 @@ def segments_from_windows(
         if len(x) < min_events:
             n_dropped += 1
             continue
+        # After the drop, not before: `min_events` means "too small to say anything about",
+        # so a block on its way to `n_dropped` must not abort the run.
+        if clock == CLOCK_IN_SPEC and interior_censored:
+            raise ValueError(
+                f"block at position {position} has {interior_censored} censored window(s) "
+                f"before its last. Only the final window of a block may be censored; without "
+                f"gap_spans_s a gap flanked by out-of-spec reads leaves a censored death "
+                f"mid-block, and every event time after it would be wrong."
+            )
         segments.append(Segment(x=x, tau=tau, n_censored_dropped=n_censored))
     return segments, n_dropped

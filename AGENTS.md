@@ -11,8 +11,8 @@ an independence check battery, and the metric analyzers.
 **Not implemented:** Nelson-Aalen, log-rank, RMST, MCF. `grep -rli` finds no module for any of
 them. Do not describe them as shipping.
 
-This is the only agent-facing file. `CLAUDE.md` is a symlink to it. Read it every session. Read
-`spec/PLAN.md` only when told which phase to work on.
+This is the only agent-facing file, and `CLAUDE.md` is a symlink to it so it loads every
+session. Read `spec/quebraplan.md` only when told which phase to work on.
 
 ---
 
@@ -22,10 +22,12 @@ This is the only agent-facing file. `CLAUDE.md` is a symlink to it. Read it ever
 Sera commits. You stop at checkpoints and say so. These are denied at user scope, so an attempt
 will fail. Do not work around it by invoking git through Python or a shell script.
 
-**Never write into `tool/datasets/`, `output/`, `output_backup/` or `output_backup2/`.** You may
-read all of them. You may write code that reads and writes them at runtime. You may not edit a
-dataset or a materialised artifact directly. Machinery, never evidence. (A three-way `data/`
-split replaces `tool/datasets/` in SPEC 0003; until then these are the real paths.)
+**Never write into `data/`, `output/`, `output_backup/` or `output_backup2/`.** You may read
+all of them. You may write code that reads and writes them at runtime. You may not edit a
+dataset or a materialised artifact directly. Machinery, never evidence. `data/` splits three
+ways by redistribution status: `real_private/` holds the embargoed records, inside the
+checkout; `real_public/` is for records that may be shared and `simulated/` for payloads that
+are regenerated.
 
 **Never modify `.claude/settings.json`, `.claude/hooks/`, or your own permissions.**
 
@@ -48,9 +50,14 @@ quebra run --all --family t2star              # every job in one family, sweep o
 quebra inspect [job_file]                     # print the graph without running it
 ```
 
-`make lint`, `make test` and `make clean` wrap the first two. `make types` and `make arch` exist
-in the Makefile but do not pass yet: they depend on the `src/` layout (SPEC 0002) and the
-import-linter contract (SPEC 0004). A failure from those two tells you which phase you are in.
+`make lint`, `make test` and `make clean` wrap the first two. `make types` runs mypy over
+`core/`; `make arch` runs the import-linter contract. `make check` is all four, and `make
+deps` runs deptry.
+
+`make check` uses the tools installed here. CI installs the newest version every `>=`
+admits into a fresh non-editable environment, so `check` passing is not evidence about CI.
+`make check-ci` runs the same steps against a clean resolve in a throwaway environment.
+That is the one to run before a push.
 
 ---
 
@@ -66,7 +73,7 @@ disk and never imports matplotlib or plotly.
 
 Panels and plots **are** the render layer and they draw only. Every data-derived quantity lives
 in the typed artifact, computed by an output-builder such as
-`panels/_within_calibration_compute.build_within_calibration_panel_data`. The renderer keeps only
+`analyzers/within_calibration_compute.build_within_calibration_panel_data`. The renderer keeps only
 functions of axes and theme: adaptive limits, decade-guide ticks, colours. Cumulative time and
 its relatives are data, not render-local views.
 
@@ -150,12 +157,12 @@ Never report a band from a scan whose checks failed.
 
 - `within-calibration`: metric series, KM and NA estimators, threshold excursion windows.
 - `across-calibration`: calibration event records, MCF, repair effectiveness.
-- Do not use `repairable` / `non_repairable` as OUR vocabulary. The rename landed on 2026-08-23
-  (SPEC 0001 R0.4). The literature's own term is a separate matter: `repairable system` is
+- Do not use `repairable` / `non_repairable` as OUR vocabulary. The literature's own term is
+  a separate matter: `repairable system` is
   standard usage from Ascher and Feingold and from Rigdon and Basu, and it stays in prose that
   cites that field, because rewriting it there would make the sentence false.
   `panels/across_calibration.py` carries the canonical note on why our tiers are named after the
-  calibration boundary instead. Twelve lines remain in `*.py` for that reason.
+  calibration boundary instead.
 - `in-spec fraction` for the within-calibration quantity. `availability` is reserved for the
   across-calibration systems tier.
 - Load-bearing terms, never reworded: **window, read, bag, check, band, scan clock, window age,
@@ -167,7 +174,7 @@ Never report a band from a scan whose checks failed.
 
 ### Layout (real)
 
-SPEC 0002 moved the packages under `src/quebra/`. Paths below are relative to that, except
+The packages live under `src/quebra/`. Paths below are relative to that, except
 `jobs/`, `tests/`, `scripts/` and `docs/`, which stay at the repository root: `jobs/` is the
 researcher's analysis configuration rather than library code, and keeping it out of the
 wheel is what stops `output/` being written into site-packages.
@@ -184,25 +191,26 @@ analyzers/   allan.py, fidelity.py, t2star.py, tlf.py, mtbf.py, psd.py (stub)
              band contracts of the within-calibration panel; shape_stats.py
              calibration_summary.py  reshapes the bench tables into the four typed
              artifacts the calibration figures draw; also re-simulates the P-P curve
-             checks/  C1 Lewis-Robinson, C2 Anderson-Darling, C3 copula-via-R (needs
-             Rscript, absent here), C5 rank autocorrelation, C6 exchangeability.
-             battery.py runs the four permutation checks off ONE shared permutation set.
+             checks/  C1 Lewis-Robinson, C2 Anderson-Darling, CvM Cramer-von Mises,
+             C5 rank autocorrelation, C6 exchangeability, and C3 copula-via-R (needs
+             Rscript; not in ROW_KEYS, so the battery never runs it).
+             battery.py runs the five permutation checks off ONE shared permutation set.
              These are steps: pure compute, and the pipeline may import them.
              Permutation calibration needs an explicit rng. block_permutations raises on
              None, because defaulting to OS entropy made p-values irreproducible while the
              run identity stayed unchanged.
 panels/      within_calibration.py, across_calibration.py   generic render components;
-             adapters feed them. Renamed from non_repairable/repairable on 2026-08-23.
-             _within_calibration_compute.py builds the artifact;
-             _within_calibration_render.py is the functions-of-axes half;
-             _within_calibration_data.py is the typed contract.
+             adapters feed them. _within_calibration_render.py is the
+             functions-of-axes half. The artifact itself is built in
+             analyzers/within_calibration_compute.py and typed in
+             analyzers/within_calibration_data.py.
 plots/       base.py, targets.py, theme.py, *_plot.py   targets: static, academic, interactive
 jobs/active/ ramsey_*.py, ramsey_2x2_*.py, t2star_*.py, mtbf_*.py, check_calibration.py
 jobs/composite/ compare_*.py   job.include + .ref across datasets; declares JOB_SWEEP = False
 src/quebra/recipes.py          RAMSEY_CONFIG + configure_ramsey_job orchestrator.
-                               Moved out of jobs/ in SPEC 0002: it is reusable library
-                               code, and leaving it in jobs/ forced the CLI to put the
-                               caller's directory on sys.path, which R1.1.4 forbids.
+                               Reusable library code: keeping it out of jobs/ is what
+                               lets the CLI avoid putting the caller's directory on
+                               sys.path, which is forbidden.
 src/quebra/cli.py              the CLI, installed as the `quebra` console script.
                                Anchors output/ and the --all glob on the WORKING
                                DIRECTORY, never on __file__, so an installed copy
@@ -210,7 +218,7 @@ src/quebra/cli.py              the CLI, installed as the `quebra` console script
 scripts/acceptance.sh          clean-venv acceptance: builds the wheel, installs it
                                outside the repo, and runs the suite from a directory
                                that is not the repository.
-tests/                         TRACKED since 2026-08-23 (SPEC 0001 R0.1)
+tests/                         tracked
 ```
 
 `jobs/reference/` holds TRACKED external validation data consumed by both the suite and a
@@ -227,10 +235,11 @@ pipeline package. Figures needing its numbers declare `jobs/bench/results/*.csv`
 `job.load_df` it, so the dependency runs through provenance instead of around it.
 
 Gitignored: `output/`, `output_backup/`, `output_backup2/`. Generated, append-only.
-`monoliths/` and `jobs_old/` were deleted and no longer exist. `scripts/` was
-recreated by SPEC 0002 and now holds `acceptance.sh` only.
+`scripts/` holds `acceptance.sh`, `promote_run.py`, `make_data_manifest.py`,
+`make_fixtures.py` and `make_job_manifest.py`.
 
-Note: `provenance.py` reports the tree clean while it changes.
+Note: `provenance.get_git_commit` and `is_tree_clean` both anchor on the working directory, so
+they describe the project you are running in, not the one this package is installed into.
 
 ### Job shape
 
@@ -247,15 +256,15 @@ See any `jobs/active/ramsey_*.py`.
 
 ### Data
 
-- Main 912-day Ramsey: `tool/datasets/6D2S/{DDMMYY}_6D2S_qubit{N}.pickle`
-- Companion calibration pickles: `FOR ZENODO/Main/Fig 2/qubit{N}.pickle`
+- Main 912-day Ramsey: `data/real_private/6D2S/{DDMMYY}_6D2S_qubit{N}.pickle`
+- Companion calibration pickles: `data/real_private/companion/qubit{N}.pickle`
 - Dataset pickles are read-only inputs.
 
 ---
 
 ## 7. Tests
 
-`tests/` is flat today. The six-tier layout lives in `spec/PLAN.md` Phase 5 and is not built;
+`tests/` is flat today. A tiered layout is planned in `spec/quebraplan.md` and is not built;
 do not reorganise it without a spec.
 
 **Oracle rule, effective now.** Any test asserting a statistical result must name its oracle in
@@ -271,12 +280,13 @@ Tests requiring R **skip** when `Rscript` is absent. They never pass with mocked
 
 This repo has drifted here before. Hold the line.
 
-- `docs/` holds reference docs: `TIME_SEMANTICS`, `PANEL_CONTRACT`, `FIGURE_STANDARD`.
+- `docs/` holds reference docs: `TIME_SEMANTICS`, `PANEL_CONTRACT`, `FIGURE_STANDARD`, `JOBS`,
+  `WRITING_A_JOB`, `WRITING_A_SCHEMA`, and `iid_checks/` (one page per check plus limitations).
   Architecture rationale lives there, not in this file. Refresh docs; do not narrate evolving
   architecture here.
-- Every `.md` file is tracked. The blanket `*.md` and `.*` ignore rules were removed in SPEC 0001
-  R0.1, so `.md` needs no `!` exception. The three `!` rules that remain are data-manifest
-  carve-outs, not doc ones.
+- Every `.md` file is tracked. `.gitignore` carries no blanket `*.md` or `.*` rule, so `.md`
+  needs no `!` exception. The three `!` rules it does carry are data-manifest carve-outs, not
+  doc ones.
 - `FIGURE_STANDARD` binds figures you add or edit. The existing panels are not yet conformant and
   that doc says so.
 - Do not create new long `.md` docs unprompted.

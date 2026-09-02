@@ -5,7 +5,7 @@ the three things below are what a contributor most often needs.
 
 ## How to report a bug
 
-Open an issue at <https://github.com/seraconti/qretool/issues>.
+Open an issue at <https://github.com/seraconti/quebra/issues>.
 
 A useful report for this project includes:
 
@@ -23,7 +23,7 @@ what you expected and why, and include the provenance file from the run director
 Open an issue with the `question` label, or write to the maintainer address in
 `CITATION.cff`. There is no chat channel and no mailing list.
 
-Response is best effort. This is thesis work, not a funded project.
+Response is best effort, be kind <3
 
 ## How to contribute code
 
@@ -33,9 +33,14 @@ Response is best effort. This is thesis work, not a funded project.
 3. Run the gates before you push:
 
    ```bash
-   make lint      # ruff check and format
-   make test      # the fast test suite
+   make check     # lint, types, import contract, tests, using your installed tools
+   make deps      # dependency declarations
+   make check-ci  # the same gate against a clean resolve, which is what CI installs
    ```
+
+   `check` and `check-ci` run the same steps against different inputs. CI installs the
+   newest version every `>=` admits into a fresh non-editable environment, so `check`
+   passing is not by itself evidence that CI will.
 
 4. Open a pull request describing what changed and what you ran.
 

@@ -10,7 +10,7 @@ a specific R build and turns "R is missing" into an import-time failure of the w
 package, whereas a subprocess turns it into a per-call `None`. The pipeline must import
 cleanly on a machine without R.
 
-**C3 RUNS, and is still UNCALIBRATED.** R IS NOW INSTALLED AND C3 HAS RUN. First successful contact 2026-08-13, Rscript 4.5.3 with
+**C3 runs and is UNCALIBRATED.** Exercised under Rscript 4.5.3, Rscript 4.5.3 with
 `copula` from the user library, on iid exponential input AT `seed=1`: n=50 gives statistic
 0.00579 / p 0.958 in 3.9 s, n=150 gives 0.00713 / p 0.904 in 14.7 s, n=355 gives 0.00763 /
 p 0.866 in 130.2 s. The SEED IS PART OF THE NUMBER: the R side simulates its own null, so
@@ -24,8 +24,8 @@ NOT calibration: C3 still has no size or power evidence, because the bench never
 
 When R is missing, every entry point below returns `p_value=None` with
 `notes="R unavailable"` rather than raising - a missing optional interpreter is a fact about
-the environment, not a defect in the data, and the other four checks must still run. The
-promotion report scores four checks, not five. Do not read a `not computed` row as a pass.
+the environment, not a defect in the data, and the other five checks must still run. The
+promotion report scores five checks, not six. Do not read a `not computed` row as a pass.
 
 **No multi-process form.** `serialIndepTest` takes one series. Concatenating segments would
 manufacture lag pairs across read gaps - the exact relation the carve refuses to assert -

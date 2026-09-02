@@ -47,7 +47,7 @@ def render_static(plot: _RenderablePlot, result: object, out_dir: Path) -> None:
     # so saving outside the context would silently drop them.
     with theme.style_context("default"):
         figure = plot.build_matplotlib(result, style="default")
-        # Per-target filename: static and academic used to write the same {name}.pdf,
+        # Per-target filename: static and academic would otherwise write the same {name}.pdf,
         # so academic clobbered static while the prov record listed both targets.
         figure.savefig(
             out_dir / f"{plot.name}_static.pdf", dpi=300, bbox_inches="tight"

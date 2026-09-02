@@ -134,7 +134,7 @@ def test_the_asymptotic_calibration_is_refused_for_multiple_segments():
 
 
 def test_cvm_is_registered_in_the_bench_row_schema():
-    """PROMOTED 2026-08-14. This test previously pinned the opposite and is inverted, not
+    """CvM is promoted; this test pins the promoted behaviour and is inverted, not
     deleted, so the change of decision is visible in the history rather than silent.
 
     Registration alone is not the promotion. `ROW_KEYS` is the schema of the BENCH TABLES,

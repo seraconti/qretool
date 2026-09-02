@@ -1,6 +1,6 @@
 """`docs/JOBS.md` must describe the jobs that are actually here.
 
-SPEC 0005 R5.5. The manifest is what makes a job family reviewable: `quebraplan.md` 3.4
+The manifest is what makes a job family reviewable: `quebraplan.md` 3.4
 argues that explicit files are greppable and a parameterised definition is not, so the
 readable view has to be generated rather than hoped for. A stale manifest is worse than none,
 because it asserts a shape nobody checked.

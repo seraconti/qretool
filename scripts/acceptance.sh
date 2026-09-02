@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clean-environment acceptance for SPEC 0002 R1.4.1.
+# Clean-environment acceptance: install and run from outside the repository.
 #
 # The claim this phase makes is "a reviewer runs the documented install steps on a machine
 # that has never seen this repository". This script is the only thing that can falsify it:
@@ -70,7 +70,7 @@ step "import quebra from elsewhere" env -C / "${VENV}/bin/python" -c \
 
 step "the console script exists" env -C / "${VENV}/bin/quebra" --help
 
-# SPEC 0003 R3.6: a reviewer with none of our data must still reach a real result. This runs
+# A reviewer with none of our data must still reach a real result. This runs
 # the packaged fixture through the actual analyzer from `/`, so it fails if the CSV did not
 # ship in the wheel or if the fixture is reached by `__file__` arithmetic rather than
 # importlib.resources.

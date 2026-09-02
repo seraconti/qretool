@@ -46,7 +46,7 @@ def _dataset_of(node: _DAGNode) -> Dataset:
     """The `dataset` kwarg of a load node, narrowed.
 
     `_DAGNode.kwargs` is `dict[str, object]` because the DAG stores arbitrary step arguments;
-    the value model stays untyped this phase (SPEC 0004 R4.3.2). A load node whose `dataset`
+    the value model is deliberately untyped. A load node whose `dataset`
     is not a Dataset is a defect, so this raises rather than silently skipping.
     """
     dataset = node.kwargs.get("dataset")

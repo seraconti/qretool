@@ -20,7 +20,7 @@ a pass either - read it as a gap in this repo's evidence, nothing more.
 
 **None of this is power.** An instrument can be fully validated here and still be
 unable to detect anything on a window this project actually carves. Power is in
-`promotion_report.md`, which scores four checks - C3 and CvM have no bench cell.
+`promotion_report.md`, which scores five checks - C3 has no bench cell.
 
 ## The table
 
@@ -31,7 +31,7 @@ unable to detect anything on a window this project actually carves. Power is in
 | C3 serial copula | absent - no published worked example in hand | absent - no bench cell; smoke-tested on iid input only | absent - circular as stated: 'it IS the R implementation' compares R to itself. The comparison that would settle it - our bridge against jobs/reference/r_reference_values.csv serial_indep_global_statistic, seed 707 - needs R at test time, which the suite refuses to require |
 | C5 rank autocorr | absent | pass - permutation exactness asserted at 3 alphas x 3 layouts | partial - lag-1 rank autocorrelation matches R; the max-over-lags aggregation has no reference |
 | C6 exchangeability | absent | pass - permutation exactness asserted at 3 alphas x 3 layouts | absent - no independent implementation in hand |
-| CvM | pass - four published critical values reproduced | pass - size measured at tau=20: 0.0642 +/- 0.0071 on exponential gaps. BENCHED 2026-08-14 (219 size rows): in the cell arm=A_iid_weibull, clock=in_spec, quantised=False, censoring=0.00, asymptotic size is 0.0610 and 0.0770 at n=20 for Weibull shapes 0.75 and 1.50, and within 0.007 of nominal from n=35 up. Mean |size - 0.05| over those 12 cells is 0.0070, against 0.0072 for C1 and 0.0084 for C2 - CvM is the best calibrated of the three, though the margin is near the 0.005 Monte Carlo error in most cells and only n=20 shape 1.50 separates them clearly | pass - gamma=1 path equals scipy.stats.cramervonmises to 4e-16 |
+| CvM | pass - four published critical values reproduced | pass - size measured at tau=20: 0.0642 +/- 0.0071 on exponential gaps. Benched over 219 size rows: in the cell arm=A_iid_weibull, clock=in_spec, quantised=False, censoring=0.00, asymptotic size is 0.0610 and 0.0770 at n=20 for Weibull shapes 0.75 and 1.50, and within 0.007 of nominal from n=35 up. Mean |size - 0.05| over those 12 cells is 0.0070, against 0.0072 for C1 and 0.0084 for C2 - CvM is the best calibrated of the three, though the margin is near the 0.005 Monte Carlo error in most cells and only n=20 shape 1.50 separates them clearly | pass - gamma=1 path equals scipy.stats.cramervonmises to 4e-16 |
 | Chatterjee xi | absent | partial - closed-form null holds at nominal on tie-free data; under ties it is not entitled | pass - matches `scipy.stats.chatterjeexi` to 1e-10 on all four cases INCLUDING the tied one, and XICOR to 1e-10 tie-free. Two independent implementations, one of which runs in the suite without R |
 | distance correlation | absent | absent | pass - matches the energy package on three cases |
 

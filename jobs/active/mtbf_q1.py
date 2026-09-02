@@ -25,7 +25,7 @@ from quebra.panels.across_calibration import (
 )
 from quebra.schemas.calibration_log import CalibrationLogSchema
 
-# SPEC 0005 R5.2/R5.4: the logical name and category. `include` resolves JOB_ID, so this
+# The logical name and category. `include` resolves JOB_ID, so this
 # file can move without breaking any composite; recategorising costs one string edit.
 JOB_ID = "mtbf_q1"
 JOB_FAMILY = "interval"

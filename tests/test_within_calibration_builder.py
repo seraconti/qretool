@@ -27,7 +27,7 @@ from quebra.panels.within_calibration import (
 def _carved(t_h, series, thresholds):
     """Carve through the real analyzer, as a job does.
 
-    The builder no longer carves: it consumes the window and read tables, so a test
+    The builder does not carve: it consumes the window and read tables, so a test
     that constructs panel data has to produce them the same way production does.
     """
     result = windows.run(

@@ -21,7 +21,7 @@ no in-panel statement of what it excluded, and no caption. The standard requires
 because a reader who cannot see an exclusion cannot judge it - and this estimate DOES
 exclude windows whose birth was not observed. Those counts are on the materialized
 `KaplanMeierCurve` and in the provenance record, and the legend's n is the number of
-windows actually estimated from, so the exclusion is recoverable but is no longer visible
+windows actually estimated from, so the exclusion is recoverable but is not visible
 to someone holding only the image. Restoring it means putting `_exclusion_note` back.
 """
 

@@ -177,7 +177,7 @@ def _fidelity_windows(result: FidelityResult, gap_mult: float) -> WindowsResult:
 # `default_rng(seed)` on the seed alone, so two windows of equal n draw an IDENTICAL
 # permutation sequence and their Monte Carlo error does not average down when
 # `for_windows` takes the median. Per-window seeds are the fix; it is a design change, not
-# a rename, and it is Increment C work.
+# a rename.
 XI_SEED = 20260813
 
 # GaussianMixture initialises by k-means, so an unseeded fit makes `is_bimodal` and every
@@ -295,7 +295,7 @@ def configure_ramsey_job(
         job.materialize(tlf, name=f"{prefix}_tlf")
 
 
-# ---------------------------------------------------------------- the T2* family (SPEC 0005 R5.3)
+# ---------------------------------------------------------------------------- the T2* family
 
 # The T2* family's threshold ladder, in SI seconds.
 #
@@ -324,7 +324,7 @@ def configure_t2star_job(
 ) -> None:
     """Wire the whole T2* within-calibration graph onto `job`.
 
-    Collapses the family SPEC 0005 R5.3 identified: two 128-line job files that were
+    Collapses the family: two job files that were
     byte-identical once the date and the run duration were normalised. What is left in each
     job file is its parameter row, which is the part a reader should actually diff.
 

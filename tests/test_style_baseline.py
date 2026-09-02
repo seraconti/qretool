@@ -24,9 +24,9 @@ PATTERNS = {
     "fontsize": re.compile(r"fontsize="),
 }
 
-# P1 pinned 18 (`fontsize=` only; the 8 hex were the tab10 clone in
+# An earlier baseline was 18 (`fontsize=` only; the 8 hex were the tab10 clone in
 # panels/within_calibration.py, deleted in favour of plots.theme.threshold_color).
-# P2 ratcheted to 17: the distribution histograms were written with explicit sizes,
+# It ratchets DOWN only. 17 is the current floor: the distribution histograms were written with explicit sizes,
 # this test rejected them, and the primary legend went to rcParams in the same edit.
 BASELINE = 17
 

@@ -7,7 +7,7 @@ annotation states (whether a peak is symmetric, whether pooling is too thin) is 
 computed in the analyzer band and handed here already decided. They do arithmetic - `adaptive_ylim` takes
 `observed_slices` searches for cut indices - but only to decide where to put
 ink, which CLAUDE.md places on the renderer's side of the line. Every value they read
-was computed by _within_calibration_compute and lives in the artifact.
+was computed by analyzers.within_calibration_compute and lives in the artifact.
 
 Kept out of within_calibration.py so the renderer file is the drawing sequence and this
 file is the arithmetic that drawing needs.

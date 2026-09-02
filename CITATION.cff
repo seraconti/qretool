@@ -10,13 +10,7 @@ type: software
 authors:
   - family-names: "Conti"
     given-names: "Sera"
-    # FILL: confirm this is the address you want public and permanent.
-    # A polimi.it or tudelft.nl address is likely more durable than usp.br.
     email: "sera.conti@usp.br"
-    # FILL: your ORCID, as a full URL. JOSS reviewers look for this.
-    # orcid: "https://orcid.org/0000-0000-0000-0000"
-    # FILL: primary affiliation for this work.
-    # affiliation: "Politecnico di Milano; QuTech, Delft University of Technology"
 license: GPL-3.0-or-later
 repository-code: "https://github.com/seraconti/quebra"
 url: "https://github.com/seraconti/quebra"

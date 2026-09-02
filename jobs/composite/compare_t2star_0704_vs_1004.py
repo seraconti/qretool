@@ -25,7 +25,7 @@ from quebra.core.job import Job
 from quebra.panels.comparison import CompareSeriesData, CompareSeriesPanel
 from quebra.panels.within_calibration import WithinCalibrationPanelData
 
-# SPEC 0005 R5.2/R5.4: the logical name and category. `include` resolves JOB_ID, so this
+# The logical name and category. `include` resolves JOB_ID, so this
 # file can move without breaking any composite; recategorising costs one string edit.
 JOB_ID = "compare_t2star_0704_vs_1004"
 JOB_FAMILY = "t2star"

@@ -73,10 +73,10 @@ add_value("xi_tie_free", "spearman", cor(x, y, method = "spearman"))
 add_value("xi_tie_free", "dcor", energy::dcor(x, y))
 
 # ------------------------------------------------------------------ Chatterjee's xi, TIED
-# THE CASE THAT MATTERS. Increment B changed our estimator from the tie-free reduction to
-# the tie-corrected eq (8), and no shipped window exercises it - all 309 are tie-free. This
-# is the only external evidence that the change was made correctly. `ties = TRUE` is
-# XICOR's own eq (8) path.
+# THE CASE THAT MATTERS. Our estimator uses the tie-corrected eq (8), not the tie-free
+# reduction, and no shipped window exercises it - all 309 are tie-free. This is the only
+# external evidence that the tie-corrected path is right. `ties = TRUE` is XICOR's own
+# eq (8) path.
 set.seed(202)
 n <- 60
 x <- round(rnorm(n), 1)              # ties on x

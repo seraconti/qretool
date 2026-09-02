@@ -3,10 +3,10 @@
 Binds every figure added or edited from here on. `plots/theme.py` owns the colour and
 typography half of this; the rules below are the half a module cannot enforce.
 
-**The existing panels do not conform yet.** `panels/within_calibration.py` and
-`panels/across_calibration.py` label axes `Elapsed time (h)` and `Inter-event interval (h)`,
-which the vocabulary below rules out, and no panel yet reports how much data it
-dropped. Those are targets, not a description of the current code. Conform a panel
+**The existing panels do not conform yet.** `panels/comparison.py` and
+`plots/interpolation_stage_plot.py` label an axis `Elapsed time (h)`, and
+`panels/across_calibration.py` labels one `Inter-event interval (h)`, both of which the
+vocabulary below rules out; and no panel yet reports how much data it dropped. Those are targets, not a description of the current code. Conform a panel
 when you next touch it; do not sweep them.
 
 This document uses spaced hyphens throughout, per its own rule.

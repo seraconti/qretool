@@ -77,7 +77,7 @@ LEDGER_JOB = _module_constants("jobs/composite/check_ledger_q1.py")
 def _effective_t2star_carve() -> dict[str, object]:
     """The carve the T2* job ACTUALLY uses: a job override if present, else the recipe default.
 
-    SPEC 0005 R5.3 collapsed the two T2* jobs onto `recipes.configure_t2star_job`, so these
+    Both T2* jobs go through `recipes.configure_t2star_job`, so these
     three moved from inline step kwargs into the recipe's signature. Reading only the job file
     would now find nothing and this control would pass vacuously; reading only the recipe
     would miss a job that overrides it. The effective value is the one that decides the
@@ -133,8 +133,8 @@ def _evaluated_constant(relative: str, name: str) -> object:
     `THRESHOLDS` is a list COMPREHENSION in both composites, and `ast.literal_eval` raises
     on a ListComp - so `_module_constants` silently omitted it and any test reading it from
     there got a KeyError or, worse, compared against a value retyped in the test. That is
-    what happened here: this test used to build its own copy of the ladder and assert the
-    T2* job matched IT, so mutating the SURVEY's ladder changed nothing and the test passed.
+    what a test building its own copy of the ladder does: it asserts the T2* job matches ITS
+    copy, so mutating the SURVEY's ladder changes nothing and the test still passes.
     Measured: `k / 1e6` -> `k * 1e-6` and `range(1, 11)` -> `range(1, 9)` both left 20/20
     green. A control that cannot fail when the thing it guards is broken is not a control.
 
@@ -176,7 +176,7 @@ def test_the_survey_scores_the_same_threshold_ladder():
             "jobs/composite/independence_survey.py", "THRESHOLDS"
         )
     ]
-    # The ladder moved to `recipes.T2STAR_THRESHOLDS` when SPEC 0005 R5.3 collapsed the
+    # The ladder lives in `recipes.T2STAR_THRESHOLDS`, shared by the
     # family. Read it from there, which is where the T2* job now gets it.
     from quebra.recipes import T2STAR_THRESHOLDS
 

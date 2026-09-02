@@ -243,7 +243,7 @@ identity changes when the child's does.
 
 Composites declare `JOB_SWEEP = False`, so a bare `quebra run --all` skips them — sweeping a
 composite re-runs every sub-job. They live in `jobs/composite/` for readability, but the
-directory no longer decides anything; the declaration does.
+directory decides nothing; the declaration does.
 
 ## What a job file declares
 

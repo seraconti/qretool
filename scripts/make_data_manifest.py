@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate `data/real_private/MANIFEST.toml`.
 
-SPEC 0003 R3.3. The manifest is the only part of `data/real_private/` that is committed, and
+The manifest is the only part of `data/real_private/` that is committed, and
 it is what lets a reviewer see exactly which records a result rests on without receiving any
 of them. It is generated rather than hand-written because there are sixty-odd files and a
 hand-maintained list would drift on the first addition.

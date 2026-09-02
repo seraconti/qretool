@@ -54,9 +54,9 @@ r = []
 bench = ["joblib>=1.3"]
 
 [project.urls]
-Homepage = "https://github.com/seraconti/qretool"
-Repository = "https://github.com/seraconti/qretool"
-Issues = "https://github.com/seraconti/qretool/issues"
+Homepage = "https://github.com/seraconti/quebra"
+Repository = "https://github.com/seraconti/quebra"
+Issues = "https://github.com/seraconti/quebra/issues"
 
 [project.scripts]
 quebra = "quebra.cli:main"
@@ -76,6 +76,11 @@ exclude = [
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+
+[tool.ruff.format]
+# Fenced blocks in docs/ are fragments, not modules. Formatting them rewrites their
+# meaning - a trailing-comma argument list becomes a one-tuple assignment.
+exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F"]
@@ -120,8 +125,30 @@ ignore_imports = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+# 3.12, not the 3.11 floor: numpy's stubs use `type` statements, which mypy refuses to
+# parse against an older target and then checks nothing. The 3.11 test leg guards
+# runtime compatibility.
+python_version = "3.12"
 
+
+# `make types` checks core/ and says so. Without this, mypy follows core's imports out of
+# the tree and reports errors in modules the scope excludes, so whether the gate passes
+# depends on how the package happens to be installed. Their types are still read; only
+# their own errors are silenced. Widening the scope is what removes these entries.
+[[tool.mypy.overrides]]
+module = [
+  "quebra._fixtures.*",
+  "quebra.analyzers.*",
+  "quebra.cli",
+  "quebra.loaders.*",
+  "quebra.panels.*",
+  "quebra.plots.*",
+  "quebra.provenance",
+  "quebra.recipes",
+  "quebra.schemas.*",
+  "quebra.transforms.*",
+]
+follow_imports = "silent"
 
 [[tool.mypy.overrides]]
 module = ["pandas", "pandas.*"]

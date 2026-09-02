@@ -73,7 +73,7 @@ def block_permutations(
 ) -> PermutationSet:
     """Draw `n_perm` within-segment permutations.
 
-    `rng` is REQUIRED. It used to default to `np.random.default_rng()`, which made every
+    `rng` is REQUIRED. Defaulting it to `np.random.default_rng()` would make every
     permutation p-value a fresh random variable: three consecutive calls on identical input
     returned p = 0.3860 / 0.4040 / 0.3790. That is fatal downstream, because
     `Job.build_identity` folds only the job-file hash and the dataset hashes - two runs
@@ -87,7 +87,7 @@ def block_permutations(
         raise ValueError(f"segment sizes must be non-negative; got {list(sizes)}")
     if rng is None:
         raise ValueError(
-            "block_permutations requires an explicit rng. Passing None used to draw OS "
+            "block_permutations requires an explicit rng. None would draw OS "
             "entropy, which made permutation p-values irreproducible across runs while "
             "the run identity stayed unchanged. Build one from an integer seed: "
             "np.random.default_rng(seed)."

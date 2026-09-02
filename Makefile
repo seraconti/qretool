@@ -3,10 +3,16 @@
 PKG := src/quebra/core
 FAST := -m "not slow and not heavy and not real and not r"
 
-.PHONY: check lint types arch deps test test-all test-r test-real promote docs clean
+.PHONY: check check-ci lint types arch deps test test-all test-r test-real promote docs clean
 
 ## Run before every checkpoint. This is what the checkpoint banner reports.
 check: lint types arch test
+
+## Run the same gate against a clean dependency resolve in a throwaway environment, which
+## is what the workflow does. `check` uses the installed tools, so it cannot see a failure
+## caused by a newer release or by the install being non-editable. Run before pushing.
+check-ci:
+	bash scripts/check_ci.sh
 
 lint:
 	ruff check .

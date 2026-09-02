@@ -85,9 +85,7 @@ class TLFPlot(BasePlot):
 
             # No GMM(2) curve when the 2-component fit failed: a single-lobe curve under a
             # "GMM(2)" label reads as evidence against bimodality, not as an absent fit.
-            fit_failed = bool(getattr(result, "fit_failed", False)) or (
-                result.gmm2 is None
-            )
+            fit_failed = bool(result.fit_failed) or result.gmm2 is None
             if fit_failed:
                 means2_axis = np.asarray([], dtype=float)
                 y2 = np.zeros_like(x_grid_khz, dtype=float)

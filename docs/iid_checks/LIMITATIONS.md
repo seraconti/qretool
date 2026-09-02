@@ -1,4 +1,4 @@
-# Limitations that cut across all five checks
+# Limitations that cut across all six checks
 
 Per-check limitations live on the per-check pages. These are the ones that would mislead a
 reader who took any single ledger row at face value.
@@ -39,13 +39,13 @@ that ends out of spec.
 
 ## 4. C3 is unassessed
 
-R is present since 2026-08-13 and C3 executes; where R is absent the bridge still degrades to
+Where R is present C3 executes; where R is absent the bridge still degrades to
 `p_value=None` and the row reads `not computed`. What remains missing is CALIBRATION, not the
 interpreter: C3 has no bench cell, so its size and power are unmeasured. Two operational limits
 found on first contact: `--vanilla` implies `--no-environ` and so needs `R_LIBS` passed
 explicitly or `copula` is invisible, and the run cost grows about as n^2.8 (130 s at n = 355),
 so large windows can exhaust the timeout and report `not computed` for that reason alone.
-The promotion report scores four checks. No conclusion anywhere rests on C3.
+The promotion report scores five checks. No conclusion anywhere rests on C3.
 
 ## 5. The bench's censoring arm never reached its label
 

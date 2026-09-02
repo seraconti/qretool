@@ -19,7 +19,7 @@ read against a measured size; C3's cannot, so a green C3 cell means "did not rej
 nothing stronger. It is included anyway because a survey that omits an instrument answers a
 different question from the one it appears to answer - but the figure says what it lacks.
 
-**CvM is included, promoted 2026-08-14.** It is in `battery.ROW_KEYS` now, so it arrives
+**CvM is included.** It is in `battery.ROW_KEYS`, so it arrives
 through `run_battery` like the rest. It earns its place on the IN-SPEC clock: `tau == T_N`
 silences C1 and C2 there, and CvM's integrand carries no `1/(s(1-s))` weight, so its
 permutation row is defined where theirs are not.
@@ -54,7 +54,7 @@ from quebra.plots.independence_survey_plot import (
 )
 from quebra.schemas.track912 import track912Schema
 
-# SPEC 0005 R5.2/R5.4: the logical name and category. `include` resolves JOB_ID, so this
+# The logical name and category. `include` resolves JOB_ID, so this
 # file can move without breaking any composite; recategorising costs one string edit.
 JOB_ID = "independence_survey"
 JOB_FAMILY = "independence"
@@ -113,7 +113,7 @@ C3_N_NULL_SIM = 200
 
 # Every 6D2S record, in filename order. Listed explicitly rather than globbed: a glob makes
 # the run identity depend on the contents of a directory outside the repo, so adding a file
-# would silently change what this figure describes. Probed 2026-08-14 - all thirty-four
+# would silently change what this figure describes. Probed across all thirty-four
 # carve cleanly, total 32 s.
 DATASET_FILES: tuple[str, ...] = (
     "040423_6D2S_qubit1.pickle",

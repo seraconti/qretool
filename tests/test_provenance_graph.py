@@ -1,4 +1,4 @@
-"""Unified provenance mermaid renderer (Increment 6).
+"""Unified provenance mermaid renderer.
 
 One `_mermaid_graph` renders every job: sources (datasets and/or included sub-job
 references) → pipeline steps → sink, with canonical collision-safe node ids. These

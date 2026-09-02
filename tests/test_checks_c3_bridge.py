@@ -61,7 +61,7 @@ def test_r_is_genuinely_absent_here():
     """
     if c3.rscript_path() is not None:
         pytest.skip(
-            "Rscript is on PATH here - C3 is no longer unassessed, and the promotion "
+            "Rscript is on PATH here - C3 is assessable, and the promotion "
             "report's four-check scope needs revisiting on this machine."
         )
     assert c3.rscript_path() is None

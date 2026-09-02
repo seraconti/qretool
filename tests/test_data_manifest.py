@@ -1,6 +1,6 @@
 """The manifest must describe the records that are actually here.
 
-SPEC 0003 R3.3. The manifest is committed and the records are not, so it is the only
+The manifest is committed and the records are not, so it is the only
 statement a reviewer can check. A manifest that has drifted from the files is worse than no
 manifest: it asserts a provenance nobody verified.
 

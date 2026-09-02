@@ -433,7 +433,7 @@ def _rows_for(
             )
         # RuntimeError and TimeoutExpired are the R bridge's own failure modes - a
         # non-zero Rscript exit, a missing or unparseable result file, or a simulation
-        # that outran its timeout. They were NOT caught until P5, and it did not show
+        # that outran its timeout. Neither is caught by the row count, and it does not show
         # while R was absent because `rscript_path()` returned None and the bridge never
         # ran. With R installed the call executes for real, and an uncaught RuntimeError
         # kills the whole ledger job instead of writing the `not computed` row this

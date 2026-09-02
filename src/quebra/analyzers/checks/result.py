@@ -1,4 +1,4 @@
-"""The shared vocabulary of the five checks: what a record looks like and what a
+"""The shared vocabulary of the six checks: what a record looks like and what a
 check returns.
 
 A check answers one question - "is this duration sequence consistent with a renewal
@@ -43,7 +43,7 @@ CALIB_R_COPULA = "r_copula"
 # How far `tau` must clear `T_N` in relative terms before eq (7) is considered well posed.
 #
 # This exists because `np.sum(x)` and `np.cumsum(x)[-1]` are DIFFERENT numbers: numpy's sum
-# is pairwise, cumsum is sequential, and they disagree by ulps. `validate_segment` used to
+# is pairwise, cumsum is sequential, and they disagree by ulps. `validate_segment` would
 # check `tau > np.sum(x)` while `_eq7` divides by `tau - np.cumsum(x)[-1]`, so a segment
 # could pass validation and then produce `inf` (asymptotic p = 0.0, a false REJECTION) or
 # `nan`. Reproduced on trials 6 and 7 of a 40,000-segment sweep at N = 64.

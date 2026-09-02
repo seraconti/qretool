@@ -1,6 +1,6 @@
 """The instrument report: what licenses each statistical routine for use in the pipeline.
 
-P5's closing artifact. The bench measures how a routine BEHAVES; it cannot catch a
+The bench measures how a routine BEHAVES; it cannot catch a
 mis-transcribed equation that behaves plausibly. This module assembles the four tiers of
 evidence that can, into one typed artifact a figure draws:
 
@@ -523,7 +523,7 @@ def build_instrument_validation(
             3,
             TIER_PASS,
             f"size measured at tau=20: {sizes['CvM']:.4f} +/- {asymptotic_size_se(sizes['CvM']):.4f} on exponential gaps. "
-            "BENCHED 2026-08-14 (219 size rows): in the cell arm=A_iid_weibull, "
+            "Benched over 219 size rows: in the cell arm=A_iid_weibull, "
             "clock=in_spec, quantised=False, censoring=0.00, asymptotic size is 0.0610 "
             "and 0.0770 at n=20 for Weibull shapes 0.75 and 1.50, and within 0.007 of "
             "nominal from n=35 up. Mean |size - 0.05| over those 12 cells is 0.0070, "
@@ -577,7 +577,7 @@ def build_instrument_validation(
             "agreement_tol": AGREEMENT_TOL,
             # The seed and n DECIDE the three tier-3 numbers above, so they belong on the
             # artifact. Left as bare defaults they reached neither meta nor the provenance
-            # label - the same defect as the un-declared xi_seed caught earlier in P5.
+            # label - the same defect class as an un-declared seed.
             "asymptotic_size_seed": asymptotic_size_seed,
             "asymptotic_size_tau": asymptotic_size_tau,
             "asymptotic_size_replicates": ASYMPTOTIC_SIZE_REPLICATES,
@@ -616,7 +616,7 @@ def render_tier_table_markdown(data: InstrumentValidationData) -> str:
         "",
         "**None of this is power.** An instrument can be fully validated here and still be",
         "unable to detect anything on a window this project actually carves. Power is in",
-        "`promotion_report.md`, which scores four checks - C3 and CvM have no bench cell.",
+        "`promotion_report.md`, which scores five checks - C3 has no bench cell.",
         "",
         "## The table",
         "",

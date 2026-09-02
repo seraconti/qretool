@@ -6,8 +6,8 @@ permuted matrix once here:
 
 - **Speed.** Each check that needs permutations gathers a `(B, N)` matrix; at N = 355,
   B = 999 that is a 355k-element copy, and C1, C2, C5-studentized, C5-raw and C6 all want
-  the identical one. Measured on this machine, sharing it cuts a full seven-row replicate
-  at N = 355 from 362 ms to 197 ms, and the whole 6-point n sweep from 613 ms to 341 ms.
+  the identical one. Sharing it roughly halves a full replicate at N = 355 and the n sweep
+  with it.
 - **Pairing.** Every check sees the same permutations, so any two rows from one call differ
   only in the statistic, not in the Monte Carlo noise of the reference set. The bench
   leans on that when it compares checks against each other and when it compares Arm B
@@ -66,7 +66,7 @@ ROW_KEYS = (
     ("c5_rank_autocorr", CALIB_PERMUTATION, c5.VARIANT_STUDENTIZED),
     ("c5_rank_autocorr", CALIB_PERMUTATION, c5.VARIANT_RAW),
     ("c6_exchangeability", CALIB_PERMUTATION, ""),
-    # CvM, promoted 2026-08-14. It is the fourth functional of the same Brownian bridge as
+    # CvM is the fourth functional of the same Brownian bridge as
     # C1 and C2, and it is here for a reason the other two cannot cover: eq (7) carries a
     # `1/(s(1-s))` weight, so C2 is singular when the last event lands on the truncation
     # time, and on the IN-SPEC clock of a carved record that is the common case - measured,
@@ -98,15 +98,15 @@ def run_battery(
     include_c2_asymptotic: bool = True,
     include_tau_checks: bool = True,
 ) -> list[CheckResult]:
-    """Up to seven results in `ROW_KEYS` order.
+    """Up to nine results in `ROW_KEYS` order.
 
     `include_c2_asymptotic` exists because C2's asymptotic calibration is defined only for
     a single segment (Kvaloy & Lindqvist Section 4.2 reject the normal approximation for
     the summed statistic). The battery drops that row for m > 1 rather than raising, since
-    a gapped record legitimately has m > 1 and the other six rows are still wanted.
+    a gapped record legitimately has m > 1 and the other eight rows are still wanted.
 
-    `include_tau_checks=False` drops C1 and C2 entirely, leaving the three rank rows. It
-    is for records where `tau` is not well posed - specifically the IN-SPEC clock of a
+    `include_tau_checks=False` drops five rows - the three asymptotic ones and C1's and C2's
+    permutation rows - leaving four. It is for records where `tau` is not well posed - specifically the IN-SPEC clock of a
     carved series, where in-spec time stops accumulating the moment the record ends out of
     spec, so `tau == T_N` and eq (7) is singular. Measured on an iid read series that is
     73% of replicates, and the event triggering it depends on the data, so running C1/C2
@@ -124,7 +124,7 @@ def run_battery(
         # alpha and the ladder, pass it as a step kwarg so it reaches the provenance
         # label, and build the generator from it.
         raise ValueError(
-            "run_battery needs either a prebuilt `perm` or an `rng`. Five of its seven "
+            "run_battery needs either a prebuilt `perm` or an `rng`. Six of its nine "
             "rows are permutation-calibrated, so without one the p-values are a fresh "
             "random draw on every call while the run identity stays unchanged."
         )
@@ -140,7 +140,7 @@ def run_battery(
     # The gap gather is skipped when C1/C2 are off, since nothing else reads it.
     gaps = concatenated_gaps(segments)
     # CvM wants the permuted matrix as well, and unlike C1/C2 it runs even when
-    # `include_tau_checks` is False - so this can no longer be gated on that flag alone.
+    # `include_tau_checks` is False - so this is not gated on that flag alone.
     permuted = perm.apply(gaps)
     layout = lag_layout(sizes, max_lag)
     ranks = global_ranks(gaps)

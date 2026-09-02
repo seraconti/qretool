@@ -47,7 +47,7 @@ def in_repo(monkeypatch):
     starting directory as an argument, defaulted to the cwd, instead of reading it from
     global state. Call sites that need a specific root could then say so, and this fixture
     would not be necessary. That is a signature change across ~17 call sites, so it is not
-    a Phase 1 edit.
+    a small edit.
     """
     monkeypatch.chdir(REPO_ROOT)
     return REPO_ROOT

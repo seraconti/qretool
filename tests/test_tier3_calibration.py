@@ -202,11 +202,10 @@ def test_a_permuted_statistic_that_TIES_the_observed_counts_against_rejection():
 
 
 # The measurement lives in `analyzers/instrument_validation.py` and is IMPORTED here, not
-# defined here. It used to be the other way round while three docstrings and the report's
-# tier-3 verdicts claimed the report imported it - it did not, and the pipeline cannot
-# import `tests/`, so those verdicts rested on no number at all. Importing it in this
-# direction is what makes "the figure and the test measure the same thing" true rather
-# than asserted.
+# defined in `tests/`. The pipeline cannot import `tests/`, so a measurement defined there
+# would leave the report's tier-3 verdicts resting on no number at all. Importing it in this
+# direction is what makes "the figure and the test measure the same thing" true rather than
+# asserted.
 
 
 @pytest.mark.parametrize("check_name", ["c1", "c2", "cvm"])

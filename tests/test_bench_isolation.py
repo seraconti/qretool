@@ -1,8 +1,5 @@
 """`jobs/bench/` is a study of the pipeline, never a dependency of it.
 
-The rule changed shape in P4b and it is worth being precise about what it now protects,
-because the old docstring claimed something that is no longer true.
-
 **What moved.** `checks/` became `analyzers/checks/` and both packages became tracked. A
 check is now a pipeline step, so the pipeline importing it is correct and the old
 "jobs must not import checks" half of this file is gone.
@@ -35,7 +32,7 @@ REPO = Path(__file__).resolve().parent.parent
 # Every package that is part of the pipeline proper. `analyzers` includes `analyzers/checks`
 # via rglob, which is deliberate: a check may use `analyzers.windows`, never the bench.
 # Paths relative to the repository root. Seven of these moved under `src/quebra/` in
-# SPEC 0002 R1.1; `jobs/` deliberately stayed at the root, because it is the researcher's
+# `jobs/` deliberately sits at the root, because it is the researcher's
 # analysis configuration rather than library code, and moving it would have put `output/`
 # inside site-packages.
 PIPELINE_PACKAGES = (
@@ -89,7 +86,7 @@ def _imported_roots(path: Path) -> set[str]:
             # A RELATIVE import carries its package in `node.level`, not in `node.module`:
             # `from ..bench import runner` inside jobs/active/ has module="bench", level=2,
             # and resolves at runtime to jobs.bench.runner. Recording only `node.module`
-            # yielded the bare "bench", which no longer matches "jobs.bench" now that the
+            # yields the bare "bench", which does not match "jobs.bench" now that the
             # package moved - so the guard admitted a real, working bench import. Measured:
             # planting that line in jobs/active/ left all 19 tests passing.
             if node.level:
@@ -207,7 +204,7 @@ def test_the_bench_is_allowed_to_import_the_checks():
 def test_import_detector_catches_every_form_it_claims_to(tmp_path, source, expected):
     """Positive control, one case per import form.
 
-    The walk previously handled only `Import` and absolute `ImportFrom`, so it missed the
+    A walk handling only `Import` and absolute `ImportFrom` misses the
     `importlib.import_module` form its own docstring offered as the reason for parsing
     rather than grepping, and skipped relative imports entirely.
     """
