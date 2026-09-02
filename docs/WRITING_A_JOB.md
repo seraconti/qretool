@@ -142,13 +142,25 @@ given.
 
 ## Where data comes from
 
-A `Dataset.path` is relative to the **data root**, resolved in this order, first hit wins:
+A `Dataset.path` is relative to the **data root**. Two of the four mechanisms are *demands*
+and two are *candidates*.
+
+A demand is a root you named for this run. If it does not exist, the run fails; it never
+falls through to another mechanism:
 
 1. `--data-root` on the command line
 2. the `QUEBRA_DATA_ROOT` environment variable
+
+A candidate is where to look when you named nothing. First existing hit wins:
+
 3. `[tool.quebra] data_root` in a `quebra.toml`, in the working directory or any directory
    above it
 4. a `platformdirs` user data directory
+
+The distinction matters because a relative `Dataset.path` that misses the data root is then
+tried against the **project root** (see below), and most in-repo paths exist there. So a
+typo'd `--data-root` that fell through would not fail - it would quietly analyse the project
+tree and record *its* dataset hashes as if they were the ones you asked for.
 
 If none resolves, QUEBRA raises `DataRootNotFound` listing every location it tried. It never
 guesses a relative path, because a guess would silently point at the wrong tree and the first

@@ -1,10 +1,12 @@
 """Shape statistics: xi, Spearman, distance correlation, tie fraction.
 
 Written BEFORE the eq (8) correction to `chatterjee_xi`, deliberately. Nothing else would
-have caught that change: `Job.code_hash` hashes only the job file, so an analyzer edit
-leaves the run identity byte-identical, and `StaleArtifactGuard` compares field NAMES, so
-every existing pickle in `output/` keeps loading. Until this file existed, the shape
-statistics could be changed without a single signal anywhere in the repo.
+have caught that change at the time. `StaleArtifactGuard` compares field NAMES, so every
+existing pickle in `output/` keeps loading through a change of this kind, and nothing else
+asserts these values. `Job.job_code_hash` now covers `quebra.analyzers.shape_stats` - it is in
+the import closure of every job that reaches these statistics - so an edit here does move the
+run identity; that makes cached artifacts stale, which is a different signal from a wrong
+number being caught.
 
 The xi tests come in two groups, and the distinction is the point:
 

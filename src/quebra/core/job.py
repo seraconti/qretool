@@ -215,39 +215,40 @@ class Job:
         # Set at import time (main._module_from_path / _import_job); required to
         # compute the code hash. Memoized identity caches (compute once per Job).
         self.job_file: Path | None = None
-        self._code_hash: str | None = None
+        self._job_code_hash: str | None = None
         self._identity: Identity | None = None
         self._identity_root: Path | None = None
 
-    def code_hash(self) -> str:
-        """The identity's `code` contribution: this job's source AND the library code it runs.
+    def job_code_hash(self) -> str:
+        """The identity's `code` contribution. Named for the three things it folds:
 
-        The job file alone is not the code that produced the result. Before SPEC 0005 R5.1
-        this hashed only the file, so appending a line to `analyzers/t2star.py` left
-        `t2star_q1_070423`'s identity byte-identical - the analyzer could change completely
-        while the digest asserted nothing had.
+        1. the text of this job file,
+        2. the digest of every `quebra.*` module the job's step functions can reach, by
+           dotted module name and hashed from file bytes,
+        3. the arguments each step was called with.
 
-        Now it folds the static import closure of the step functions the job calls, keyed by
-        dotted `quebra.*` module name and hashed from file bytes. See
-        `quebra.core.closure` for why it is a closure rather than the whole package (blast
-        radius) and rather than `sys.modules` (`run --all` would give job N the union of
-        jobs 1..N).
+        The job file alone would not be the code that produced the result: an analyzer could
+        change completely while a file-only digest asserted nothing had. Item 3 is needed
+        because two family members can share a definition file and differ only by a
+        parameter, which would otherwise collide.
+
+        `quebra.core.closure` explains why item 2 is an import closure rather than the whole
+        package (blast radius) and rather than `sys.modules` (under `run --all`, job N would
+        inherit the union of jobs 1..N).
 
         Memoized so a composite and its own run don't re-read/re-hash the same source."""
-        if self._code_hash is None:
+        if self._job_code_hash is None:
             if self.job_file is None:
-                raise ValueError("Job.code_hash() requires job_file to be set")
+                raise ValueError("Job.job_code_hash() requires job_file to be set")
             parts = [Path(self.job_file).read_text(encoding="utf-8")]
             # Sorted by module name inside `code_closure`, so the fold order is a property of
             # the graph and not of DAG iteration order.
             nodes = list(self.dag.values())
             for name, digest in code_closure([n.fn for n in nodes]).items():
                 parts.append(f"{name}={digest}")
-            # R5.1.7: what each step was CALLED WITH. Without this, two family members
-            # sharing a definition file and differing only by a parameter collide.
             parts.extend(parameter_row(nodes))
-            self._code_hash = hash_string("\n".join(parts))
-        return self._code_hash
+            self._job_code_hash = hash_string("\n".join(parts))
+        return self._job_code_hash
 
     def build_identity(self, dataset_root: Path) -> Identity:
         """This job's content identity, folding code + data + children (memoized).
@@ -295,7 +296,7 @@ class Job:
             inc.job.build_identity(dataset_root).digest for inc in self.includes
         )
         self._identity = Identity(
-            code=self.code_hash(),
+            code=self.job_code_hash(),
             data=tuple(sorted(data.items())),
             children=children,
         )

@@ -187,7 +187,6 @@ def test_composite_reuse_of_reuse_eligible_stale_artifact_aborts(
     from quebra.core.job import Job
     from quebra.core import runner
     from quebra.core.runner import run_job
-    from quebra.provenance import get_git_commit
 
     sub_py = tmp_path / "tiny_sub.py"
     sub_py.write_text(
@@ -200,13 +199,19 @@ def test_composite_reuse_of_reuse_eligible_stale_artifact_aborts(
     (tmp_path / "data.csv").write_text("a,b\n1,2\n")
     out = tmp_path / "out"
 
-    # chdir BEFORE seeding. `get_git_commit()` is anchored on the working directory since
-    # SPEC 0002 (it used to read `Path(__file__).parent`, which is site-packages once
-    # installed). Seeding the record from the repository and then running from tmp_path
-    # recorded 9057803 against a run that sees "nogit", the commits disagreed, the reuse
-    # gate rejected the artifact, and the stale pickle was never loaded - so the test
-    # stopped exercising the guard it exists for.
+    # chdir BEFORE seeding: both git helpers are anchored on the working directory, so
+    # seeding from the repository and running from tmp_path would record two different
+    # commits, the gate would reject the artifact, and the stale pickle would never be
+    # loaded - leaving the guard this test exists for unexercised.
     monkeypatch.chdir(tmp_path)
+
+    # Both halves of the gate are forced, because tmp_path is not a repository: `git status`
+    # there fails (→ dirty) and `rev-parse HEAD` fails (→ "nogit"), and "nogit" is not a
+    # commit match even against itself. A fixed stand-in commit is what lets the gate ADMIT
+    # the artifact, which is the precondition for testing what happens at load.
+    fake_commit = "cafe123"
+    monkeypatch.setattr(runner, "get_git_commit", lambda: fake_commit)
+    monkeypatch.setattr(runner, "is_tree_clean", lambda: True)
 
     # the sub-job's real identity names its cache dir; seed a prov record whose
     # identity + commit MATCH this run so the gate admits it, plus a stale pickle
@@ -219,13 +224,11 @@ def test_composite_reuse_of_reuse_eligible_stale_artifact_aborts(
         json.dumps(
             {
                 "identity": sub_identity,
-                "git_commit": get_git_commit(),
+                "git_commit": fake_commit,
                 "tree_clean": True,
             }
         )
     )
-    # force the clean-tree half of the gate (the real repo tree is dirty in dev)
-    monkeypatch.setattr(runner, "is_tree_clean", lambda: True)
 
     comp_py = tmp_path / "tiny_comp.py"
     comp_py.write_text("# synthetic composite job file\n")

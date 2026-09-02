@@ -97,11 +97,30 @@ currently resolves data relative to the repository root; this fails for an insta
   `importlib.resources`. Create `src/quebra/_fixtures/` for these. Nothing large goes here.
 - **Datasets** - live outside the package. Reached via a resolved data root.
 
-**R1.3.3** Data root resolution order, first hit wins:
+**R1.3.3** Data root resolution order. **AMENDED — see R1.3.3a.** As originally written: four
+mechanisms, first hit wins, where a "hit" is a mechanism naming a directory that exists.
 1. explicit argument passed by the caller
 2. `QUEBRA_DATA_ROOT` environment variable
 3. `[tool.quebra] data_root` in a `quebra.toml` at the current working directory or above
 4. a `platformdirs` user data directory
+
+**R1.3.3a (amendment)** Mechanisms 1 and 2 are **demands**, not candidates. If either names a
+path that is not a directory, `resolve_data_root` raises `DataRootNotFound` naming it, and does
+not consult the mechanisms below. Only 3 and 4 remain candidates, where the first existing hit
+wins.
+
+The original wording is satisfied by falling through, and falling through is the dangerous
+reading. It never returns the bad path — but it returns a *different* root, so the run analyses
+a tree the caller did not ask for and records that tree's dataset hashes as if they were the
+requested ones. With `quebra.toml` here declaring `data_root = "."`, the tree it silently
+reaches is the repository itself. A named root that does not exist is an error, and most
+clearly so when a usable root is available further down the chain.
+
+R1.3.4's requirement is unchanged for mechanisms 3 and 4: when nobody named a root and none is
+found, the exception still lists every location tried.
+
+`tests/test_data_root_resolution.py` carries the inverted test — the one that asserted the
+fall-through — rewritten with this rationale rather than deleted.
 
 **R1.3.4** If no root resolves, raise a named exception stating what was looked for and every
 location tried. Never fall back to a relative guess.

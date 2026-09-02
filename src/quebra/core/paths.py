@@ -1,10 +1,13 @@
-"""CWD-independent path anchors and resolvers.
+"""Path anchors and resolvers: one root discovered from the cwd, one declared.
 
 Two distinct roots exist and must never be conflated:
-  - repo root (qre_tool/): code, jobs, output/ - anchored off this file's location,
-    the same pattern as provenance.get_git_commit.
-  - dataset root (912days/ by default, --data-root overrides): the published
-    read-only datasets live OUTSIDE the git repo, one level above it.
+  - project root: code, jobs, output/ - the nearest directory at or above the WORKING
+    DIRECTORY carrying a project marker. Found by walking up from the cwd, never computed
+    from this file's location. `provenance.get_git_commit` anchors on the cwd for the same
+    reason, so a run's project root and its recorded commit describe one tree.
+  - dataset root: where relative `Dataset.path` values resolve. Declared rather than
+    inferred - by `--data-root`, `QUEBRA_DATA_ROOT`, or `[tool.quebra] data_root` in a
+    `quebra.toml`. It may be inside the project or outside it.
 
 Every dataset path is resolved exactly once per run (core/runner.run_job) through
 resolve_dataset_path, and that single resolved path feeds BOTH the loader and the
@@ -19,6 +22,8 @@ import os
 import tomllib
 from pathlib import Path
 
+import platformdirs
+
 
 PROJECT_MARKERS = ("quebra.toml", "pyproject.toml", ".git")
 
@@ -26,12 +31,11 @@ PROJECT_MARKERS = ("quebra.toml", "pyproject.toml", ".git")
 def repo_root() -> Path:
     """The PROJECT root: the nearest directory at or above the cwd carrying a marker.
 
-    Discovered by walking up from the working directory, NOT computed from `__file__`.
-    That distinction is the whole of SPEC 0002 R1.3.1, and it was found the hard way: with
-    `parents[3]` arithmetic an installed wheel reported its repo root as
-    `<venv>/lib/python3.13`, and the four jobs that declare `jobs/bench/results/*.csv` as a
-    Dataset raised FileNotFoundError under `scripts/acceptance.sh`. The editable install
-    never showed it, because there `src/` really does sit inside the repository.
+    Discovered by walking up from the working directory, NOT computed from `__file__`. That
+    distinction is load-bearing: under `parents[3]` arithmetic an installed wheel reports its
+    project root as a directory inside the virtualenv, and every job declaring an in-repo
+    table such as `jobs/bench/results/*.csv` as a Dataset then raises FileNotFoundError. An
+    editable install hides it, because there `src/` really does sit inside the repository.
 
     Anchoring on the caller's project is also what the rest of the tool already does: the
     CLI writes `output/` relative to the cwd, and `quebra.toml` is discovered by walking up
@@ -53,12 +57,11 @@ def default_dataset_root() -> Path:
     """Where relative dataset paths anchor.
 
     Delegates to `resolve_data_root`, which consults the explicit argument, the environment,
-    a `quebra.toml`, then a user data directory - and never `__file__`. It used to return
-    `repo_root().parent`, which was correct only from a git checkout.
+    a `quebra.toml`, then a user data directory - and never `__file__`. `repo_root().parent`
+    would be correct only from a git checkout.
 
-    From THIS checkout the answer is unchanged, because `quebra.toml` at the repository root
-    declares `data_root = ".."`. The behaviour is the same; the route to it is declared
-    rather than inferred.
+    From THIS checkout the answer is the repository itself, because `quebra.toml` at its root
+    declares `data_root = "."`. The route to it is declared rather than inferred.
     """
     return resolve_data_root()
 
@@ -109,7 +112,7 @@ def resolve_dataset_path(path: str | Path, dataset_root: Path) -> Path:
     The repo-root fallback exists for tracked in-repo tables that are genuine data inputs
     rather than code - `jobs/bench/results/size_table.csv` is the case that forced it. Anchoring
     those on the dataset root would look for them one directory ABOVE the repo, and writing
-    'qre_tool/jobs/bench/results/…' instead would break the moment --data-root moved. The dataset
+    a project-name-prefixed path instead would break the moment --data-root moved. The dataset
     root is still tried first, so an external dataset can never be shadowed by a same-named
     file inside the repo.
     """
@@ -131,7 +134,7 @@ def resolve_repo_path(path: str | Path) -> Path:
 
 
 # --------------------------------------------------------------------------------------
-# Data root resolution (SPEC 0002 R1.3)
+# Data root resolution
 # --------------------------------------------------------------------------------------
 
 QUEBRA_DATA_ROOT_ENV = "QUEBRA_DATA_ROOT"
@@ -142,13 +145,13 @@ class DataUnavailable(FileNotFoundError):
     """A dataset path did not resolve, with the reason a reader actually needs.
 
     Subclasses `FileNotFoundError` so existing handlers keep working; what it adds is the
-    distinction between the two situations that used to look identical:
+    distinction between two situations that otherwise look identical:
 
     - the file is one of ours and is embargoed, so the reader is not missing a step - they
       are missing data we cannot redistribute, and the simulated path is the way forward;
     - the path is simply wrong, and no amount of asking us will produce the file.
 
-    SPEC 0003 R3.4. `data/real_private/MANIFEST.toml` is what separates the two: it is
+    `data/real_private/MANIFEST.toml` is what separates the two: it is
     committed precisely so this message can be specific without shipping any record.
     """
 
@@ -187,9 +190,16 @@ class DataUnavailable(FileNotFoundError):
 
 
 class DataRootNotFound(RuntimeError):
-    """No data root could be resolved, with every location that was tried.
+    """No usable data root. Raised in two distinct situations, with different messages.
 
-    Raised rather than guessed. A relative fallback here would silently point an installed
+    - A root was NAMED - by `--data-root` or `QUEBRA_DATA_ROOT` - and is not a directory.
+      The message names that one root only, because the others are irrelevant: the caller
+      said which tree to use, and the answer is that it is not there. Listing alternatives
+      would suggest one of them might be substituted, which is exactly what must not happen.
+    - NOBODY named one and no candidate exists. That message lists every location tried, so
+      a reader can see the whole chain and pick where to intervene.
+
+    Raised rather than guessed in both cases. A silent fallback would point an installed
     package at whatever directory it happened to be launched from, and the first symptom
     would be a dataset hash that does not match the one in a published provenance record.
     """
@@ -215,37 +225,58 @@ def _data_root_from_toml(start: Path) -> tuple[Path | None, list[str]]:
 
 
 def resolve_data_root(explicit: str | Path | None = None) -> Path:
-    """Where datasets live. First hit wins, in the order SPEC 0002 R1.3.3 fixes.
+    """Where datasets live. Two demands, then two candidates.
+
+    A DEMAND is a root somebody named for this run. If it does not exist, that is an error
+    and this raises:
 
     1. an explicit argument (the `--data-root` flag arrives here)
     2. the `QUEBRA_DATA_ROOT` environment variable
+
+    A CANDIDATE is a place to look when nobody named one. First existing hit wins:
+
     3. `[tool.quebra] data_root` in a `quebra.toml`, at the working directory or above
     4. a `platformdirs` user data directory
 
-    None of these consults `__file__`. That is the point: the old `repo_root().parent` was
-    correct only inside a git checkout, and an installed package has no repository to be
-    the parent of.
+    The demand/candidate split is the whole of the contract. Treating a named root as a
+    candidate means a typo in `--data-root` silently resolves to whatever comes next - and
+    since `quebra.toml` here declares `data_root = "."`, that next thing is the repository
+    itself. The run then loads different files from the ones requested and records THEIR
+    hashes, which is the failure `DataRootNotFound` exists to make impossible.
+
+    None of these consults `__file__`. That is the point: `repo_root().parent` would be
+    correct only inside a git checkout, and an installed package has no repository to be the
+    parent of.
     """
     tried: list[str] = []
 
     if explicit is not None:
         root = Path(explicit).expanduser().resolve()
-        tried.append(f"explicit argument: {root}")
         if root.is_dir():
             return root
-    else:
-        # Listed even when absent. R1.3.4 asks for every location tried, and "you did not
-        # pass one" is information: it tells a reader the --data-root flag exists.
-        tried.append("explicit argument: none passed (--data-root)")
+        raise DataRootNotFound(
+            f"the data root was given as '{explicit}' (resolved to '{root}') but that is "
+            f"not a directory. This is what `--data-root` sets. A root you name for a run is "
+            f"a demand, not a candidate: falling back to another mechanism here would "
+            f"analyse a different tree than the one you asked for, and record its dataset "
+            f"hashes as if they were yours."
+        )
+    # Listed even when absent, because "you did not pass one" is information: it tells a
+    # reader the --data-root flag exists.
+    tried.append("explicit argument: none passed (--data-root)")
 
     env = os.environ.get(QUEBRA_DATA_ROOT_ENV)
     if env:
         root = Path(env).expanduser().resolve()
-        tried.append(f"{QUEBRA_DATA_ROOT_ENV}: {root}")
         if root.is_dir():
             return root
-    else:
-        tried.append(f"{QUEBRA_DATA_ROOT_ENV}: not set")
+        raise DataRootNotFound(
+            f"{QUEBRA_DATA_ROOT_ENV} is set to '{env}' (resolved to '{root}') but that is "
+            f"not a directory. Set it to a real tree or unset it; an environment variable "
+            f"naming a root is a demand, and silently ignoring it would analyse a different "
+            f"tree than the one it names."
+        )
+    tried.append(f"{QUEBRA_DATA_ROOT_ENV}: not set")
 
     from_toml, toml_tried = _data_root_from_toml(Path.cwd())
     tried.append(
@@ -254,15 +285,11 @@ def resolve_data_root(explicit: str | Path | None = None) -> Path:
     if from_toml is not None and from_toml.is_dir():
         return from_toml
 
-    try:
-        import platformdirs
-
-        user_root = Path(platformdirs.user_data_dir("quebra"))
-        tried.append(f"platformdirs user data dir: {user_root}")
-        if user_root.is_dir():
-            return user_root
-    except ImportError:
-        tried.append("platformdirs user data dir: platformdirs is not installed")
+    # `platformdirs` is a hard dependency, so this is a lookup and not a fallback.
+    user_root = Path(platformdirs.user_data_dir("quebra"))
+    tried.append(f"platformdirs user data dir: {user_root}")
+    if user_root.is_dir():
+        return user_root
 
     raise DataRootNotFound(
         "could not resolve a data root. Tried, in order:\n  "

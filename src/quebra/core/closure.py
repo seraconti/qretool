@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import importlib.util
 import inspect
 from functools import lru_cache
 from collections.abc import Sequence
@@ -64,8 +65,8 @@ def _graph() -> object:
     # process CWD, so computing an identity created a directory, and did so by failing with
     # PermissionError under a read-only CWD - normal in a CI container.
     #
-    # The cost is affordable: `build_graph` is 81 modules in ~80 ms cold, and `code_hash` is
-    # memoized per job, so a run pays it once.
+    # The cost is affordable: the graph build is tens of milliseconds cold, and
+    # `job_code_hash` is memoized per job, so a run pays it once.
     return grimp.build_graph(PACKAGE, cache_dir=None)
 
 
@@ -157,9 +158,31 @@ def _module_digest(name: str) -> str:
 
     Bytes, not text: a file is what it is regardless of how a platform decodes it, and the
     digest must be equal under an editable install and a wheel.
+
+    The module itself is located, not imported. The closure is the STATIC import graph, so it
+    holds modules this run never executes; importing one to reach `__file__` would run its
+    module scope and pull in its dependencies - sklearn via the TLF analyzer, scipy's
+    permutation machinery, a plotting stack - purely to compute a digest. Worse, a
+    module-scope failure in a reachable-but-unused module would surface as a failure of
+    IDENTITY COMPUTATION, before the output directory exists, naming a module the job does
+    not run.
+
+    What `find_spec` does still import is the target's PARENT PACKAGES, since it has to import
+    a package to ask it where its submodule lives. So `quebra.analyzers.checks.<x>` imports
+    `quebra`, `quebra.analyzers`, `quebra.analyzers.checks` and whatever their `__init__.py`
+    files re-export - numpy arrives that way. The saving is real (scipy, sklearn and
+    matplotlib stay out) but it holds only while those `__init__.py` files stay thin, and one
+    already re-exports.
+
+    `find_spec` reads the same path the import would bind, including a package's own
+    `__init__.py`, and returns the already-loaded spec for anything imported earlier - so the
+    digest is identical either way.
     """
-    module = __import__(name, fromlist=["__file__"])
-    source = getattr(module, "__file__", None)
+    try:
+        spec = importlib.util.find_spec(name)
+    except (ImportError, AttributeError, ValueError) as exc:
+        raise ValueError(f"module {name!r} could not be located to hash") from exc
+    source = spec.origin if spec is not None else None
     if source is None:
         raise ValueError(f"module {name!r} has no source file to hash")
     return hashlib.sha256(Path(source).read_bytes()).hexdigest()

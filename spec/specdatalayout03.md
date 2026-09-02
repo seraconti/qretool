@@ -32,6 +32,12 @@ Plan item **1B.3** (data root resolution order) is **done**. `resolve_data_root(
 `platformdirs`; `DataRootNotFound` lists every location tried. Do not re-open it. R3.4 below
 is the separate, still-missing case: the root resolves but the *file* is absent.
 
+**One amendment has since been made to the ORDER's semantics, not to the order.** Mechanisms 1
+and 2 — the explicit argument and `QUEBRA_DATA_ROOT` — are demands rather than candidates: a
+path they name that does not exist raises instead of falling through. See
+`specinstallabity02.md` R1.3.3a for the reasoning. "Do not re-open it" above still stands for
+the order itself and for the four mechanisms.
+
 ---
 
 ## R3.1 - Undeclared `joblib` (carried over from Phase 1) — **DONE 2026-08-29**

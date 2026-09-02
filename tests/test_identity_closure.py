@@ -1,15 +1,14 @@
 """Identity must cover the code that produced the numbers.
 
-SPEC 0005 R5.1. Before this, `code_hash` was the job file alone, so appending a line to
-`analyzers/t2star.py` left `t2star_q1_070423`'s identity byte-identical — the analyzer could
-change completely while the digest asserted nothing had. These tests pin both directions of
-the fix, because the claim is the phase's whole point and must not rest on a probe someone ran
-once by hand.
+`job_code_hash` over the job file alone would leave `t2star_q1_070423`'s identity
+byte-identical after appending a line to `analyzers/t2star.py` — the analyzer could change
+completely while the digest asserted nothing had. These tests pin both directions, because the
+claim must not rest on a probe someone ran once by hand.
 
 The negative direction is as load-bearing as the positive one. Hashing all of `src/quebra/`
-would also make the probe move, and would recreate the blast radius the plan warned about:
-editing a plot module would invalidate every cached compute artifact. So a test that only
-checked "editing something moves the identity" would pass for the wrong implementation.
+would also make the probe move, and would carry an unacceptable blast radius: editing a plot
+module would invalidate every cached compute artifact. So a test that only checked "editing
+something moves the identity" would pass for the wrong implementation.
 """
 
 from __future__ import annotations
@@ -146,7 +145,7 @@ def test_the_fold_moves_when_a_reached_module_changes(monkeypatch, tmp_path):
     second = job_module.Job("probe")
     second.job_file = job_file
 
-    assert first.code_hash() != second.code_hash(), (
+    assert first.job_code_hash() != second.job_code_hash(), (
         "a changed module digest must change the code contribution"
     )
 

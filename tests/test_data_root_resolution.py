@@ -1,13 +1,17 @@
-"""The data-root chain: four mechanisms, fixed order, no `__file__` anywhere.
+"""The data-root chain: two demands, two candidates, no `__file__` anywhere.
 
-Oracle: SPEC 0002 R1.3.3, which fixes the order, and R1.3.4, which requires the failure to
-name every location tried rather than guessing.
+Oracle: the documented resolution order, and the requirement that a failure name every
+location tried rather than guessing.
 
-Why this matters more than it looks. The previous answer was `repo_root().parent`, computed
-from where a `.py` file happened to sit. That is correct only inside a git checkout, and an
-installed package has no repository to be the parent of. A silent relative fallback would
-point an installed QUEBRA at whatever directory it was launched from, and the first symptom
-would be a dataset hash that disagrees with a published provenance record.
+A DEMAND is a root somebody named for this run - `--data-root` or `QUEBRA_DATA_ROOT`. If it
+does not exist, that is an error. A CANDIDATE is a place to look when nobody named one -
+`quebra.toml`, then a user data directory - and the first existing hit wins.
+
+Why the split matters more than it looks. `repo_root().parent` is correct only inside a git
+checkout, and an installed package has no repository to be the parent of. And a named root
+treated as a candidate is worse than either: it falls through to whatever comes next, so the
+run analyses a different tree than the one requested and records THAT tree's hashes. The
+first symptom is a dataset hash disagreeing with a published provenance record.
 """
 
 from __future__ import annotations
@@ -80,7 +84,7 @@ def test_a_relative_data_root_anchors_on_the_file_that_declares_it(isolated, tmp
 
 
 def test_when_nothing_resolves_it_raises_and_names_every_location(isolated):
-    """R1.3.4. The failure has to be actionable, not just a stack trace."""
+    """The failure has to be actionable, not just a stack trace."""
     with pytest.raises(DataRootNotFound) as excinfo:
         resolve_data_root()
     message = str(excinfo.value)
@@ -93,28 +97,52 @@ def test_when_nothing_resolves_it_raises_and_names_every_location(isolated):
         assert expected in message, f"failure message does not mention {expected}"
 
 
-def test_a_nonexistent_explicit_root_falls_through_rather_than_being_returned(
+def test_a_nonexistent_explicit_root_raises_rather_than_falling_through(
     isolated, tmp_path, monkeypatch
 ):
-    """A typo in --data-root must not become the answer.
+    """A typo in --data-root must not become a DIFFERENT root.
 
-    Each mechanism is checked for existence before it wins, so a bad explicit path falls
-    through to the next mechanism instead of producing a root nothing lives under.
+    This test is the inversion of one that asserted the fall-through, and the reason is that
+    "must not become the answer" has two readings. Falling through satisfies the weak one -
+    the typo itself is never returned - while producing exactly the dangerous outcome: the run
+    silently analyses whatever the next mechanism names. Here that is `real`, a tree the
+    caller never asked for, whose dataset hashes would be recorded as if they were the
+    requested ones.
+
+    So a named root that does not exist is an error, even when a perfectly good root is
+    available further down the chain. Especially then.
     """
     real = tmp_path / "real"
     real.mkdir()
     monkeypatch.setenv(QUEBRA_DATA_ROOT_ENV, str(real))
-    assert resolve_data_root(tmp_path / "typo") == real.resolve()
+    with pytest.raises(DataRootNotFound, match="demand, not a candidate"):
+        resolve_data_root(tmp_path / "typo")
+
+
+def test_a_set_but_missing_env_root_raises_rather_than_falling_through(
+    isolated, tmp_path
+):
+    """Same rule for the environment variable, which is also something somebody set.
+
+    An inherited-and-stale `QUEBRA_DATA_ROOT` is the likelier version of this mistake: it is
+    invisible at the call site, so the fall-through would be silent twice over.
+    """
+    (tmp_path / QUEBRA_TOML).write_text(f'[tool.quebra]\ndata_root = "{tmp_path}"\n')
+    os.environ[QUEBRA_DATA_ROOT_ENV] = str(tmp_path / "gone")
+    try:
+        with pytest.raises(DataRootNotFound, match="not a directory"):
+            resolve_data_root()
+    finally:
+        del os.environ[QUEBRA_DATA_ROOT_ENV]
 
 
 def test_the_repository_resolves_through_its_own_quebra_toml(monkeypatch, in_repo):
     """The checkout keeps working, and through mechanism 3 rather than `__file__`.
 
-    The declared value changed in SPEC 0003 - `data_root` moved from `".."` to `"."` when the
-    datasets came inside the checkout under `data/` - so this asserts the checkout resolves
-    to what its own `quebra.toml` SAYS, read from the file, rather than to a hardcoded
-    relationship. That is the property mechanism 3 is supposed to have; pinning the literal
-    would have to be rewritten every time the value moves.
+    Asserts the checkout resolves to what its own `quebra.toml` SAYS, read from the file,
+    rather than to a hardcoded relationship. That is the property mechanism 3 is supposed to
+    have, and it is why the declared value can move without this test moving: pinning the
+    literal would need rewriting every time it does.
     """
     import tomllib
 

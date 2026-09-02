@@ -115,4 +115,8 @@ for alias, included, prefix in (
         targets=["static", "academic"],
         title=f"{prefix} check ledger",
     )
-    job.materialize(node, name=f"{prefix}_check_ledger")
+    # Not `{prefix}_check_ledger`: that is the figure's safe-named title above, and both
+    # sinks write `provenance/{name}.prov.json`. Sharing the name let this materialize
+    # overwrite the figure's record, so a run that rendered two PDFs per dataset reported
+    # `targets_rendered = []`.
+    job.materialize(node, name=f"{prefix}_check_ledger_data")

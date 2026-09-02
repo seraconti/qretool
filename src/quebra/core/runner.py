@@ -10,7 +10,7 @@ from pathlib import Path
 from quebra.core.job import Job, _FigureSink, _DAGNode, _LOAD_NODE_FN_NAMES
 from quebra.core.identity import content_hash
 from quebra.core.dataset import Dataset
-from quebra.core.paths import default_dataset_root, repo_root, resolve_dataset_path
+from quebra.core.paths import repo_root, resolve_data_root, resolve_dataset_path
 from quebra.core.reference import (
     ArtifactRef,
     LocalRef,
@@ -139,24 +139,68 @@ def _ancestors(job: Job, root_id: str) -> set[str]:
 
 
 def _check_sink_artifact_names(job: Job) -> None:
-    """A sink persists its result to `{basename}.pkl`; a composite later reuses a
-    persisted pkl by that name. Two sinks writing the SAME basename from DIFFERENT
-    source nodes would silently clobber one another and let a composite reuse a
-    wrong-but-plausible artifact - so reject that collision at run start (before any
-    output dir exists). Duplicates that resolve to the same node are harmless."""
-    basename_source: dict[str, str] = {}
+    """Reject two sinks that would write the same artifact name from different nodes.
+
+    Both sink kinds are keyed on `name`, and they share one namespace: a materialize writes
+    `{name}.pkl`, a figure renders `{name}_{target}.pdf`, and BOTH write
+    `provenance/{name}.prov.json`. So a figure title and a materialize name that coincide
+    overwrite one another's provenance record even though their artifacts do not collide.
+
+    Keying a figure on its SOURCE NODE instead cannot detect this: with the basename and the
+    comparison value both taken from `sink.input.node_id`, the mismatch test is `x != x` and
+    the check is inert for every figure.
+
+    `name` is already safe-named - `_safe_name` maps each run of non-`[A-Za-z0-9_.-]` to a
+    single `_` - which is what makes the collision reachable: the titles "a b" and "a_b" read
+    as two figures and land on one filename.
+
+    Keyed on `(kind, source node)`, not on the source node alone, because the KIND changes the
+    record. A figure's record carries `targets_rendered` and a figure label; a materialize's
+    carries neither. So a figure and a materialize sharing a name overwrite each other even
+    when they read the SAME node - the second declared wins, and a run that rendered PDFs ends
+    up with a record asserting it rendered none.
+
+    Rejected at run start, before any output dir exists. Two sinks of the same kind on the
+    same node are genuinely harmless: that is one artifact requested twice.
+    """
+    seen: dict[str, tuple[str, str]] = {}
     for sink in job.sinks:
         if isinstance(sink, _FigureSink):
-            basename, source_id = sink.input.node_id, sink.input.node_id
+            entry = ("figure", sink.input.node_id)
         else:
-            basename, source_id = sink.name, sink.node.node_id
-        existing = basename_source.get(basename)
-        if existing is not None and existing != source_id:
+            entry = ("materialize", sink.node.node_id)
+        existing = seen.get(sink.name)
+        if existing is not None and existing != entry:
             raise ValueError(
-                f"sink artifact name collision: '{basename}.pkl' would be written for "
-                f"two different nodes ('{existing}' and '{source_id}'). Rename one sink."
+                f"sink artifact name collision: '{sink.name}' would be written by two "
+                f"different sinks - {existing[0]} of '{existing[1]}' and {entry[0]} of "
+                f"'{entry[1]}'. They share provenance/{sink.name}.prov.json, so the second "
+                f"would overwrite the first's record. Rename one sink."
             )
-        basename_source[basename] = source_id
+        seen[sink.name] = entry
+
+
+def _expected_sink_pkls(job: Job) -> set[str]:
+    """The `.pkl` files a COMPLETE run of this job leaves in its output directory.
+
+    Mode-independent, which is what makes it usable as a completeness test: a figure sink
+    persists its input under the SOURCE NODE's id whether or not a PDF is rendered, and a
+    materialize persists under its own name.
+
+    The sink loop writes these one at a time, so a run that raised on its third sink still
+    holds a perfectly readable provenance record from its first. Identity, commit and
+    tree-clean all match on that record, so without this test the gate reads a half-written
+    run as reusable and every later invocation skips the job - leaving the missing sinks
+    permanently unproduced. `run --all` makes it likely, because it catches per job and
+    carries on, so the partial directory survives the batch.
+    """
+    names: set[str] = set()
+    for sink in job.sinks:
+        if isinstance(sink, _FigureSink):
+            names.add(f"{sink.input.node_id}.pkl")
+        else:
+            names.add(f"{sink.name}.pkl")
+    return names
 
 
 def _read_prov_reuse_fields(
@@ -191,8 +235,17 @@ def _reuse_eligible_dir(
     artifact was built from - and is being reused under - exactly the committed
     code. Any mismatch re-runs - commit-safe, not content-safe against code edits.
     `candidates` is sorted oldest→newest.
+
+    `"nogit"` never matches, even against itself. It is the sentinel for "no commit could be
+    read", and two runs that both failed to read a commit are not two runs at the same commit.
+    The pair `("nogit", tree_clean=True)` is reachable - a repository with no commits answers
+    `status --porcelain` cleanly while `rev-parse HEAD` fails - and admitting it would reduce
+    the gate to an identity match alone. That matters because commit-plus-clean-tree is the
+    stand-in for the code the identity does not cover: a plot class reaches a run through
+    `job.figure`, not through a step function, so it is absent from the closure and an edit to
+    it changes every rendered figure without moving the digest.
     """
-    if not tree_clean:
+    if not tree_clean or git_commit == "nogit":
         return None
     for run_dir in reversed(candidates):
         rec_identity, rec_commit, rec_tree_clean = _read_prov_reuse_fields(run_dir)
@@ -356,7 +409,7 @@ def _emit_prov(
     repo: Path,
     dataset_root: Path,
     resolved_datasets: dict[str, Path],
-    job_hash_full: str,
+    job_code_hash_full: str,
     git_commit: str,
     identity: str,
     tree_clean: bool,
@@ -393,7 +446,7 @@ def _emit_prov(
 
     record = build_prov_record(
         job_file=job_file_rendered,
-        job_file_hash=f"sha256:{job_hash_full}",
+        job_code_hash=f"sha256:{job_code_hash_full}",
         dataset_paths=[_fmt_dataset_path(p, dataset_root) for p in dataset_paths],
         dataset_hashes=dataset_hashes,
         git_commit=git_commit,
@@ -425,10 +478,16 @@ def run_job(
     # unchanged into nested runs so every depth searches one shared pool.
     pool_root = out_dir if pool_root is None else pool_root
     job_file = _job_file(job)
-    job.job_file = job_file  # ensure set for code_hash()/build_identity()
+    job.job_file = job_file  # ensure set for job_code_hash()/build_identity()
     repo = repo_root()
-    dataset_root = Path(data_root).resolve() if data_root else default_dataset_root()
-    job_hash_full = job.code_hash()  # recorded as job_file_hash in prov
+    # Routed through `resolve_data_root` rather than resolved here. `Path(data_root).resolve()`
+    # accepts a root that does not exist, and `resolve_dataset_path` then falls back to the
+    # repo root for any relative path - which every job in `jobs/` declares - so the run would
+    # complete against the repository tree and record ITS dataset hashes. Passing the value in
+    # is what makes a named-but-missing root a demand that fails. `None` behaves as before:
+    # `resolve_data_root` falls through to `quebra.toml` and the user data directory.
+    dataset_root = resolve_data_root(data_root)
+    job_code_hash_full = job.job_code_hash()
     git_commit = get_git_commit()
     tree_clean = is_tree_clean()
     is_composite = bool(job.includes)
@@ -452,9 +511,20 @@ def run_job(
     # Reuse gate (standalone jobs; composites always run fresh). Skip only when a
     # prior run has the SAME identity AND the SAME commit AND the tree is clean -
     # any mismatch (edited shared code → commit differs; dirty tree) re-runs fresh.
+    #
+    # A candidate must also be COMPLETE: every sink's artifact present, not just a matching
+    # directory name. The composite path filters the same way, in `_cached_runs`. Without it a
+    # run that died mid-sink-loop stays eligible, because its first sink's provenance record
+    # is readable and matches.
     if not is_composite and not force:
+        expected_pkls = _expected_sink_pkls(job)
         candidates = sorted(
-            out_dir.glob(f"{job.name}_{identity_short}_*"), key=lambda d: d.name
+            (
+                run_dir
+                for run_dir in out_dir.glob(f"{job.name}_{identity_short}_*")
+                if all((run_dir / name).exists() for name in expected_pkls)
+            ),
+            key=lambda d: d.name,
         )
         if _reuse_eligible_dir(candidates, identity, git_commit, tree_clean):
             print(
@@ -542,7 +612,7 @@ def run_job(
                 repo=repo,
                 dataset_root=dataset_root,
                 resolved_datasets=resolved_datasets,
-                job_hash_full=job_hash_full,
+                job_code_hash_full=job_code_hash_full,
                 git_commit=git_commit,
                 identity=identity,
                 tree_clean=tree_clean,
@@ -565,7 +635,7 @@ def run_job(
             repo=repo,
             dataset_root=dataset_root,
             resolved_datasets=resolved_datasets,
-            job_hash_full=job_hash_full,
+            job_code_hash_full=job_code_hash_full,
             git_commit=git_commit,
             identity=identity,
             tree_clean=tree_clean,

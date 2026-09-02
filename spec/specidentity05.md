@@ -36,7 +36,7 @@ do, so they are stated before the requirements rather than in a footnote.
 ### R5.0.1 The hash is too NARROW, not too broad. Item 3.1 is inverted.
 
 `quebraplan.md` 3.1 says *"editing `analyzers/km.py` already invalidates all 63 jobs"* and
-concludes the hash must be narrowed. **Measured, the opposite is true.** `Job.code_hash` is
+concludes the hash must be narrowed. **Measured, the opposite is true.** `Job.job_code_hash` is
 `hash_string(job_file.read_text())` — the job file and nothing else. Appending a line to
 `src/quebra/analyzers/t2star.py` and rebuilding the identity of
 `jobs/active/t2star_q1_070423.py`:
@@ -279,7 +279,7 @@ R5.1.7's collision was real and is closed. Before: two jobs differing only by `x
 breaking change to every composite that includes it.
 
 **R5.2.2** SCOPE CORRECTION. Half of the motivation is already satisfied: moving a job file
-today does NOT change its identity, because `code_hash` is file *content* and `job.name` is a
+today does NOT change its identity, because `job_code_hash` is file *content* and `job.name` is a
 string inside the file, not a path. Only `include` breaks. So this requirement is not "build
 an ID scheme and a registry" — it is **make `include` take the logical name that R5.4's
 discovery already produces.**

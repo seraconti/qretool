@@ -61,12 +61,7 @@ def run_start_unix_s_from_hdf5(path: str | Path) -> float:
     The HDF5 attribute is a naive local timestamp; we keep it naive-as-UTC
     and validate with check_unix_s.
     """
-    try:
-        import h5py
-    except ImportError as exc:
-        raise ImportError(
-            "h5py is required to read measurement_time from HDF5"
-        ) from exc
+    import h5py
 
     file_path = Path(path)
     with h5py.File(file_path, "r") as handle:

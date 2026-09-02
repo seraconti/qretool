@@ -6,18 +6,15 @@ import re
 import sys
 from pathlib import Path
 
+import h5py
 import pandas as pd
 
 from quebra.core import discovery
+from quebra.core.paths import DataRootNotFound, resolve_data_root
 from quebra.core.runner import run_job
 from quebra.loaders.registry import _LOADER_REGISTRY, load
 from quebra.plots.targets import RENDER_TARGETS
 from quebra.provenance import hash_string
-
-try:
-    import h5py
-except ImportError:
-    h5py = None
 
 
 # Everything anchors on the CURRENT WORKING DIRECTORY, not on this file.
@@ -120,7 +117,12 @@ def main() -> None:
         "--data-root",
         type=str,
         default=None,
-        help="Dataset root for relative dataset paths (default: the repo's parent directory); used by both loading and provenance hashing.",
+        help=(
+            "Dataset root for relative dataset paths; used by both loading and provenance "
+            "hashing. Must exist: a root named here and missing is an error, not a hint. "
+            "Omitted, the root comes from [tool.quebra] data_root in a quebra.toml at or "
+            "above the working directory, then a user data directory."
+        ),
     )
 
     inspect_parser = subparsers.add_parser("inspect")
@@ -134,6 +136,14 @@ def main() -> None:
         data_root = (
             Path(args.data_root).expanduser().resolve() if args.data_root else None
         )
+        # Validated here, not left to the first job, so a mistyped flag fails once with a
+        # readable line instead of once per job with a traceback. `run_job` resolves it again
+        # for real; this call only surfaces the error at the boundary the user typed at.
+        if data_root is not None:
+            try:
+                resolve_data_root(data_root)
+            except DataRootNotFound as exc:
+                parser.error(str(exc))
         out_root = _output_root(args.output_root)
         if args.family is not None and not args.all:
             parser.error("--family selects among discovered jobs and requires --all")
@@ -208,7 +218,7 @@ def main() -> None:
         file_path = Path(args.file)
 
         # Special handling for HDF5 files with multiple datasets
-        if file_path.suffix.lower() in {".h5", ".hdf5"} and h5py:
+        if file_path.suffix.lower() in {".h5", ".hdf5"}:
             with h5py.File(file_path, "r") as f:
                 keys = list(f.keys())
                 if len(keys) > 1:

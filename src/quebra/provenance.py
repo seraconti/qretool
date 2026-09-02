@@ -19,55 +19,60 @@ def hash_string(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
-def get_git_commit() -> str:
-    """The commit of the PROJECT being run, or "nogit".
+# Both git helpers below anchor on the working directory and share this timeout. They are
+# two halves of one gate - `_reuse_eligible_dir` requires a commit match AND a clean tree -
+# so they must describe the SAME repository or the gate means nothing. `Path.cwd()` is what
+# makes that true: this module ships inside the wheel, so `__file__` is site-packages once
+# installed, where one half would read a repository the other half never saw.
+#
+# The timeout bounds the damage rather than fixing a known hang: both commands are local and
+# should answer in milliseconds, so a wait means something is wrong (a stale lock, a stalled
+# filesystem) and a provenance helper is the wrong place to block a run indefinitely. A
+# timeout reads as "could not answer", which the callers already handle.
+_GIT_TIMEOUT_S = 30.0
 
-    Anchored on the working directory, not on `Path(__file__).parent`. This module ships
-    inside the wheel, so `__file__` is site-packages once installed: from a wheel that
-    reported "nogit" unconditionally, which permanently disables run reuse, and installed
-    editable inside a different checkout it would have recorded THAT repository's commit
-    into this run's provenance record. Both are wrong in a provenance tool.
+
+def _git(*args: str) -> str | None:
+    """stdout of a git command run in the cwd, or None if git could not answer.
+
+    Every failure mode collapses to None on purpose, and callers must treat None as "do not
+    know" rather than as an answer. `OSError` covers a missing or non-executable git and a
+    deleted cwd; `SubprocessError` covers a non-zero exit and the timeout.
     """
-    repo_root = Path.cwd()
     try:
         completed = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=repo_root,
+            ["git", *args],
+            cwd=Path.cwd(),
             check=True,
             capture_output=True,
             text=True,
+            timeout=_GIT_TIMEOUT_S,
         )
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return "nogit"
-    commit = completed.stdout.strip()
-    return commit or "nogit"
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return completed.stdout
+
+
+def get_git_commit() -> str:
+    """The commit of the PROJECT being run, or "nogit"."""
+    out = _git("rev-parse", "--short", "HEAD")
+    return (out.strip() or "nogit") if out is not None else "nogit"
 
 
 def is_tree_clean() -> bool:
     """True iff there are no uncommitted *tracked* changes.
 
-    Uses `--untracked-files=no` so a stray untracked scratch file does not disable
-    artifact reuse; the safety claim is only "no uncommitted tracked changes". Any
-    error (no git, etc.) is conservatively reported as dirty so reuse never fires
-    on an uncertain tree.
+    `--untracked-files=no` so a stray untracked scratch file does not disable artifact
+    reuse; the claim is only "no uncommitted tracked changes". "Do not know" reports as
+    dirty, so reuse never fires on a tree this cannot vouch for.
     """
-    repo_root = Path(__file__).resolve().parent
-    try:
-        completed = subprocess.run(
-            ["git", "status", "--porcelain", "--untracked-files=no"],
-            cwd=repo_root,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return False
-    return completed.stdout.strip() == ""
+    out = _git("status", "--porcelain", "--untracked-files=no")
+    return out is not None and out.strip() == ""
 
 
 def build_prov_record(
     job_file: str | Path,
-    job_file_hash: str,
+    job_code_hash: str,
     dataset_paths: list[str],
     dataset_hashes: list[str],
     git_commit: str,
@@ -85,7 +90,10 @@ def build_prov_record(
     return {
         "node_name": node_name,
         "job_file": str(job_file),
-        "job_file_hash": job_file_hash,
+        # NOT a digest of `job_file`: it folds that file's text, the digests of every
+        # module the steps can reach, and the arguments each step was called with. The
+        # name says so, because `sha256sum` on `job_file` will not reproduce it.
+        "job_code_hash": job_code_hash,
         "dataset_path": str(primary_path),
         "dataset_hash": primary_hash,
         "dataset_paths": list(dataset_paths),

@@ -87,6 +87,24 @@ def promote(
             f"that fact recorded."
         )
 
+    # Every sink of one run is emitted with the same identity, commit and tree state, so
+    # disagreement here means this directory does not hold exactly one run: records from two
+    # runs have been merged, or a run was overwritten part-way. The identity and job name
+    # below are read from the FIRST record, which would silently describe the whole promotion
+    # by whichever record sorted first.
+    #
+    # This cannot verify that every sink RAN - the expected sink set lives in the job file,
+    # which is not available here - so it checks the stronger thing it can see: that the
+    # records present are mutually consistent.
+    for field in ("identity", "git_commit"):
+        values = {r.get(field) for _, r in records}
+        if len(values) > 1:
+            listed = ", ".join(sorted(str(v) for v in values))
+            raise SystemExit(
+                f"{run_dir} holds records that disagree on '{field}' ({listed}), so it is "
+                f"not one run. Promote a directory written by a single run."
+            )
+
     # `or ""` not `get(..., "")`: `build_prov_record`'s `identity` parameter defaults to
     # None, so a record can carry an explicit null, which the default form would subscript.
     full_identity = records[0][1].get("identity") or ""
