@@ -1,8 +1,8 @@
 name: ci
 
-# One job, deliberately. SPEC 0002 R1.4.2 rules out an R job, a nightly job and a coverage
-# gate; each has its own spec. What this proves is narrow and worth proving: the package
-# builds and its fast suite passes on every interpreter the metadata claims to support.
+# One job, deliberately. An R job, a nightly job and a coverage gate are out of scope here.
+# What this proves is narrow and worth proving: the package builds and its fast suite passes
+# on every interpreter the metadata claims to support.
 on:
   push:
   pull_request:
@@ -13,10 +13,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Both ends of `requires-python = ">=3.11"`. 3.11 is not decoration: a nested
-        # f-string in provenance.py was a SyntaxError there and legal only from 3.12, and
-        # it survived for months because every machine that ran it had 3.13.
-        python-version: ["3.11", "3.12"]
+        # The floor `requires-python` declares, the version between, and the version this is
+        # developed on. The floor is not decoration: some syntax is legal only from 3.12, so a
+        # 3.11 claim that nothing exercises can silently become false. The top is here for the
+        # converse reason - a version the classifiers advertise must be one something runs.
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -30,29 +31,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install ".[dev]"
 
-      # SPEC 0004 R4.4.1: CI runs the SAME command the local gate does, rather than a
-      # hand-copied subset. They had already drifted three ways - `make lint` ran
-      # `ruff format --check` and CI did not, `make check` omitted `deps`, and CI had no
-      # mypy step at all, so the type errors R4.3.2 fixed had nothing stopping an eleventh.
-      # `make check` = lint (ruff check + format), types (mypy), arch (lint-imports), test.
+      # `make check` is the same gate the local one is: lint (ruff check + format), types
+      # (mypy), arch (lint-imports), test. CI runs the target rather than a hand-copied
+      # subset, so the two cannot drift.
       #
-      # R1.4.3 still holds: no step fetches data/real_private/, and none may be added.
+      # Invariant: no step here fetches data/real_private/, and none may be added.
       #
-      # What keeps this green without that tree is NOT the marker selector, despite what an
-      # earlier version of this comment said. `make test` runs `pytest -m "not slow and not
-      # heavy and not real and not r"`, but ZERO tests carry any of those four markers, so
-      # the selector excludes nothing and CI runs the whole suite. The guards are per-test
-      # `pytest.skip` calls, and they are guarding DIFFERENT absences:
-      #   - tests/test_data_manifest.py (4 sites) skips on an absent `data/real_private/`
-      #   - tests/test_artifact_guard.py skips on an absent pre-split artifact under `output/`
-      #   - tests/test_checks_c3_bridge.py and test_r_cross_implementation.py turn on Rscript
-      # Locally, renaming `data/real_private/` away moves 378 passed / 2 skipped to
-      # 374 passed / 6 skipped, exit 0 - nothing errors. That is the LOCAL experiment, not a
-      # prediction of CI's line: a runner also lacks `output/` and lacks Rscript, so its
-      # skip set differs. The claim being made here is only that nothing ERRORS on absence.
-      #
-      # The unused markers are a known gap, recorded in spec/specboundaries04.md under
-      # "Not in this phase". If they are ever applied, this comment must be re-measured.
+      # What keeps the suite green without that tree is per-test `pytest.skip` on the absent
+      # path, NOT the marker selector: no test carries the markers the fast selector names,
+      # so it excludes nothing and the whole suite runs either way.
       - name: make check
         run: make check
 

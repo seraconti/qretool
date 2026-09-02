@@ -1,5 +1,5 @@
-# The src/ layout landed in SPEC 0002. mypy checks the layering root AGENTS.md section 3
-# names; widening it to the whole package is a later phase with its own checkpoint.
+# mypy is scoped to the layering root AGENTS.md names, not the whole package. Widening it
+# is deferred: the modules outside this tree do not type-check yet.
 PKG := src/quebra/core
 FAST := -m "not slow and not heavy and not real and not r"
 
@@ -37,7 +37,19 @@ test-all:
 test-r:
 	pytest -m "r"
 
-## Local only. Touches data/real_private/. not on github actions
+## Local only: `real` needs data/real_private/, and `regression` compares against values
+## pinned from a run over it, so neither may execute on a public runner.
+##
+## The target line is load-bearing. Without it this recipe attaches to `test-r`, and the
+## private-data selector rides along with whatever calls the R target. That exposure is
+## latent, not live: `pytest -m "r"` exits 5 first and make stops on it. It goes live the
+## moment any test carries the `r` marker.
+##
+## Both selectors match no test, so both exit 5. That failure is deliberate - a target
+## reporting "selected nothing" as success is how an unrun tier rots unnoticed. `regression`
+## is additionally not a declared marker: it evaluates false in a `-m` expression, and
+## `--strict-markers` will reject the first test that carries it.
+test-real:
 	pytest -m "real or regression"
 
 ## Commit the provenance of a figure that appears in a publication. output/ is gitignored,

@@ -21,10 +21,10 @@ docs/_build/
 .claude/settings.local.json
 
 # Data: private data never leaves this machine, but its manifest does.
-# SPEC 0003 created these trees and made the dataset root the checkout itself, so the
-# embargoed records now live inside the repository and these rules are what keep them out
-# of it. MANIFEST.toml is the deliberate exception: it inventories the records by sha256 so
-# a result can be audited by someone who will never receive them.
+# The dataset root is the checkout itself, so the embargoed records sit inside the
+# repository and these rules are what keep them out of it. MANIFEST.toml is the deliberate
+# exception: it inventories the records by sha256 so a result can be audited by someone who
+# will never receive them.
 data/real_private/*
 !data/real_private/MANIFEST.toml
 
@@ -34,18 +34,23 @@ data/simulated/*
 !data/simulated/*.json
 
 # Outputs: artifacts are too large to track; run manifests are committed by hand.
-# `output/` is what the tool writes and the one name the specs use. It measures 309M here.
-# The two backup names are kept listed so that restoring either from elsewhere cannot
-# un-ignore it by accident; neither directory exists at present.
+# `output/` is the one directory the tool writes, and it runs to hundreds of megabytes. The
+# two backup names are listed pre-emptively, so that restoring either from elsewhere cannot
+# un-ignore it by accident.
 output/
 output_backup/
 output_backup2/
 
 # Tool caches. `quebra.core.closure` passes `cache_dir=None` so grimp never writes this,
-# but grimp is a runtime dependency now and a default-argument call would recreate it - and
+# but grimp is a runtime dependency and a default-argument call would recreate it - and
 # the cache is keyed on MTIME, so a stale one produces a wrong import graph and an identity
 # that silently stops covering a module.
 .grimp_cache/
+# `make arch` passes --no-cache for the same mtime reason, but a bare `lint-imports` writes
+# this. The directory carries its own nested `.gitignore`, which is already enough to keep
+# git from tracking it - hatchling, however, honours only the ROOT ignore file, so without
+# this rule the cache ships inside the sdist.
+.import_linter_cache/
 
 # OS
 .DS_Store
