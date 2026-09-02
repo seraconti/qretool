@@ -1,0 +1,70 @@
+# Contributing to QUEBRA
+
+QUEBRA is a research toolkit built alongside an MSc thesis. Contributions are welcome, and
+the three things below are what a contributor most often needs.
+
+## How to report a bug
+
+Open an issue at <https://github.com/seraconti/quebra/issues>.
+
+A useful report for this project includes:
+
+- the job file you ran, or the smallest snippet that reproduces the problem
+- the full traceback, not a summary of it
+- the run directory name under `output/` if a job produced one, since it encodes the
+  content identity of the inputs
+- whether R is installed, if the problem involves the copula check
+
+A wrong number matters more than a crash here. If a figure or a statistic looks wrong, say
+what you expected and why, and include the provenance file from the run directory.
+
+## How to get support
+
+Open an issue with the `question` label, or write to the maintainer address in
+`CITATION.cff`. There is no chat channel and no mailing list.
+
+Response is best effort, be kind <3
+
+## How to contribute code
+
+1. Open an issue first for anything larger than a typo. It is cheaper to disagree about an
+   approach in an issue than in a pull request.
+2. Fork, branch from `main`, and keep the branch focused on one change.
+3. Run the gates before you push:
+
+   ```bash
+   make check     # lint, types, import contract, tests - what CI runs
+   make deps      # dependency declarations
+   ```
+
+4. Open a pull request describing what changed and what you ran.
+
+### What the reviewer will look for
+
+**A test that fails without your change.** A test that passes either way documents nothing.
+A test that asserts a statistical result must name its oracle: an analytic value, a
+reference implementation, or a simulation truth. `tests/` is currently flat; the six-tier
+layout described in `AGENTS.md` is not built yet.
+
+**Claims that match the code.** A number in a docstring must come from the artifact it
+cites. If a value cannot be checked cheaply, write it as the open question it is rather than
+asserting it.
+
+**Errors raised, not swallowed.** This is a reproducibility tool, so a silent fallback
+produces a wrong-but-plausible result, which is worse than a crash.
+
+**Units on physical quantities.** Suffixes such as `_hz`, `_rel_s`, `_unix_s` are load
+bearing. Unit and clock mismatch is the costly bug class in this codebase.
+
+**The locked vocabulary.** `window`, `read`, `bag`, `check`, `band`, `scan clock`,
+`window age` and `birth type` have one meaning each and are never substituted. The two
+analysis tiers are `within-calibration` and `across-calibration`.
+
+### Style
+
+Spaced hyphens, never em dashes, in every docstring, comment and document. Short
+declarative paragraphs. Do not claim a result you have not measured.
+
+## Code of conduct
+
+Participation is governed by `CODE_OF_CONDUCT.md`.

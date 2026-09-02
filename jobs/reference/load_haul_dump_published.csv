@@ -1,0 +1,10 @@
+quantity,value
+tau_h,2000.0
+mu_hat,54.72
+sigma_tilde,47.23
+gamma_tilde,0.85
+laplace,0.605
+lr_sigma_star,0.774
+sigma_hat,48.61
+gamma_hat,0.888
+lr_gamma_hat,0.681

@@ -1,0 +1,94 @@
+"""The packaged fixtures must work for someone who has none of our data.
+
+That is their whole reason to exist, so these tests check the property a
+reviewer depends on - the fixture is reachable from the installed package and runs the real
+pipeline - rather than the numbers in it.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+import quebra.analyzers.t2star as t2star
+from quebra._fixtures import FIXTURES, fixture_path
+from quebra.core.dataset import Dataset
+from quebra.core.job import _load_dataset
+
+
+def test_every_declared_fixture_exists():
+    for name in FIXTURES:
+        assert fixture_path(name).is_file()
+
+
+def test_an_unknown_fixture_is_refused_by_name():
+    with pytest.raises(KeyError, match="unknown fixture"):
+        fixture_path("no_such_file.csv")
+
+
+def test_the_fixture_path_comes_from_importlib_resources():
+    """It must come from the imported package, wherever that was installed.
+
+    The previous version compared `fixture_path(...)` with `module.fixture_path(...)` - the
+    same function object, the second call served from the module's cache - so it asserted
+    `x == x` and would have passed for `Path(__file__).parent / name`, the implementation it
+    exists to forbid. It is compared against `importlib.resources` directly now.
+    """
+    from importlib import resources
+
+    expected = Path(str(resources.files("quebra._fixtures") / "ramsey_synthetic.csv"))
+    assert fixture_path("ramsey_synthetic.csv") == expected
+
+
+def test_the_fixture_sits_inside_the_imported_package():
+    """Stronger form: wherever quebra was installed, the fixture is under that directory."""
+    import quebra._fixtures as module
+
+    package_dir = Path(module.__file__).parent.resolve()
+    assert fixture_path("ramsey_synthetic.csv").resolve().parent == package_dir
+
+
+def test_the_ramsey_fixture_loads_through_the_default_normaliser():
+    norm = _load_dataset(
+        Dataset(
+            path=fixture_path("ramsey_synthetic.csv"),
+            qubit=1,
+            device="synthetic",
+            extra={"run_name": "ramsey_synthetic", "run_start_unix_s": 1.7e9},
+        )
+    )
+    assert norm["t_rel_s"][0] == 0.0
+    assert len(norm["t_rel_s"]) == 200
+    assert "T2star_s" in norm and "T2star_error_s" in norm
+    assert norm["meta"]["run_start_resolution"] == "explicit"
+
+
+def test_the_ramsey_fixture_runs_the_real_t2star_analyzer():
+    """The point of shipping it: a reviewer with no private data reaches a real result."""
+    norm = _load_dataset(
+        Dataset(
+            path=fixture_path("ramsey_synthetic.csv"),
+            qubit=1,
+            extra={"run_start_unix_s": 1.7e9},
+        )
+    )
+    result = t2star.run(t2star.make_inputs_from_norm(norm))
+    assert len(result.frame) == 200
+    assert np.all(result.frame["t2star_s"] > 0)
+
+
+def test_the_fixture_carries_the_step_it_claims_to():
+    """A fixture with no structure would let every downstream figure look correct while
+    proving nothing, so the step is part of the contract, not an accident of the seed."""
+    norm = _load_dataset(
+        Dataset(
+            path=fixture_path("ramsey_synthetic.csv"),
+            qubit=1,
+            extra={"run_start_unix_s": 1.7e9},
+        )
+    )
+    t2 = np.asarray(norm["T2star_s"], dtype=float)
+    before, after = t2[:130].mean(), t2[140:].mean()
+    assert before - after > 8e-6, f"step not present: {before:.2e} -> {after:.2e}"

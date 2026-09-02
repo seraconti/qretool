@@ -1,0 +1,47 @@
+name: ci
+
+# One job, deliberately. An R job, a nightly job and a coverage gate are out of scope here.
+# What this proves is narrow and worth proving: the package builds and its fast suite passes
+# on every interpreter the metadata claims to support.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor `requires-python` declares, the version between, and the version this is
+        # developed on. The floor is not decoration: some syntax is legal only from 3.12, so a
+        # 3.11 claim that nothing exercises can silently become false. The top is here for the
+        # converse reason - a version the classifiers advertise must be one something runs.
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the package and the test runner
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev]"
+
+      # `make check` is the same gate the local one is: lint (ruff check + format), types
+      # (mypy), arch (lint-imports), test. CI runs the target rather than a hand-copied
+      # subset, so the two cannot drift.
+      #
+      # Invariant: no step here fetches data/real_private/, and none may be added.
+      #
+      # What keeps the suite green without that tree is per-test `pytest.skip` on the absent
+      # path, NOT the marker selector: no test carries the markers the fast selector names,
+      # so it excludes nothing and the whole suite runs either way.
+      - name: make check
+        run: make check
+
+      - name: make deps
+        run: make deps

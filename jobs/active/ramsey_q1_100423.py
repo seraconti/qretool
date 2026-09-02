@@ -1,27 +1,45 @@
+"""Archetype: full Ramsey job - Allan, fidelity and TLF via configure_ramsey_job.
+
+One of four representative jobs kept in jobs/active. The rest of the historical fleet
+lives in jobs_old/ as reference only; those files predate the current contracts and do
+not run. Iterate on this file, then fan it out.
+
+Shape: load -> lookup_prior (enrich with calibration frequencies) -> configure_ramsey_job.
+`configure_ramsey_job` owns the filter/interpolate/Allan/fidelity/TLF wiring; the
+threshold ladder and window carving belong to the t2star archetype, not here.
+"""
+
 from __future__ import annotations
 
-from core.dataset import Dataset
-from core.job import Job
-from jobs.common import RAMSEY_CONFIG, _filter_step, _final_stage, configure_ramsey_job
-from schemas.track912 import track912Schema
-from transforms.lookup_prior import lookup_prior
-import analyzers.t2star as t2star
-from analyzers.t2star import T2StarResult
-from panels.non_repairable import NonRepairablePanel, NonRepairablePanelData
+from quebra.core.dataset import Dataset
+from quebra.core.job import Job
+from quebra.recipes import configure_ramsey_job
+from quebra.schemas.track912 import track912Schema
+from quebra.transforms.lookup_prior import lookup_prior
 
-job = Job('ramsey_q1_100423')
+# The logical name and category. `include` resolves JOB_ID, so this
+# file can move without breaking any composite; recategorising costs one string edit.
+JOB_ID = "ramsey_q1_100423"
+JOB_FAMILY = "ramsey"
+
+PREFIX = "q1_13h_1004_dataset"
+
+job = Job("ramsey_q1_100423")
 main_ds = Dataset(
-    path='tool/datasets/6D2S/100423_6D2S_qubit1.pickle',
+    path="data/real_private/6D2S/100423_6D2S_qubit1.pickle",
     schema=track912Schema,
     qubit=1,
-    device='6D2S',
+    device="6D2S",
     duration_h=13,
-    extra={"run_name": 'q1_13h_1004_dataset'},
+    extra={"run_name": PREFIX},
 )
-comp_ds = Dataset(path='FOR ZENODO/Main/Fig 2/qubit1.pickle', schema=None)
+comp_ds = Dataset(path="data/real_private/companion/qubit1.pickle", schema=None)
 
 main_node = job.load(main_ds)
 comp_node = job.load_df(comp_ds)
+
+# Source columns keep their published names and map to the canonical unit-suffixed
+# keys the analyzers expect.
 enriched = job.step(
     lookup_prior,
     main_node,
@@ -34,48 +52,10 @@ enriched = job.step(
 configure_ramsey_job(
     job,
     enriched,
-    profile='overnight',
+    profile="overnight",
     include_fidelity=True,
     include_tlf=True,
     allan_fractional=True,
-    allan_carrier_col='qubit_frequency_hz',
-    figure_prefix='q1_13h_1004_dataset',
-)
-
-# T2* thresholds for this dataset.
-# Values match T2STAR_DEFAULT_LADDER; declared here explicitly
-# so the threshold choice is visible at the job level.
-# For devices outside the 1–10 µs T2* range, supply different values.
-_T2STAR_THRESHOLDS: list[tuple[str, float, bool]] = [
-    ("1 µs",  1e-6,  True),
-    ("2 µs",  2e-6,  True),
-    ("3 µs",  3e-6,  True),
-    ("4 µs",  4e-6,  True),
-    ("5 µs",  5e-6,  True),
-    ("6 µs",  6e-6,  True),
-    ("7 µs",  7e-6,  True),
-    ("8 µs",  8e-6,  True),
-    ("9 µs",  9e-6,  True),
-    ("10 µs", 10e-6, True),
-]
-
-_t2star_filtered = job.step(_filter_step(RAMSEY_CONFIG), main_node, name="t2star_filter")
-_t2star_final = job.step(_final_stage, _t2star_filtered, name="t2star_final_filter_stage")
-
-
-def _t2star_run(norm: object) -> T2StarResult:
-    return t2star.run(t2star.make_inputs_from_norm(norm))  # type: ignore[arg-type]
-
-
-def _t2star_panel_data(result: T2StarResult) -> NonRepairablePanelData:
-    return t2star.make_panel_data(result, thresholds=_T2STAR_THRESHOLDS)
-
-
-_t2star_result = job.step(_t2star_run, _t2star_final, name="t2star")
-_t2star_panel = job.step(_t2star_panel_data, _t2star_result, name="t2star_panel_data")
-job.figure(
-    NonRepairablePanel,
-    _t2star_panel,
-    targets=["static", "academic"],
-    title="q1_13h_1004_dataset_t2star",
+    allan_carrier_col="qubit_frequency_hz",
+    figure_prefix=PREFIX,
 )

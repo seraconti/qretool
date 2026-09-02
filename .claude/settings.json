@@ -1,0 +1,59 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read(./**)",
+      "Edit(./**)",
+      "Bash(make:*)",
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(mypy:*)",
+      "Bash(lint-imports:*)",
+      "Bash(deptry:*)",
+      "Bash(sphinx-build:*)",
+      "Bash(git status)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git blame:*)",
+      "Bash(git mv:*)",
+      "Bash(mv:*)",
+      "Bash(cp:*)",
+      "Bash(mkdir:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)"
+    ],
+    "ask": [
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(Rscript:*)",
+      "Bash(R:*)",
+      "Bash(bash:*)",
+      "Bash(sh:*)",
+      "Edit(pyproject.toml)",
+      "Edit(.gitignore)",
+      "Edit(Makefile)",
+      "Edit(AGENTS.md)",
+      "Edit(CLAUDE.md)",
+      "Edit(spec/PLAN.md)",
+      "Edit(.github/**)",
+      "Edit(.claude/**)"
+    ],
+    "deny": [
+  "Edit(tool/datasets/**)",
+  "Edit(output/**)",
+  "Edit(output_backup/**)",
+  "Edit(output_backup2/**)",
+  "Edit(data/**)",
+  "Edit(outputs/**)"
+    ]
+  }
+}
