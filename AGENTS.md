@@ -85,6 +85,23 @@ frequency keys: `rabi_hz`, `qubit_frequency_hz`, `raw_frequency_hz`, `delta_hz`.
 a wrong-but-plausible result. `Job.load()` raises rather than defaulting `run_start` to
 `t_raw[0]`, which would be roughly 1970.
 
+**`icontract` preconditions only where a violation SHOULD abort.** It is a runtime dependency
+and it is used in exactly one module, `analyzers/kaplan_meier.py`. It is FORBIDDEN under
+`analyzers/checks/`: `icontract.ViolationError` subclasses `AssertionError`, not `ValueError`,
+so it escapes the `except (ValueError, KeyError)` that `analyzers/check_ledger.py` uses to turn
+a check failure into a reported row, and would kill a run that is supposed to draw a band with
+a `not computed` cell beside it. A check outcome never stops execution. Enforced by
+`tests/test_contract_boundary.py`, not by this paragraph.
+
+**A file earns its existence from a consumer or a boundary, never from a line count.** Split on
+a layer the two halves must not cross (drawing or disk on one side, a pure step on the other), on
+a fan-in of three or more sibling importers, or on a piece whose docstring declares it
+replaceable. Otherwise one file per consumer: a module serving one figure keeps its vocabulary,
+typed artifacts, helpers and output-builder together, as `analyzers/independence_survey.py` does.
+A contract split across six files is a contract no reader can see, so fragmentation costs more
+than length. Judge size against the largest single-consumer module already in the same package,
+not against a quota.
+
 **Results are typed dataclasses, not raw dicts**, each defined in the file with the step that
 returns it. Analyzers use `make_inputs_from_norm(...)` then `run(inputs)`.
 
@@ -149,9 +166,22 @@ Violating these is a scientific error, not a style problem. None of them fails a
 threshold crossings; measured loss is roughly 25 to 45 percent of real crossings at working
 thresholds. If a function needs regular spacing, it is the wrong function.
 
-**Statistical licensing.** The Kaplan-Meier confidence band and the k-sample log-rank comparison
-are two consequences of one assumption. A failed serial-independence check revokes both together.
-Never report a band from a scan whose checks failed.
+**Statistical licensing.** The Kaplan-Meier confidence band rests on the renewal assumption
+(`analyzers/assumptions.a1_renewal_durations`), and so would a k-sample log-rank comparison when
+one exists - it does not today, and `kaplan_meier.compare()` returns a DISTANCE, not a test.
+
+**A band is never reported without its check outcome attached**, and the attached outcome must
+name which checks were asked for and which produced no answer. Attachment is a FIELD on the band
+artifact (`KaplanMeierComparison.checks_asked` / `checks_unanswered` / `check_verdicts`), not two
+sibling files in one directory: a reader who opens the band alone must still see what was
+checked. Empty means NOT ASSESSED, and `check_summary()` says so - which is a different claim
+from "assessed and nothing rejected". A grid of `not computed` cells satisfies the letter of
+"attached" and says nothing, which is why the naming half is part of the rule.
+
+The band is ALWAYS computed and ALWAYS drawn. A failed check annotates it and never suppresses
+it: control flow that depends on what the data happened to say is unpredictable, and a reader is
+better served by a band they are told not to trust than by a missing one. Promoting a check to an
+actual gate is an open question (`spec/quebraplan.md` section 7), not current behaviour.
 
 **Locked vocabulary.** These are not synonyms and must never be substituted.
 
@@ -166,7 +196,10 @@ Never report a band from a scan whose checks failed.
 - `in-spec fraction` for the within-calibration quantity. `availability` is reserved for the
   across-calibration systems tier.
 - Load-bearing terms, never reworded: **window, read, bag, check, band, scan clock, window age,
-  birth type**.
+  birth type, run-set, display-set, check outcome**.
+- `check outcome`, never "trust annotation" or similar. The code's word is `verdict`, and both
+  the ledger and the survey exist to stop a non-rejection reading as reassurance; "trust" invites
+  exactly that reading.
 
 ---
 
@@ -272,6 +305,10 @@ the test name or the first line of the docstring: an analytic value, a reference
 or a simulation truth. A test that cannot name an oracle is a change detector, not evidence.
 Do not write tests that assert what the code currently returns.
 
+**Test files are indexed by oracle and subject, not by source module.** Two test files sharing
+both an oracle and a subject are one file, at any length: splitting them duplicates the fixture
+and leaves neither able to show which one is the evidence.
+
 Tests requiring R **skip** when `Rscript` is absent. They never pass with mocked values.
 
 ---
@@ -295,7 +332,6 @@ This repo has drifted here before. Hold the line.
   out of this file.
 - No status or progress tables in agent-facing docs; they go stale. Track status in commits and
   issues.
-- Prefer small, single-purpose files. The reviewer flags files that have grown unwieldy.
 
 ---
 
@@ -309,12 +345,23 @@ CHECKPOINT <n.n> - <one line: what this checkpoint achieved>
 
   Changed:      <paths>  (<count> files)
   Gates run:    ruff <exit> | pytest <exit> (<n> passed) | <other> <exit>
+  Budget:       collect +<actual> of +<low>..+<high> stated | files +<actual> of +<stated>
   Not done:     <what a reader might assume was done but was not>
   Known risk:   <what could break, especially cached identities>
   Suggested:    <conventional-commit message, one line>
 
   Review `git diff` and commit if you see fit. I will not proceed until you say so.
 ```
+
+**`Budget` is a STOP, not a report.** Every requirement in a phase spec states an expected
+collect delta and file count. Exceeding either by more than 2x halts the phase: print the banner,
+say which requirement overran and why, and wait. Do not carry the overrun into the next
+checkpoint.
+
+The line exists because the numbers already did and were absorbed anyway. SPEC 0008's
+per-requirement envelopes summed to +19 to +34; the phase landed at +99, every envelope exceeded
+2 to 4x, at every checkpoint, while the spec's own "any difference explained rather than absorbed"
+went unenforced. A budget nothing halts on is a budget that is not being kept.
 
 `Not done` and `Known risk` are mandatory and must not read "none" unless that is literally true.
 They are what makes the diff review fast. Do not proceed past a checkpoint on your own
@@ -333,6 +380,17 @@ These apply to every docstring, comment, spec, ADR and doc page you write.
 - Short declarative paragraphs. Colon expansions over dense subordinate clauses.
 - Never invent a section number, equation number, figure number, or citation. If you do not know
   the locator, write "no source located".
+- **A module docstring states what the module is for and what contract it holds, not how the
+  author got there.** "Arm C turned out to be a null arm" and "looking a row up by its display
+  label silently missed every cell" are debugging history: they date on the first refactor and
+  teach nothing about the code in front of the reader. If a past bug still constrains the design,
+  state the constraint. This binds code you write or edit; instances already committed, such as
+  `jobs/bench/arms.py`, are not a cleanup errand.
+- **No spec or phase identifier in a source docstring.** `SPEC 0008 R8.x` in a header is a phase
+  artifact left in a permanent file, and it outlives the phase by years. Cite a spec mid-file
+  where one decision needs its source, as the existing `quebraplan` references do.
+- **Section 8's ban on normative deferred design covers docstrings.** Write what the module does
+  now, not what it is positioned to become.
 - Statistical docstrings carry a `Validity assumptions` section with four fields per assumption:
   assumption, diagnostic, consequence of violation, reference.
 - Specs and docs in Markdown, not LaTeX. What makes a spec work is numbered requirements,
