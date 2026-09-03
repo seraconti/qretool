@@ -74,56 +74,37 @@ a symmetric excursion drives Spearman to zero by construction.
 
 ---
 
-## WithinCalibrationPanelData - full field reference
+## WithinCalibrationPanelData - what it holds
+
+Three band artifacts plus render flags. The per-read arrays a reader might expect here
+(`t_h`, `values`, `sigma`, `gap_spans_h`) live on `SignalBand`; polarity is per threshold, the
+third element of each `thresholds` tuple.
 
 ```python
-@dataclass
-class WithinCalibrationPanelData:
-    # Required
-    t_h: np.ndarray            # time in hours (x-axis for all subplots)
-    primary_series: np.ndarray # metric values (same units as thresholds)
-    primary_label: str         # y-axis label, e.g. "Infidelity"
-    thresholds: list[tuple[str, float, bool]]  # (label, value, big_values_good); empty = no threshold views
-    meta: dict[str, object]    # key-value pairs shown in summary text (≤4 items displayed)
-
-    # Optional
-    traces: list[tuple[str, np.ndarray]] | None  # extra series for zoom/binned subplots
-    use_log_scale: bool         # semilogy on primary panel (default False)
-    higher_is_better: bool      # True → above threshold = green (default True)
-    color: object               # matplotlib color for primary trace (default "C0")
-
-    # R1 additions
-    damage_fn: Callable[[np.ndarray], np.ndarray] | None
-        # Applied to per-threshold excess before integration in cumulative-damage
-        # computation. None = linear default (identity on excess).
-        # Signature: (excess: np.ndarray) -> np.ndarray
-        # The panel does NOT mutate PanelData; damage_fn is called read-only.
-
-    include_cumulative_time: bool    # render cumulative time-out-of-spec subplot (default True)
-    include_cumulative_damage: bool  # render cumulative damage subplot (default True)
-    include_mttr: bool               # include first-crossing times in summary text (default True)
-
-    # from the window/read tables
-    primary_sigma: np.ndarray | None
-        # per-read 1-sigma on primary_series, same units. Drawn as error bars under
-        # the trace; snapshotted y-limits keep it from driving autoscale.
-    gap_spans_h: list[tuple[float, float]]
-        # (t_before, t_after) per read gap. The trace is BROKEN across these - a line
-        # through unobserved time is an interpolation the data does not support.
-    timeline_segments_per_threshold: dict[str, list[tuple[float, float, str]]]
-        # (t_start_h, t_end_h, state) runs. Required per threshold by __post_init__.
-
-    # big_values_good is per-threshold (third element of each threshold tuple):
-    #   False: above threshold = out-of-spec (lower is better, e.g. infidelity)
-    #   True:  below threshold = out-of-spec (higher is better, e.g. T2*)
+signal: SignalBand              # analyzers/signal_band.py
+distinguish: DistinguishBand    # analyzers/distinguish_band.py
+reliability: ReliabilityBand    # analyzers/reliability_band.py
+meta: dict[str, object]
+thresholds: list[tuple[str, float, bool]]   # (label, value, big_values_good)
+primary_label: str
+traces: list[tuple[str, np.ndarray]] | None
+use_log_scale: bool
+color: object
+include_cumulative_time: bool
+include_cumulative_damage: bool
+include_ttf: bool
 ```
+
+Each band is replaceable without touching the others, which is why they are three modules and
+not one. `analyzers/within_calibration_data.py` is the typed contract; read it rather than a
+field list here, which is what went stale.
 
 ---
 
 ## Panel-internal computations
 
 The following are computed by `build_within_calibration_panel_data` from
-`(t_h, primary_series, thresholds, direction, damage_fn)` plus the window and read
+`(t_h, values, thresholds, damage_fn)`, polarity per threshold, plus the window and read
 tables. They are NOT separate metric modules. No analyzer module should reimplement
 them.
 
@@ -134,13 +115,13 @@ raises rather than carving a second time.
 
 | Computation | Method | Integration rule | Notes |
 |---|---|---|---|
-| Threshold compliance timeline | `_timeline_segments` | - | Gantt bars over per-read `state`; 2 or 4 states depending on `use_uncertainty` |
+| Threshold compliance timeline | `distinguish_band._timeline_segments` | - | Gantt bars over per-read `state`; 2 or 4 states depending on `use_uncertainty` |
 | Window survival | `_window_survival` | - | Empirical survival, **censored windows dropped** |
 | CV, initial value, range | `_draw_summary` | - | Summary text |
 | Per-threshold window stats | `_analyze_threshold_windows` + `_carve_counts` | - | Above/below counts, mean, p90, plus `n_windows`, `n_censored`, `n_endurance_bags`, `n_gaps` |
 | **Cumulative time out of spec** | `_cumulative_time_out_of_spec` | Left-Riemann | Step-function indicator; result in hours |
 | **Cumulative damage** | `_cumulative_damage` | Trapezoidal | Continuous damage_rate; result in primary_unit · h |
-| **MTTR (first crossing time)** | `_mttr` | - | Scalar per threshold; shown in summary text |
+| **TTF (first crossing time)** | `_ttf` | - | Scalar per threshold; shown in summary text |
 
 ### Why left-Riemann for time out of spec, trapezoidal for damage
 
@@ -160,14 +141,14 @@ Polarity is per-threshold - different thresholds in the same panel can have
 different polarities.
 
 For `big_values_good=False` (e.g. infidelity - lower is better):
-  - `out_of_spec[i] = primary_series[i] > threshold_value`
-  - `excess[i] = max(primary_series[i] - threshold_value, 0)`
-  - TTF: first `i` where `primary_series[i] > threshold_value`
+  - `out_of_spec[i] = values[i] > threshold_value`
+  - `excess[i] = max(values[i] - threshold_value, 0)`
+  - TTF: first `i` where `values[i] > threshold_value`
 
 For `big_values_good=True` (e.g. T2* - higher is better):
-  - `out_of_spec[i] = primary_series[i] < threshold_value`
-  - `excess[i] = max(threshold_value - primary_series[i], 0)`
-  - TTF: first `i` where `primary_series[i] < threshold_value`
+  - `out_of_spec[i] = values[i] < threshold_value`
+  - `excess[i] = max(threshold_value - values[i], 0)`
+  - TTF: first `i` where `values[i] < threshold_value`
 
 ### Default damage_fn
 
@@ -197,7 +178,7 @@ curve (the window table) answer different questions and do not have to agree:
 Both are correct for what they measure. Do not read the summary `count` as the number of
 windows in the window table.
 
-`window_survival_per_threshold` is an empirical survival function over **uncensored**
+`ReliabilityBand.survival_curve_min` is an empirical survival function over **uncensored**
 window lengths only: `S(x) = #{w >= x} / n`. `analyzers/kaplan_meier.py` uses the censored
 windows rather than discarding them; this field does not, and the two are not interchangeable.
 
@@ -229,34 +210,16 @@ a window boundary.
 
 ## Layout
 
-Two axes variants depending on flags:
+Built in `panels/within_calibration.py`'s `build_matplotlib` from a row list, so the row set
+depends on the include flags and the height is dynamic. Fixed width 16 inches.
 
-**8-axis layout** (default - both cumulative flags True):
-```
-Row 0: primary (spans 2 cols)                  height ratio 1.8
-Row 1: threshold timeline (spans 2 cols)        height ratio 0.9
-Row 2: detail view (col 0) | 30-min stats (col 1)  height ratio 3.2
-Row 3: survival (spans 2 cols)                  height ratio 2.0
-Row 4: cum. time (col 0) | cum. damage (col 1)  height ratio 2.0  [R1]
-Row 5: summary text (spans 2 cols)              height ratio 1.2
-Figure: 14 × 18.5 inches
-```
+Rows, in order: `signal`, `distinguish_timeline`, `distinguish_detail`,
+`reliability_timeline`, `survival`, `cumulative` (flagged), `summary`. Band 1's row subdivides
+into primary plus value / sigma / relative-error histograms; band 2's detail row is a shape
+heatmap with xi and rho sub-panels.
 
-**6-axis layout** (both cumulative flags False):
-```
-Row 0: primary (spans 2 cols)
-Row 1: threshold timeline (spans 2 cols)
-Row 2: detail view | 30-min stats
-Row 3: survival (spans 2 cols)
-Row 4: summary text (spans 2 cols)
-Figure: 14 × 16 inches
-```
-
-Mixed (only one flag True): the single new subplot spans both columns in row 4.
-
-MTTR first-crossing times are always in the **summary text** (row 5/4), not
-in a separate subplot. This keeps scalar-per-threshold outputs out of the
-2D plot space.
+No diagram is reproduced here. The row list and its height ratios are one literal in
+`build_matplotlib`; a copy in this file goes stale silently, and the previous copy did.
 
 ---
 
@@ -266,20 +229,21 @@ To add a new metric that uses `WithinCalibrationPanel`:
 
 1. Write a compute function or analyzer that returns a typed result.
 2. Write an adapter function `make_<metric>_panel_data(result) -> WithinCalibrationPanelData`.
-   Set `t_h`, `primary_series`, `thresholds`, `direction`, and other fields.
+   Set `t_h`, `values` and `sigma` on the `SignalBand`, and `thresholds` (whose third
+   element carries polarity) on the panel data.
 3. Write a plot class that calls the adapter and delegates to `WithinCalibrationPanel`.
 
 **No metric needs to modify the panel.** The panel's internal computations
 (including cumulative time, cumulative damage, and MTTR) cover the standard
 within-calibration degradation analysis surface. Only add panel-internal
-computation if a new view is fundamentally about `(t, primary_series,
+computation if a new view is fundamentally about `(t, values,
 thresholds)` and cannot be expressed as a step result or adapter field.
 
 ### What is panel-internal forever (R1 decision)
 
 Cumulative time out of spec, cumulative damage, and MTTR are **not**
 candidates for separate analyzer modules. They are panel-internal views
-derived from `(t, primary_series, thresholds, direction, damage_fn)`. Any
+derived from `(t, values, thresholds, damage_fn)`. Any
 metric that supplies these inputs automatically gets all three views.
 
 ---
@@ -289,7 +253,7 @@ metric that supplies these inputs automatically gets all three views.
 `analyzers/fidelity.py::make_panel_data(result: FidelityResult, ...) -> WithinCalibrationPanelData`
 
 Decisions made by the adapter:
-- `primary_series` = infidelity (clipped to ≥ 1e-16 for log scale)
+- `values` = infidelity (clipped to ≥ 1e-16 for log scale)
 - `primary_label` = "Infidelity"
 - `thresholds` = "nines" thresholds in infidelity units (e.g. 0.01 = 99%
   fidelity, 0.001 = 99.9%) - only thresholds that the data actually
@@ -302,8 +266,11 @@ Decisions made by the adapter:
 
 ## File size note
 
-`panels/within_calibration.py` is five times the project's 200-line guideline. A line count
-written here goes stale silently, so it is not repeated; `wc -l` is the source.
+`panels/within_calibration.py` is the largest module in the tree by a wide margin, and it is
+past what one reader holds in a single pass. This repo sets no line quota - a file is judged
+against the largest single-consumer module in its own package - so the case against this one is
+the reading cost, not a number. A line count written here goes stale silently, so it is not
+repeated; `wc -l` is the source.
 
 The split is partly done: `analyzers/within_calibration_compute.py`
 builds the artifact, `analyzers/within_calibration_data.py` is the typed contract, and
@@ -311,3 +278,44 @@ builds the artifact, `analyzers/within_calibration_data.py` is the typed contrac
 main file is the
 drawing sequence, which is still the largest module in the tree. A further split does not
 change any public API and can be done at any time.
+
+
+---
+
+## How a check verdict reaches a panel
+
+`docs/iid_checks/iid_checks_basics.md` said the durable half of that page folds here once the
+licence wiring was decided. SPEC 0008 decided it, and the decision was that there is no licence
+and no gate: a verdict ANNOTATES a figure and never suppresses one.
+
+The path, and where each decision is made:
+
+| stage | module | decides |
+|---|---|---|
+| run | `analyzers/check_ledger.run` | scores each check into a verdict from the p-value, the event count and the bench cell |
+| select | `analyzers/check_selection` | the **run-set** (which rows are computed) and the **display-set** (which reach a figure), independently, over the full `(check_id, calibration, variant)` key |
+| build | `analyzers/check_outcome.build_check_outcome` | reshapes the selected rows into one `OutcomeGrid` per displayed key |
+| draw | `plots/check_outcome_plot` | colour from `theme.verdict_color`, and nothing else |
+
+Four rules a panel author has to keep.
+
+**A verdict never gates a draw.** The estimate is always computed and always drawn. A `fail`
+changes a cell's colour and the caption; it does not remove a band, a curve or a panel. Control
+flow that branches on what the data said is unpredictable, and a reader is better served by an
+estimate they are told not to trust than by a missing one.
+
+**Absent is not the same as not computed.** `check_ledger.VERDICT_NOT_COMPUTED` means the check
+ran and declined to answer; `VERDICT_ABSENT` means there is no row for that cell at all. They
+carry different tones because a reader who cannot tell them apart cannot tell "we asked and got
+nothing" from "we never asked". A builder that collapses them is wrong even when the figure
+looks fine.
+
+**The selection is a step kwarg, never a sink-loop filter.** Tuples of strings are what
+`core/closure.py` will render into a run identity, so a run-set and a display-set reach
+`.prov.json` and the Mermaid label. A filter applied while declaring `job.figure` sinks reaches
+neither, and the figure then cannot say what it was asked to show.
+
+**The renderer states, it does not conclude.** Which checks appear is resolved in the
+output-builder. The panel says what the verdict is and what the check's null was; it does not
+tell the reader what to infer. `panels/_within_calibration_render.shape_annotation` is the older
+instance of the same rule.

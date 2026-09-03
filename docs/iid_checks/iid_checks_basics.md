@@ -1,8 +1,16 @@
 # The iid checks - what they test, and what their answers are worth
 
-Working reference for `analyzers/checks/` and the
-calibration study in `jobs/bench/`. When the licence wiring is decided, the durable parts fold
-into `docs/PANEL_CONTRACT.md` (how a check reaches a panel) and the rest is deleted.
+Working reference for `analyzers/checks/` and the calibration study in `jobs/bench/`.
+
+SPEC 0008 decided the licence wiring, and "how a check verdict reaches a panel" has folded into
+`docs/PANEL_CONTRACT.md` as that sentence promised. The rest of this page is DELIBERATELY KEPT
+rather than deleted, which is a stated deviation from the original plan: these pages are the
+citation home for the assumption records in `analyzers/assumptions.py`, and they carry the
+equation numbers and the per-check limitations that a reader checking a transcription needs.
+Deleting them would move that material nowhere.
+
+The decision itself, so this page does not have to be read for it: there is no licence and no
+gate. A verdict annotates a figure and never suppresses one.
 
 This is the first directory in `docs/` to carry citations. That is deliberate: these are
 implementations of published statistics and the equation numbers are load-bearing - a
@@ -17,7 +25,7 @@ The panel carves a metric into in-spec **windows**. Reliability arithmetic on th
 renewal process: independent, identically distributed, no trend. If they do not, the
 arithmetic still produces numbers, and the numbers are wrong in ways nothing else catches.
 
-Five checks ask whether that assumption survives contact with the data.
+Six checks ask whether that assumption survives contact with the data.
 
 | check | null it tests | rejects when |
 |---|---|---|
@@ -26,6 +34,7 @@ Five checks ask whether that assumption survives contact with the data.
 | C3 copula serial independence | full serial independence at all lags | any lag shows dependence |
 | C5 rank autocorrelation | zero rank autocorrelation | consecutive durations covary |
 | C6 exchangeability | order carries no information | any departure from exchangeability |
+| CvM Cramer-von Mises | renewal process | event times are not uniform on `[0, tau]` |
 
 They are not redundant, but two of them are close. Measured against C6 as the reference,
 C5 agrees with it to a mean absolute difference of 0.014-0.016 in rejection rate over 192
@@ -86,6 +95,8 @@ over 336 cells and 480,000 replicates. Its verdicts:
 |---|---|---|
 | C1, C2 permutation | PROMOTE | size holds across 80 null cells; mean power 0.60/0.61 at n = 100 |
 | C1, C2 asymptotic | REJECT | oversized inside the envelope (worst z = 10.8 and 7.0) |
+| CvM permutation | PROMOTE (worst z = 2.56 over 90 null cells) |
+| CvM asymptotic | REJECT (worst z = 5.54 over 56 null cells) |
 | C5, C6 | HOLD | correctly calibrated, but underpowered where it matters |
 | C3 | RUNS, UNCALIBRATED | exercised under Rscript 4.5.3 with `copula`; smoke-tested on iid input only - no bench cell, no size or power evidence |
 

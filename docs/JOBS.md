@@ -7,7 +7,7 @@ Every job declares a `JOB_ID` (the logical name `job.include` resolves) and a
 `JOB_FAMILY` (its category). Neither is its directory: a job can move without
 breaking any composite, and recategorising costs one string edit.
 
-12 jobs in 6 families.
+13 jobs in 6 families.
 
 ## independence
 
@@ -15,6 +15,7 @@ breaking any composite, and recategorising costs one string edit.
 |---|---|---|---|---|
 | `check_ledger_q1` | `jobs/composite/check_ledger_q1.py` | `jobs/bench/results/size_table.csv` | `t2star_q1_070423`<br>`t2star_q1_100423` | `ALPHA=0.05`<br>`LAG_MAX=5`<br>`MIN_EVENTS_PASS=35`<br>`N_PERMUTATIONS=999`<br>`SEED=20260812`<br>`TIE_CUTOFF_DISTINCT=5` |
 | `independence_survey` | `jobs/composite/independence_survey.py` | `jobs/bench/results/size_table.csv` | — | `ALPHA=0.05`<br>`C3_N_NULL_SIM=200`<br>`GAP_MULT=10.0`<br>`INCLUDE_C3=True`<br>`K=1.0`<br>`LAG_MAX=5`<br>`MIN_EVENTS_PASS=35`<br>`N_PERMUTATIONS=999`<br>`PREFIX='independence_survey'`<br>`SEED=20260814`<br>`TIE_CUTOFF_DISTINCT=5`<br>`USE_UNCERTAINTY=True` |
+| `km_with_checks_6d2s` | `jobs/active/km_with_checks_6d2s.py` | `jobs/bench/results/size_table.csv` | — | `ALPHA=0.05`<br>`GAP_MULT=10.0`<br>`LAG_MAX=5`<br>`MIN_EVENTS_PASS=35`<br>`N_PERMUTATIONS=999`<br>`PREFIX='km_with_checks_6d2s'`<br>`SEED=20260903`<br>`THRESHOLD_LABEL='3.0 µs'`<br>`TIE_CUTOFF_DISTINCT=5` |
 
 ## interval
 

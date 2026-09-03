@@ -55,6 +55,9 @@ measure different things when they do not.
 | gap | hole, missing stretch |
 | record | row, entry |
 | dataset | file, run, series |
+| run-set | checks enabled, active checks |
+| display-set | shown checks, visible checks |
+| check outcome | trust annotation, confidence badge, health indicator |
 
 **Units go in the axis label, in parentheses. Never in the tick labels.**
 
@@ -124,6 +127,9 @@ Four of the locked terms stopped being conventions and became columns in
 | read | one row of the read table: a single observation, with its state and margin |
 | gap | an inter-read interval greater than `gap_mult` times the median positive spacing |
 | band | reserved; `BAND_STYLE` in `plots/theme.py` carries its fill and edge alphas |
+| run-set | which check rows are COMPUTED: a step kwarg over `analyzers/check_selection.ALL_KEYS` |
+| display-set | which check rows reach a figure: an independent subset of the run-set, also a step kwarg |
+| check outcome | the verdicts a figure shows beside an estimate. `analyzers/check_outcome.CheckOutcome`. Never called a trust annotation: the code's word is `verdict`, and "trust" invites reading a non-rejection as reassurance |
 
 Two consequences for figures:
 
