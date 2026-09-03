@@ -42,6 +42,7 @@ from quebra.analyzers.checks._permutation import (
     PermutationSet,
     block_permutations,
     permutation_p_value,
+    resolve_perm,
 )
 from quebra.analyzers.checks.battery import ROW_KEYS, row_key, run_battery
 from quebra.analyzers.checks.result import (
@@ -182,7 +183,9 @@ def test_eq16_reduces_to_eq4_for_a_single_segment():
 
 
 def test_c1_detects_the_trend_it_is_built_for():
-    """Events crowded early give a strongly negative statistic, crowded late a positive one.
+    """Evidence about `a1_renewal_durations`: C1 detects the trend that assumption forbids.
+
+    Events crowded early give a strongly negative statistic, crowded late a positive one.
 
     The two segments share one multiset of gaps and differ only in ORDER, so `gamma_hat`,
     `tau` and `N` are identical and the sign difference can only come from the trend term.
@@ -434,3 +437,225 @@ def test_omitting_gap_spans_keeps_the_old_behaviour():
     assert len(without) == len(with_empty)
     for a, b in zip(without, with_empty):
         assert np.array_equal(a.x, b.x) and a.tau == b.tau
+
+
+# -------------------- calendar-clock truncation (R8.1)
+
+
+# One read per second, so the median spacing is 1.0 and "one read interval" is 1.0.
+DT_S = 1.0
+
+
+def _carve_unit_series(in_spec: list[int]):
+    """Carve a unit-spaced read series. Returns (window table, diagnostics)."""
+    t = np.arange(len(in_spec), dtype=float) * DT_S
+    result = windows.run(
+        windows.WindowsInputs(
+            t_rel_s=t,
+            values=np.where(np.asarray(in_spec, dtype=bool), 1.0, -1.0),
+            thresholds=[("thr", 0.0, True)],
+        )
+    )
+    return result.windows, result.diagnostics
+
+
+def _record_ending_on_one_in_spec_read() -> list[int]:
+    """Enough complete excursions to be a segment, then a single in-spec final read.
+
+    The final read is flanked by an out-of-spec read before it and nothing after, so the
+    carve births a window at it and kills it at `scan_end` in the same instant.
+    """
+    body = [1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0]
+    return body + [0, 1]
+
+
+def test_the_fixture_really_ends_in_a_zero_duration_window():
+    """Positive control. Without it every test below could pass on a record whose final
+    window has an ordinary positive duration, asserting nothing about the degeneracy."""
+    frame, _ = _carve_unit_series(_record_ending_on_one_in_spec_read())
+    last = frame.iloc[-1]
+    assert last["duration_s"] == 0.0, (
+        f"the fixture must end in a zero-duration window; got {last['duration_s']}"
+    )
+    assert last["death_type"] == "scan_end"
+    assert float(last["t_birth_s"]) == float(last["t_death_s"])
+
+
+def test_calendar_tau_equals_T_N_when_the_final_window_has_zero_duration():
+    """Arithmetic: tau - T_N = t_death[-1] - t_birth[-1], which is 0 for a zero-duration
+    final window. Asserted as an exact equality, not a tolerance, because it is an identity
+    between two subtractions of the same float."""
+    frame, _ = _carve_unit_series(_record_ending_on_one_in_spec_read())
+    segments, _dropped = segments_from_windows(
+        frame, clock=CLOCK_CALENDAR, min_events=2
+    )
+    assert segments, "the fixture must produce at least one calendar segment"
+
+    final = segments[-1]
+    t_n = float(np.cumsum(final.x)[-1])
+    assert final.tau == t_n, (
+        f"expected tau == T_N exactly; got tau={final.tau!r} T_N={t_n!r}"
+    )
+
+
+def test_an_observation_end_at_the_last_read_does_not_clear_the_degeneracy():
+    """The correction this measurement forced on SPEC 0008's own R8.1 prescription.
+
+    R8.1 first said the observation end is "the last `t_read_s`". That is exactly where the
+    zero-duration window is born, so it leaves tau == T_N untouched. `jobs/bench/arms.py`
+    ends "one full read interval PAST the last read" and that is what clears it. Both
+    branches are asserted, so the wrong prescription cannot come back unnoticed.
+    """
+    frame, _ = _carve_unit_series(_record_ending_on_one_in_spec_read())
+    last_read_s = float(frame["t_death_s"].to_numpy(dtype=float).max())
+
+    at_last_read, _ = segments_from_windows(
+        frame,
+        clock=CLOCK_CALENDAR,
+        min_events=2,
+        observation_end_s=last_read_s,
+    )
+    still_degenerate = at_last_read[-1]
+    assert still_degenerate.tau == float(np.cumsum(still_degenerate.x)[-1]), (
+        "an observation end at the last read must leave tau == T_N; if this fails the "
+        "degeneracy has moved and R8.1's prescription needs re-measuring"
+    )
+
+    one_interval_past, _ = segments_from_windows(
+        frame,
+        clock=CLOCK_CALENDAR,
+        min_events=2,
+        observation_end_s=last_read_s + DT_S,
+    )
+    cleared = one_interval_past[-1]
+    slack = cleared.tau - float(np.cumsum(cleared.x)[-1])
+    assert slack == pytest.approx(DT_S), (
+        f"one read interval past the last read must give exactly that much slack; got {slack}"
+    )
+    # And the statistic C2 refused above is now computable.
+    assert np.isfinite(c2.statistic(one_interval_past))
+
+
+def test_an_interior_block_ending_in_a_zero_duration_window_is_not_reachable_by_observation_end():
+    """Why the truncation rule cannot be the whole fix: `observation_end_s` applies to the
+    FINAL block only (`_multiprocess.py:222-229`), so an interior block ending in a
+    zero-duration window at a gap start stays degenerate under every value of it.
+
+    Measured on the real record that motivated this: 070723_6D2S_qubit4 carries two
+    zero-duration windows, one at `gap_start` and one at `scan_end`.
+    """
+    # In spec at the last read before the gap, so the pre-gap block ends zero-duration.
+    pre = [1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1]
+    post = [1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0]
+    t = np.concatenate(
+        [
+            np.arange(len(pre), dtype=float),
+            500.0 + np.arange(len(post), dtype=float),
+        ]
+    )
+    result = windows.run(
+        windows.WindowsInputs(
+            t_rel_s=t,
+            values=np.where(np.asarray(pre + post, dtype=bool), 1.0, -1.0),
+            thresholds=[("thr", 0.0, True)],
+        )
+    )
+    frame = result.windows
+    gaps = result.diagnostics.get("gap_spans_s")
+    assert gaps, "the fixture must contain a detected read gap"
+
+    zero_duration = frame[frame["duration_s"] == 0.0]
+    assert len(zero_duration), "the fixture must produce a zero-duration window"
+    assert "gap_start" in set(zero_duration["death_type"]), (
+        "the zero-duration window must be the one that ends the INTERIOR block"
+    )
+
+    far_past_the_end = float(t.max()) + 1000.0
+    segments, _ = segments_from_windows(
+        frame,
+        clock=CLOCK_CALENDAR,
+        min_events=2,
+        gap_spans_s=gaps,
+        observation_end_s=far_past_the_end,
+    )
+    interior = segments[0]
+    assert interior.tau == float(np.cumsum(interior.x)[-1]), (
+        "the interior block must stay at tau == T_N however far the observation end is "
+        "pushed; if this fails, observation_end_s has started reaching interior blocks"
+    )
+
+
+# -------------------- the shared permutation-set guard (R8.5a)
+
+
+SIZES = [3, 4, 2]
+N_PERM = 50
+
+
+def _blocked_perm(sizes=SIZES, seed=1) -> PermutationSet:
+    return block_permutations(sizes, N_PERM, np.random.default_rng(seed))
+
+
+def test_the_set_it_builds_matches_calling_block_permutations_directly():
+    """The extraction must not have changed WHICH permutations are drawn: the same seed has
+    to give the same matrix, or every permutation p-value in the package moves."""
+    direct = block_permutations(SIZES, N_PERM, np.random.default_rng(7))
+    viahelper = resolve_perm(SIZES, None, N_PERM, np.random.default_rng(7))
+    assert np.array_equal(direct.indices, viahelper.indices)
+
+
+def test_a_matching_set_is_returned_unchanged_and_not_rebuilt():
+    """Identity, not equality: rebuilding would consume the rng and draw different
+    permutations while looking correct."""
+    supplied = _blocked_perm()
+    assert resolve_perm(SIZES, supplied, N_PERM, np.random.default_rng(99)) is supplied
+
+
+def test_a_mismatched_set_raises_rather_than_being_rebuilt():
+    """The load-bearing half. A set blocked for different segment sizes belongs to a
+    different record; silently rebuilding it would yield a plausible, wrong p-value."""
+    wrong = _blocked_perm(sizes=[5, 5])
+    with pytest.raises(ValueError, match="permutation set is blocked as"):
+        resolve_perm(SIZES, wrong, N_PERM, np.random.default_rng(1))
+
+
+@pytest.mark.parametrize("sizes", [[3, 4, 2], (3, 4, 2), np.array([3, 4, 2])])
+def test_both_call_spellings_agree(sizes):
+    """The six sites differed only in whether `sizes` arrived as a list from
+    `segment_sizes(segments)` or as a precomputed sequence. Both must normalise the same, or
+    a tuple-vs-list comparison would reject a set that matches."""
+    supplied = _blocked_perm()
+    assert resolve_perm(sizes, supplied, N_PERM, np.random.default_rng(1)) is supplied
+
+
+def test_an_absent_rng_still_raises_block_permutations_own_message():
+    """Not duplicated in the helper, so there is one message for that failure rather than two
+    that can drift. `AGENTS.md` records why an implicit rng is fatal here."""
+    with pytest.raises(ValueError, match="requires an explicit rng"):
+        resolve_perm(SIZES, None, N_PERM, None)
+
+
+def test_an_rng_is_not_required_when_a_usable_set_is_supplied():
+    """The construct-or-validate asymmetry, asserted: only the building branch needs a
+    generator. This is why the block cannot be expressed as a precondition, and why R8.5b
+    evaluates a contract library against a different invariant."""
+    supplied = _blocked_perm()
+    assert resolve_perm(SIZES, supplied, N_PERM, None) is supplied
+
+
+def test_no_call_site_still_carries_its_own_copy():
+    """The guard against a seventh copy reappearing, and against this extraction being
+    reverted in one file only - which is the `AGENTS.md` section 4 failure exactly."""
+    from pathlib import Path
+
+    checks = (
+        Path(__file__).resolve().parents[1] / "src" / "quebra" / "analyzers" / "checks"
+    )
+    carriers = [
+        path.name
+        for path in sorted(checks.glob("*.py"))
+        if "permutation set is blocked as" in path.read_text(encoding="utf-8")
+    ]
+    assert carriers == ["_permutation.py"], (
+        f"the guard should live only in _permutation.py; also found in {carriers}"
+    )

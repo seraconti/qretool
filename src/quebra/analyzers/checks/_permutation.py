@@ -20,6 +20,7 @@ structure.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -179,3 +180,37 @@ def two_sided_p_value(observed: float, null: np.ndarray) -> float:
     to every member of the reference set.
     """
     return permutation_p_value(abs(observed), np.abs(np.asarray(null, dtype=float)))
+
+
+def resolve_perm(
+    sizes: Sequence[int],
+    perm: PermutationSet | None,
+    n_perm: int,
+    rng: np.random.Generator | None,
+) -> PermutationSet:
+    """Build the permutation set if the caller did not supply one, or check the one it did.
+
+    SPEC 0008 R8.5a. This exact block was copied into six call sites - C1, C2, CvM, C5, C6 and
+    `battery` - in two spellings that differed only in whether `sizes` was already computed.
+    Six copies of a guard is the shape `AGENTS.md` section 4 warns about: a fix applied to one
+    comparison and not its twin is not a fix.
+
+    It is deliberately NOT a precondition. The `if` branch CONSTRUCTS the missing argument and
+    only the `elif` validates, so a decorator that runs before the body could express half of
+    it at most. That asymmetry is why R8.5b evaluates a contract library against a different
+    invariant instead of this one.
+
+    Raising on a mismatch rather than rebuilding is the load-bearing half: a caller that passed
+    a set blocked for different segment sizes is testing a different record, and silently
+    rebuilding would turn that into a plausible, wrong p-value.
+    """
+    wanted = tuple(int(size) for size in sizes)
+    if perm is None:
+        # `block_permutations` is what refuses `rng=None`; not duplicated here, so there is
+        # one message for that failure rather than two that can drift apart.
+        return block_permutations(wanted, n_perm, rng)
+    if perm.sizes != wanted:
+        raise ValueError(
+            f"permutation set is blocked as {perm.sizes} but the segments are {wanted}"
+        )
+    return perm

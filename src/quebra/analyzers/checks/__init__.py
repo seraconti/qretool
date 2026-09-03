@@ -10,6 +10,7 @@ number from 355 events calibrated by permutation.
     C3  copula serial independence, via R                     (UNASSESSED - no R here)
     C5  studentized max-lag rank autocorrelation, permutation
     C6  portmanteau rank exchangeability, permutation
+    CvM Cramer-von Mises renewal, time-censored               (promoted after C1-C6)
 
 Nothing here reads disk (except C3's optional subprocess), imports matplotlib, or prints.
 """

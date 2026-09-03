@@ -61,9 +61,9 @@ from quebra.analyzers.checks._multiprocess import (
     gamma_hat_batch,
 )
 from quebra.analyzers.checks._permutation import (
+    resolve_perm,
     DEFAULT_N_PERM,
     PermutationSet,
-    block_permutations,
     check_permuted,
     permutation_p_value,
 )
@@ -235,13 +235,7 @@ def run(
             # the result has to say which it is rather than let a reader quote the zero.
             notes += f" p_saturated(z>{_SERIES_Z_MAX:g})"
     elif calibration == CALIB_PERMUTATION:
-        if perm is None:
-            perm = block_permutations(segment_sizes(segments), n_perm, rng)
-        elif perm.sizes != tuple(segment_sizes(segments)):
-            raise ValueError(
-                f"permutation set is blocked as {perm.sizes} but the segments are "
-                f"{tuple(segment_sizes(segments))}"
-            )
+        perm = resolve_perm(segment_sizes(segments), perm, n_perm, rng)
         null = statistic_batch(segments, perm, gamma_estimator, permuted)
         p_value = permutation_p_value(observed, null)
         notes += f" B={perm.n_perm}"

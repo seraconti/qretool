@@ -37,7 +37,18 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from quebra.analyzers.windows import BIRTH_UP_CROSSING, DEATH_DOWN_CROSSING
+import icontract
+
+from quebra.analyzers.windows import (
+    BIRTH_UP_CROSSING,
+    DEATH_DOWN_CROSSING,
+    DEATH_GAP_START,
+    DEATH_SCAN_END,
+)
+
+# The codes `windows.carve` emits. Consumed by equality everywhere, so an unrecognised one
+# would read as "not a down-crossing", i.e. silently censored.
+KNOWN_DEATH_TYPES = frozenset({DEATH_DOWN_CROSSING, DEATH_GAP_START, DEATH_SCAN_END})
 
 # Two-sided normal quantile for the confidence band. Named so the figure's band label
 # and this constant cannot disagree.
@@ -126,12 +137,45 @@ class KaplanMeierComparison:
 
     `separation` is a DISTANCE, not a test: no p-value is attached and none is implied,
     because the curves being ranked were selected on the T2* mean of the same records.
+
+    The check fields below are what makes `AGENTS.md` section 5 true structurally rather
+    than editorially. A band and its check outcome in two sibling artifacts are "attached"
+    only in the sense that both files land in the same directory; a reader who opens the
+    band alone learns nothing about what was checked. They are plain strings and tuples of
+    strings so they enter the run identity through `core/closure.py` and so this module
+    keeps importing nothing from the check layer.
+
+    `assumption_id` names the record in `analyzers/assumptions.py` the band rests on.
+    `checks_asked` and `checks_unanswered` are the two halves section 5 requires be named:
+    a grid of `not computed` cells satisfies "attached" and says nothing, so the outcome has
+    to say what was asked for as well as what came back. Empty means NOT ASSESSED, which is
+    a different claim from "assessed and nothing rejected".
     """
 
     curves: list[KaplanMeierCurve]
     threshold_label: str
     ranking: list[tuple[str, str, float]] = field(default_factory=list)
     pair: tuple[str, str] | None = None
+    assumption_id: str = ""
+    checks_asked: tuple[str, ...] = ()
+    checks_unanswered: tuple[str, ...] = ()
+    check_verdicts: tuple[tuple[str, str, str], ...] = ()
+
+    def check_summary(self) -> str:
+        """One line naming what was asked and what came back, for a caption to state.
+
+        The renderer states this; it does not derive it (`AGENTS.md` section 3).
+        """
+        if not self.checks_asked:
+            return "independence checks: NOT ASSESSED for this band"
+        tally: dict[str, int] = {}
+        for _label, _dataset, verdict in self.check_verdicts:
+            tally[verdict] = tally.get(verdict, 0) + 1
+        shown = ", ".join(f"{n} {v}" for v, n in sorted(tally.items()))
+        line = f"{len(self.checks_asked)} checks asked; cells: {shown or 'none'}"
+        if self.checks_unanswered:
+            line += f"; no answer anywhere from {', '.join(self.checks_unanswered)}"
+        return line
 
     def curve(self, label: str) -> KaplanMeierCurve:
         for c in self.curves:
@@ -176,6 +220,17 @@ def make_inputs_from_windows(
             f"threshold {threshold_label!r} is not in the window table. "
             f"Carved thresholds: {sorted(known)}"
         )
+    # NOT a contract: this reads a frame column, and the useful message names the offending
+    # values. A precondition would report the whole Series. Same invariant class, different
+    # tool, and the boundary is the point rather than an inconsistency.
+    unknown = set(windows["death_type"].unique()) - KNOWN_DEATH_TYPES
+    if unknown:
+        raise ValueError(
+            f"window table carries unknown death_type(s) {sorted(unknown)}. Known: "
+            f"{sorted(KNOWN_DEATH_TYPES)}. Every comparison downstream is an equality "
+            f"against {DEATH_DOWN_CROSSING!r}, so an unrecognised code would be read as "
+            f"censored rather than rejected."
+        )
     at_threshold = windows[windows["threshold_label"] == threshold_label]
     observed_birth = at_threshold[at_threshold["birth_type"] == BIRTH_UP_CROSSING]
     return KaplanMeierInputs(
@@ -189,8 +244,24 @@ def make_inputs_from_windows(
     )
 
 
+@icontract.require(
+    lambda inputs: np.asarray(inputs.death_observed).dtype == np.bool_,
+    description=(
+        "death_observed must already be a boolean array. np.asarray(..., dtype=bool) "
+        "coerces silently, so any nonzero float would be read as an OBSERVED DEATH and a "
+        "censored window would enter the curve as a failure"
+    ),
+)
 def run(inputs: KaplanMeierInputs) -> KaplanMeierCurve:
-    """Kaplan-Meier product-limit estimate with a log-log pointwise band."""
+    """Kaplan-Meier product-limit estimate with a log-log pointwise band.
+
+    The precondition is a hard computational invariant in the sense
+    `spec/quebraplan.md` 4.2 means: violating it does not make the estimate uncertain, it
+    makes it an estimate of something else. It is a contract rather than a bare raise
+    because the condition is one expression and `icontract` reports the offending dtype
+    without a hand-written message. `make_inputs_from_windows` below shows the other half
+    of that boundary: a check needing frame inspection stays a bare raise.
+    """
     t = np.asarray(inputs.duration_min, dtype=float)
     observed = np.asarray(inputs.death_observed, dtype=bool)
     if len(t) != len(observed):

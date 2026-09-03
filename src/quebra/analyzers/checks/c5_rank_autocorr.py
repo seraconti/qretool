@@ -33,9 +33,9 @@ from __future__ import annotations
 import numpy as np
 
 from quebra.analyzers.checks._permutation import (
+    resolve_perm,
     DEFAULT_N_PERM,
     PermutationSet,
-    block_permutations,
     permutation_p_value,
 )
 from quebra.analyzers.checks._rank_serial import (
@@ -94,13 +94,7 @@ def run(
     if autocorr is None:
         layout = lag_layout(sizes, max_lag)
         ranks = global_ranks(concatenated_gaps(segments))
-        if perm is None:
-            perm = block_permutations(sizes, n_perm, rng)
-        elif perm.sizes != tuple(sizes):
-            raise ValueError(
-                f"permutation set is blocked as {perm.sizes} but the segments are "
-                f"{tuple(sizes)}"
-            )
+        perm = resolve_perm(sizes, perm, n_perm, rng)
         observed_r = autocorrelations(ranks, layout)[0]
         null_r = autocorrelations(perm.apply(ranks), layout)
     else:

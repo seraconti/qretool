@@ -23,9 +23,13 @@ The reference fixture: reads at t = 0..9, then a 100-unit gap, then 10 more read
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
+import pytest
 
 from quebra.analyzers import windows
+from quebra.core.paths import repo_root
 
 T = np.r_[np.arange(10) * 1.0, np.arange(10) * 1.0 + 110.0]
 Y = np.array(
@@ -127,3 +131,152 @@ def test_equality_is_not_a_gap() -> None:
     _, gap_threshold_s, n_gaps, _ = windows.spacing(t, gap_mult=10.0)
     assert gap_threshold_s == 10.0
     assert n_gaps == 0
+
+
+# -------------------- what does and does not move a boundary (8.4a)
+
+
+PRIVATE_ROOT = repo_root() / "data" / "real_private"
+
+
+# READ from the jobs, not transcribed. A hardcoded copy is not a guard: it agreed with
+# itself while either job drifted, which is the dead-control defect AGENTS.md section 4
+# records. `GAP_MULT` is the parameter that actually moves a boundary.
+def _job_gap_mult(stem: str) -> float:
+    path = repo_root() / "jobs" / "active" / f"{stem}.py"
+    if not path.is_file():
+        pytest.skip(f"{path} absent")
+    text = path.read_text(encoding="utf-8")
+    found = re.search(r"gap_mult=([0-9.]+)", text) or re.search(
+        r"^GAP_MULT\s*=\s*([0-9.]+)", text, re.M
+    )
+    assert found, f"no gap_mult literal found in {stem}.py"
+    return float(found.group(1))
+
+
+def _poster_carve() -> dict:
+    return {
+        "gap_mult": _job_gap_mult("km_poster_6d2s"),
+        "k": 1.0,
+        "use_uncertainty": False,
+    }
+
+
+def _survey_carve() -> dict:
+    return {
+        "gap_mult": _job_gap_mult("km_with_checks_6d2s"),
+        "k": 1.0,
+        "use_uncertainty": True,
+    }
+
+
+THRESHOLD_LABEL = "3.0 µs"
+THRESHOLD = [(THRESHOLD_LABEL, 3.0e-6, True)]
+
+
+def _synthetic_reads(n: int = 400):
+    """Reads that cross the rung many times, with a sigma large enough to make most of them
+    'uncertain' if uncertainty were allowed to move anything."""
+    rng = np.random.default_rng(11)
+    t = np.arange(n, dtype=float) * 30.0
+    values = 3.0e-6 + 1.2e-6 * np.sin(np.arange(n) / 7.0) + rng.normal(0, 3e-7, n)
+    sigma = np.full(n, 8e-7)
+    return t, values, sigma
+
+
+def _carve_annotated(*, use_uncertainty: bool):
+    t, values, sigma = _synthetic_reads()
+    return windows.run(
+        windows.WindowsInputs(
+            t_rel_s=t,
+            values=values,
+            thresholds=THRESHOLD,
+            sigma=sigma if use_uncertainty else None,
+            k=1.0,
+            gap_mult=10.0,
+            use_uncertainty=use_uncertainty,
+        )
+    )
+
+
+def test_uncertainty_annotates_reads_and_never_moves_a_window_boundary():
+    """The contract, on synthetic reads, in CI. Both halves are asserted: the window table
+    must be identical AND the read states must actually differ, or the test would pass
+    vacuously on a sigma too small to annotate anything."""
+    plain = _carve_annotated(use_uncertainty=False)
+    annotated = _carve_annotated(use_uncertainty=True)
+
+    wp = plain.windows.reset_index(drop=True)
+    wa = annotated.windows.reset_index(drop=True)
+    assert len(wp) > 5, "the fixture must produce several windows to be worth comparing"
+    assert wp.equals(wa), (
+        "use_uncertainty moved a window boundary; it must only annotate"
+    )
+
+    states_plain = set(plain.reads["state"])
+    states_annotated = set(annotated.reads["state"])
+    assert states_plain != states_annotated, (
+        "the fixture's sigma is too small to annotate anything, so the test above proved "
+        f"nothing: {states_plain} vs {states_annotated}"
+    )
+    assert any("uncertain" in s for s in states_annotated)
+
+
+@pytest.mark.parametrize(
+    "stem,qubit",
+    [
+        ("280623_6D2S_qubit2", 2),
+        ("040423_6D2S_qubit1", 1),
+        ("220423_6D2S_qubit1", 1),
+        ("090623_6D2S_qubit6", 6),
+        ("070723_6D2S_qubit4", 4),
+    ],
+)
+def test_the_two_job_configurations_agree_on_the_real_records(stem, qubit, in_repo):
+    """The differential CHECKPOINT 8.4a owes: real records, the real parameter sets.
+
+    Skips without the private tree, following `tests/test_data_manifest.py`. If this ever
+    fails, the two jobs have diverged on something that DOES move boundaries and the new job's
+    check outcome would describe a different carve from the band beside it.
+    """
+    path = PRIVATE_ROOT / "6D2S" / f"{stem}.pickle"
+    if not path.is_file():
+        pytest.skip(f"{path} absent (expected without the private data)")
+
+    from quebra.analyzers import t2star
+    from quebra.core.dataset import Dataset
+    from quebra.core.job import _load_dataset
+    from quebra.recipes import RAMSEY_CONFIG, _filter_step, _final_stage
+    from quebra.schemas.track912 import track912Schema
+
+    dataset = Dataset(
+        path=f"data/real_private/6D2S/{stem}.pickle",
+        schema=track912Schema,
+        qubit=qubit,
+        device="6D2S",
+        extra={"run_name": stem},
+    )
+    norm = _final_stage(_filter_step(RAMSEY_CONFIG)(_load_dataset(dataset)))
+    frame = t2star.run(t2star.make_inputs_from_norm(norm)).frame
+
+    def carve(config):
+        return windows.run(
+            windows.make_inputs_from_frame(
+                frame,
+                time_col="t_rel_s",
+                value_col="t2star_s",
+                thresholds=THRESHOLD,
+                dataset_id=stem,
+                sigma_col="t2star_error_s" if config["use_uncertainty"] else None,
+                **config,
+            )
+        ).windows
+
+    poster = carve(_poster_carve()).reset_index(drop=True)
+    survey = carve(_survey_carve()).reset_index(drop=True)
+
+    assert len(poster), f"{stem} produced no windows at {THRESHOLD_LABEL}"
+    assert poster.equals(survey), (
+        f"{stem}: the poster and survey carve configurations disagree on the window table. "
+        f"That is a divergence in something that moves boundaries, not an annotation."
+    )

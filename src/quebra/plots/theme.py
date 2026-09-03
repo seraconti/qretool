@@ -294,12 +294,20 @@ def calibration_color(calibration: str) -> str:
 #   not interpretable    ties or a missing dependency mean there is no answer at all
 # The two "no information" verdicts are deliberately DESATURATED so they cannot be mistaken
 # for a result at a glance; a reader skimming the table should see the grey and stop.
+#   no row               `check_ledger.VERDICT_ABSENT`: no row for that cell at all. The
+#                        ledger never emits it; a downstream output-builder does.
+# The last one is separate from `not computed` on purpose. "The check ran and declined to
+# answer" and "there is nothing here" look identical to a reader who is shown one tone for
+# both, and SPEC 0008 R8.3 requires them to be distinguishable - a cell that was asked for and
+# answered nothing must not read the same as one nobody asked for. It is the palest tone
+# because it carries the least.
 VERDICT_COLORS = {
     "pass": "#12776A",
     "fail": "#7E1A11",
     "underpowered": "#B9A87A",
     "not interpretable (ties)": "#9A9A9A",
     "not computed": "#D8D8D8",
+    "no row": "#F0F0F0",
 }
 
 

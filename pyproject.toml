@@ -36,6 +36,10 @@ dependencies = [
   "PyYAML>=6.0",
   "platformdirs>=4.0",
   "grimp>=3.0",
+  # Preconditions for HARD computational invariants only, per spec/quebraplan.md 4.2 and
+  # spec/specvalidity08.md R8.5b. Scoped deliberately: see the BOUNDARY note there and
+  # tests/test_contract_boundary.py, which keeps it out of analyzers/checks/.
+  "icontract>=2.7",
 ]
 
 [project.optional-dependencies]

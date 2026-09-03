@@ -35,9 +35,9 @@ import quebra.analyzers.checks.c6_exchangeability as c6
 import quebra.analyzers.checks.cvm_cramer_von_mises as cvm
 from quebra.analyzers.checks._multiprocess import GAMMA_COMPLETE
 from quebra.analyzers.checks._permutation import (
+    resolve_perm,
     DEFAULT_N_PERM,
     PermutationSet,
-    block_permutations,
 )
 from quebra.analyzers.checks._rank_serial import (
     MAX_LAG_CAP,
@@ -128,13 +128,7 @@ def run_battery(
             "rows are permutation-calibrated, so without one the p-values are a fresh "
             "random draw on every call while the run identity stays unchanged."
         )
-    if perm is None:
-        perm = block_permutations(sizes, n_perm, rng)
-    elif perm.sizes != tuple(sizes):
-        raise ValueError(
-            f"permutation set is blocked as {perm.sizes} but the segments are "
-            f"{tuple(sizes)}"
-        )
+    perm = resolve_perm(sizes, perm, n_perm, rng)
 
     # The two shared intermediates. Everything below is an aggregation of one of these.
     # The gap gather is skipped when C1/C2 are off, since nothing else reads it.

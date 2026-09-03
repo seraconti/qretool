@@ -56,6 +56,13 @@ VERDICT_FAIL = "fail"
 VERDICT_UNDERPOWERED = "underpowered"
 VERDICT_TIES = "not interpretable (ties)"
 VERDICT_NOT_COMPUTED = "not computed"
+# Not produced by `_verdict` and deliberately NOT in `VERDICTS` below: the ledger never emits
+# it. It is what a downstream builder writes when it has no row for a cell at all, and it
+# lives here so the render contract has one vocabulary rather than two - `theme.verdict_color`
+# raises on anything outside its palette, so "no row" is a verdict as far as drawing is
+# concerned. Keeping it out of `VERDICTS` keeps `panels/check_ledger.py`'s legend honest,
+# since that legend lists what the LEDGER can say.
+VERDICT_ABSENT = "no row"
 VERDICTS = (
     VERDICT_PASS,
     VERDICT_FAIL,
@@ -166,6 +173,13 @@ class CheckLedgerInputs:
     # are OMITTED rather than written as `not computed`: a blank row would claim the check
     # was attempted and failed, when in fact it was never asked.
     include_c3: bool = True
+    # Derived from a run-set by `check_outcome.battery_flags`, never set by hand once one is
+    # in play. COARSE on purpose: `include_tau_checks` is all-or-nothing over five rows, so a
+    # run-set naming one asymptotic row still computes the other four. The declared run-set
+    # therefore names AT MOST what ran, not exactly what ran, and a reader comparing the two
+    # will find the ledger carrying rows the run-set does not list.
+    include_tau_checks: bool = True
+    include_c2_asymptotic: bool = True
     # See c3_serial_copula.N_NULL_SIM: the dominant cost, and part of what a C3
     # p-value means, so it is carried rather than left to a module default.
     c3_n_null_sim: int = c3.N_NULL_SIM
@@ -183,6 +197,8 @@ def make_inputs_from_windows(
     n_permutations: int,
     seed: int,
     include_c3: bool = True,
+    include_tau_checks: bool = True,
+    include_c2_asymptotic: bool = True,
     c3_n_null_sim: int = c3.N_NULL_SIM,
 ) -> CheckLedgerInputs:
     """Build inputs from a `WindowsResult`, taking the gap spans with it.
@@ -205,6 +221,8 @@ def make_inputs_from_windows(
         n_permutations=n_permutations,
         seed=seed,
         include_c3=include_c3,
+        include_tau_checks=include_tau_checks,
+        include_c2_asymptotic=include_c2_asymptotic,
         c3_n_null_sim=c3_n_null_sim,
     )
 
@@ -379,7 +397,14 @@ def _rows_for(
     results: list[CheckResult] = []
     battery_note = ""
     try:
-        results = run_battery(segments, clock=clock, perm=perm, max_lag=inputs.lag_max)
+        results = run_battery(
+            segments,
+            clock=clock,
+            perm=perm,
+            max_lag=inputs.lag_max,
+            include_tau_checks=inputs.include_tau_checks,
+            include_c2_asymptotic=inputs.include_c2_asymptotic,
+        )
     except (ValueError, KeyError) as exc:
         battery_note = f"C1/C2 undefined here: {exc}"[:180]
         try:
@@ -388,7 +413,10 @@ def _rows_for(
                 clock=clock,
                 perm=perm,
                 max_lag=inputs.lag_max,
+                # Hard False, not the input: this branch is a mathematical refusal (tau is
+                # singular here), and it must override a run-set that asked for those rows.
                 include_tau_checks=False,
+                include_c2_asymptotic=inputs.include_c2_asymptotic,
             )
         except (ValueError, KeyError) as inner:
             return [

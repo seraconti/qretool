@@ -51,9 +51,9 @@ from quebra.analyzers.checks.result import (
     validate_segment,
 )
 from quebra.analyzers.checks._permutation import (
+    resolve_perm,
     DEFAULT_N_PERM,
     PermutationSet,
-    block_permutations,
     check_permuted,
     two_sided_p_value,
 )
@@ -136,13 +136,7 @@ def run(
     if calibration == CALIB_ASYMPTOTIC:
         p_value = float(2.0 * stats.norm.sf(abs(observed)))
     elif calibration == CALIB_PERMUTATION:
-        if perm is None:
-            perm = block_permutations(segment_sizes(segments), n_perm, rng)
-        elif perm.sizes != tuple(segment_sizes(segments)):
-            raise ValueError(
-                f"permutation set is blocked as {perm.sizes} but the segments are "
-                f"{tuple(segment_sizes(segments))}"
-            )
+        perm = resolve_perm(segment_sizes(segments), perm, n_perm, rng)
         null = statistic_batch(segments, perm, gamma_estimator, permuted)
         p_value = two_sided_p_value(observed, null)
         notes += f" B={perm.n_perm}"
