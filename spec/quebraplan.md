@@ -629,6 +629,14 @@ legitimately sit.
    evidence** the new checklist requires.
 6. **Whether any repository does CI diagram-freshness checking** (8.7). Searched, not found.
    Cheap idiom regardless.
+7. **Which check verdicts, if any, should GATE a Kaplan-Meier band rather than annotate it.**
+   SPEC 0008 built the annotation and deliberately built no gate: collapsing a ledger to one
+   licence is not decidable without the device survey analysed, and every candidate rule
+   measured so far revokes on every real record for reasons unrelated to serial independence
+   (C3 is `not computed` without R; in-spec C1/C2 are singular at roughly 73% of replicates).
+   Deciding it needs the survey read, a stated rule for which clock and which rows license, and
+   a stated mapping for `underpowered` and `not computed`. It is the ADR Phase 9.1 will have to
+   write either way, so it is named here rather than left implicit in a passing test.
 
 ---
 
@@ -649,3 +657,105 @@ the public-history clock has not started.
 with that property. Everything else in this plan is 90 to 150 hours of work you control. Phase 0
 is one day and a supervisor conversation, and it determines whether JOSS is reachable at all.
 Do it this week.
+
+---
+
+## 9. Possible next ideas that came up while implementing
+
+Not requirements, not scheduled, and not costed. Each is here because building something
+else made it visible, and each is written so it can be reasoned about separately from the
+session that raised it. Nothing below has been decided, and none of it is a commitment.
+
+### 9.1 An assumption record for non-informative censoring
+
+**Where it came from.** SPEC 0008 R8.2 built assumption records and shipped exactly one,
+`a1_renewal_durations`, diagnosed by the six checks. Writing it made the neighbouring gap
+obvious: the Kaplan-Meier band leans at least as hard on the censoring being non-informative,
+and no shipped check tests that.
+
+**What the assumption says.** A window right-censored by a read gap or by the scan ending
+must carry no information about how much longer it would have lasted. If long-lived windows
+are preferentially the ones still running when observation stops, censoring is informative
+and the survival curve overstates survival.
+
+**Why it is not simply a missing check.** The question is currently handled OUTSIDE this
+framework, as a property of the measurement scheme rather than of the record, and that is a
+deliberate position rather than an oversight. Writing it into an `Assumption` record would
+mean stating the justification in the package, and the justification is a scheme-level
+argument that has not been written down yet.
+
+**What would have to be settled first.**
+
+- On what basis censoring is taken to be non-informative here: which feature of the scan
+  scheme supports it, and under what conditions it would stop holding.
+- Whether anything data-side can be said at all, or only bounded. The standard difficulty is
+  that right-censoring shows only which of the lifetime and the censoring time came first, so
+  a mechanism that is informative and one that is not can produce the same observed
+  distribution. Confirm this against a source before relying on it; it is stated here as the
+  reason to think carefully, not as a settled result.
+- Whether the useful artifact is a diagnostic at all, or a sensitivity analysis. Item 5.2's
+  generator exposes the censoring process independently, so a known informative mechanism
+  could be imposed and the resulting bias in the curve measured. That reports the COST of a
+  violation rather than detecting one, and it may be the more honest deliverable.
+
+**What is already in place if it is taken up.** `analyzers/assumptions.py` is shaped so a new
+record is one literal plus one line in `_RECORDS`: `diagnostic_checks` lives on the record, so
+there is no second registry to update, the id shape is enforced, and the `undetected`
+disposition already exists for an assumption the package cannot see fail. A record with an
+empty `diagnostic_checks` is constructible today and is refused only if it also claims to
+report or raise something.
+
+**Related, and separable.** `spec/specvalidity08.md` R8.1 measured a second thing worth its
+own decision: a zero-duration window ending a block makes `tau == T_N` exactly on the calendar
+clock, which drops C1 and C2 for a whole record. That is a carve and truncation question, not
+a censoring one, and it is recorded there rather than here.
+
+### 9.2 `independence_survey.py` has quietly become the vocabulary module
+
+**Where it came from.** A naming review during SPEC 0008 CHECKPOINT 8.4b. The review's verdict
+on the new code was that only a word was wrong, but it flagged this as a real structural note
+about EXISTING code, and it is recorded rather than acted on because it touches shipped
+modules.
+
+**What it is.** `analyzers/independence_survey.py` is named as, and documented as, the
+output-builder for one figure family. It also defines the canonical row-key vocabulary that
+several unrelated things now import:
+
+| Constant | line | what it is |
+|---|---|---|
+| `C3_KEY` | 48 | the one row key `battery.ROW_KEYS` omits |
+| `SURVEY_KEYS` | 51 | `ROW_KEYS` + `C3_KEY`, the spanning vocabulary |
+| `CHECK_LABELS` | 55 | row key to display label |
+| `CHECK_NULL` | 79 | row key to the null it tests, in prose |
+| `VERDICT_ORDER` | 120 | verdict draw order |
+
+**Honest attribution: SPEC 0008 caused this, it did not find it.** Before that phase the only
+importer of the vocabulary was `plots/independence_survey_plot.py`, that module's own figure,
+which is a normal builder-to-plot pairing and not a smell. Adding
+`analyzers/check_selection.py` (imports `C3_KEY`, `SURVEY_KEYS`) and
+`analyzers/check_outcome.py` (imports `CHECK_LABELS`, `CHECK_NULL`) is what made a figure
+module the shared home for a vocabulary two other subsystems depend on.
+
+**Size, measured.** The five constants span roughly 75 of the file's 333 lines. Importers
+today: two analyzers, one plot, one job, two test modules. A move is mechanical - no logic
+changes - but it touches every one of those import sites.
+
+**Is it already planned? No.** Nothing in sections 1 to 8 covers it. The nearest items are
+2.3 and 3.2, and both are about reorganising `jobs/`, not `analyzers/`. So if it is worth
+doing it needs its own home; it will not arrive as a side effect of a later phase.
+
+**Options, none chosen.**
+
+1. **Leave it.** The coupling is real but static, the arch contract is intra-layer so nothing
+   is violated, and the names are correct wherever they are read. Cost: a reader looking for
+   the row-key vocabulary has to know to open a figure builder.
+2. **Move the five constants into `analyzers/check_selection.py`**, which already owns `RowKey`
+   and `ALL_KEYS` and is named for the job. `independence_survey` then imports them back. Small
+   and mechanical, but it moves shipped constants and every cached identity that reaches them.
+3. **A dedicated `analyzers/checks/vocabulary.py`.** Cleanest by name, and it puts the row-key
+   vocabulary beside the checks it names rather than beside either consumer. Largest diff.
+
+**When.** Option 2 or 3 is cheapest immediately after a phase that already moves identities,
+and most expensive just before a figure is promoted for publication. It is not urgent: nothing
+is wrong today, and the note exists so the decision is made deliberately rather than by a
+future agent noticing the same thing and refactoring unasked.
