@@ -4615,3 +4615,43 @@ so its declared root is the repo itself and the two candidates coincide HERE." T
 
 ## Reviewed (patch 4 prose) - tests/** chronology purge: DONE
 ## ALL MANIFEST ITEMS COMPLETE
+
+---
+
+SCOPE: naming and structure only - check_outcome.py "dispatcher" terminology audit
+COMMIT: ab885a0
+(Appended, not overwritten: the P5 findings above are committed work.)
+
+## Manifest
+(all empty - review complete)
+
+## Reviewed
+- src/quebra/analyzers/check_outcome.py
+- src/quebra/plots/check_outcome_plot.py
+- src/quebra/analyzers/check_selection.py (terminology only)
+- src/quebra/analyzers/assumptions.py (terminology only)
+- jobs/active/km_with_checks_6d2s.py (terminology only)
+- spec/specvalidity08.md (terminology only)
+- src/quebra/plots/theme.py (diff)
+- tests/test_check_outcome.py (docstring only)
+
+## Findings
+
+IMPORTANT | src/quebra/analyzers/check_outcome.py:1 | Module docstring calls the module "the dispatcher"; the repo's established name for exactly this entity is output-builder (CLAUDE.md:75). No entity in this codebase is called a dispatcher; "dispatch" is used only for schema selection in job.load. | Replace with "the output-builder".
+IMPORTANT | spec/specvalidity08.md:322 | "**Data side, the dispatcher.** An output-builder resolves the display-set..." uses both names for one thing in one sentence. | Drop "the dispatcher"; keep "Data side."
+MINOR | spec/specvalidity08.md:5 | "two selectors, a dispatcher and a render path". | "an output-builder".
+MINOR | spec/specvalidity08.md:320 | Heading "R8.4 - The dispatcher and a separate, Phase-7-readable plot". | "The output-builder and ...".
+MINOR | spec/specvalidity08.md:488 | "CHECKPOINT 8.4b - the dispatcher, the plot and the new job". | "the output-builder, ...".
+MINOR | jobs/active/km_with_checks_6d2s.py:163 | Step wrapper docstring "The dispatcher: every drawn record's rows, reshaped ...". The step is not the builder; it is a wrapper. | Delete the word: "Every drawn record's rows, reshaped into one grid per shown check."
+MINOR | tests/test_check_outcome.py:1 | "the dispatcher reshapes a ledger into grids". | "the output-builder reshapes...".
+MINOR | src/quebra/analyzers/check_outcome.py:38 | `CELL_ABSENT = "no row"` is a sixth verdict string, but the five others are `VERDICT_*` in check_ledger.py:54-58 and theme.verdict_color raises on anything not in VERDICT_COLORS. Constant name and home both diverge from the family it joined. | Name it `VERDICT_ABSENT` and define it beside the other five in check_ledger.py.
+MINOR | src/quebra/analyzers/check_outcome.py:64 | `OutcomeGrid.verdict_counts()` is a method; the same concept on `InstrumentGrid` is a property named `counts` (independence_survey.py:141). | Rename to `counts`, property or method, matching the twin.
+MINOR | src/quebra/analyzers/check_outcome.py:31 | Imports CHECK_LABELS/CHECK_NULL from independence_survey; check_selection.py:34 imports C3_KEY/SURVEY_KEYS from it too. independence_survey is now the de-facto vocabulary module for check row keys and labels while being named as a figure builder. | Move the vocabulary (C3_KEY, SURVEY_KEYS, CHECK_LABELS, CHECK_NULL) to check_selection.py, which already owns RowKey and ALL_KEYS.
+
+NOT findings, verified:
+- Entity kind: same as the three cited builders. DataFrame/artifacts in, typed artifact out, in analyzers/, drawn by a BasePlot subclass.
+- Module layout: types+builder in one module matches independence_survey.py and instrument_validation.py. The *_compute/*_data split is a two-instance panel-artifact pattern (within_calibration, across_calibration), described in CLAUDE.md 203-206 as layout for that panel, not as a rule.
+- `build_check_outcome` matches `build_<module stem>` exactly, as all four other build_* output-builders do.
+- `*Data` suffix is NOT the convention: 3 of 41 top-level classes in analyzers/ carry it, and only 2 of 11 StaleArtifactGuard artifacts repo-wide (both `*PanelData`). CheckOutcome sits with CheckLedger, SignalBand, ReliabilityBand, DistinguishBand, SizeVsN, ValidationCurve, ReadDependence. OutcomeGrid mirrors InstrumentGrid.
+- Plot: `plots/check_outcome_plot.py` / `CheckOutcomePlot(BasePlot)` / `_draw_grid(ax, grid, ...)` all match independence_survey_plot.py.
+- Pre-existing "dispatch" at core/job.py:156, schemas/ramsey_series.py:8, tests/test_load_dataset_contract.py:10,206,252 is schema selection. Correct usage, leave alone.
