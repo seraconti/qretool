@@ -17,6 +17,8 @@ from quebra.core.job import Job
 from quebra.core.runner import run_job
 from quebra.cli import _module_from_path
 
+pytestmark = pytest.mark.integration
+
 
 def _load(job_py: Path) -> Job:
     return _module_from_path(job_py).job

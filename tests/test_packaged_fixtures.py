@@ -17,6 +17,8 @@ from quebra._fixtures import FIXTURES, fixture_path
 from quebra.core.dataset import Dataset
 from quebra.core.job import _load_dataset
 
+pytestmark = pytest.mark.integration
+
 
 def test_every_declared_fixture_exists():
     for name in FIXTURES:

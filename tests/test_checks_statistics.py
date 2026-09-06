@@ -72,6 +72,7 @@ def _classical_ad(x: np.ndarray, tau: float) -> float:
     return float(-n - np.sum((2 * i - 1) * (np.log(u) + np.log(1 - u[::-1]))) / n)
 
 
+@pytest.mark.statistical
 @pytest.mark.parametrize("n", [3, 5, 20, 60, 200])
 def test_eq7_is_the_classical_anderson_darling(n):
     rng = np.random.default_rng(n)
@@ -81,6 +82,7 @@ def test_eq7_is_the_classical_anderson_darling(n):
     assert c2._eq7(x, tau, 1.0) == pytest.approx(_classical_ad(x, tau), rel=1e-9)
 
 
+@pytest.mark.statistical
 def test_ad_limiting_cdf_reproduces_published_critical_values():
     """Marsaglia & Marsaglia's adinf, against the standard AD table."""
     for statistic, alpha in [
@@ -92,6 +94,7 @@ def test_ad_limiting_cdf_reproduces_published_critical_values():
         assert 1.0 - c2.ad_limiting_cdf(statistic) == pytest.approx(alpha, abs=5e-4)
 
 
+@pytest.mark.statistical
 @pytest.mark.parametrize("n", [20, 50])
 def test_eq7_at_gamma_one_matches_the_limiting_ad_null(n):
     """Transcription pin for eq (7) - and narrower than it looks, deliberately.
@@ -123,6 +126,7 @@ def test_eq7_at_gamma_one_matches_the_limiting_ad_null(n):
         )
 
 
+@pytest.mark.statistical
 @pytest.mark.parametrize("n, expected", [(20, 0.0634), (50, 0.0514)])
 def test_shipped_c2_asymptotic_is_oversized_at_small_n(n, expected):
     """The gap between the transcription pin and what `c2.run` actually does.
@@ -152,12 +156,14 @@ def test_shipped_c2_asymptotic_is_oversized_at_small_n(n, expected):
     assert rate > 0.05, "the shipped path is oversized at these n; that is the point"
 
 
+@pytest.mark.unit
 def test_c2_refuses_a_segment_whose_last_event_lands_on_tau():
     x = np.array([1.0, 2.0, 3.0])
     with pytest.raises(ValueError, match="failure censoring"):
         c2.statistic([Segment(x=x, tau=float(x.sum()))])
 
 
+@pytest.mark.unit
 def test_c2_refuses_an_asymptotic_calibration_for_multiple_segments():
     rng = np.random.default_rng(0)
     segments = [exponential_segment(20, rng) for _ in range(3)]
@@ -168,6 +174,7 @@ def test_c2_refuses_an_asymptotic_calibration_for_multiple_segments():
 # --------------------------------------------------------------------------- C1
 
 
+@pytest.mark.statistical
 def test_eq16_reduces_to_eq4_for_a_single_segment():
     rng = np.random.default_rng(7)
     segment = exponential_segment(40, rng)
@@ -182,6 +189,7 @@ def test_eq16_reduces_to_eq4_for_a_single_segment():
     assert c1.statistic([segment]) == pytest.approx(eq4, rel=1e-12)
 
 
+@pytest.mark.statistical
 def test_c1_detects_the_trend_it_is_built_for():
     """Evidence about `a1_renewal_durations`: C1 detects the trend that assumption forbids.
 
@@ -201,6 +209,7 @@ def test_c1_detects_the_trend_it_is_built_for():
     assert late > 2.0, f"expected a strong positive trend statistic, got {late}"
 
 
+@pytest.mark.statistical
 def test_gamma_hat_eq10_goes_negative_where_the_complete_form_cannot():
     """Pins the reason `GAMMA_COMPLETE` is the default - see `_multiprocess.gamma_hat`.
 
@@ -217,6 +226,7 @@ def test_gamma_hat_eq10_goes_negative_where_the_complete_form_cannot():
         gamma_hat(x, tau, GAMMA_TRUNCATED)
 
 
+@pytest.mark.statistical
 def test_gamma_hat_distinguishes_a_negative_variance_from_a_constant_vector():
     """The two failures have different causes and must not share a message.
 
@@ -232,6 +242,7 @@ def test_gamma_hat_distinguishes_a_negative_variance_from_a_constant_vector():
 # --------------------------------------------------------------------------- shared
 
 
+@pytest.mark.statistical
 def test_permutation_p_value_is_tie_corrected():
     """All-tied null must give p = 1, not p = 0: a tie supports the null."""
     assert permutation_p_value(1.0, np.ones(99)) == pytest.approx(1.0)
@@ -239,6 +250,7 @@ def test_permutation_p_value_is_tie_corrected():
     assert permutation_p_value(5.0, np.zeros(99)) == pytest.approx(1.0 / 100.0)
 
 
+@pytest.mark.unit
 def test_permutations_stay_inside_their_segment():
     perm = block_permutations([3, 4, 2], n_perm=200, rng=np.random.default_rng(1))
     for lo, hi in perm.blocks():
@@ -247,6 +259,7 @@ def test_permutations_stay_inside_their_segment():
         assert np.all(np.sort(block, axis=1) == np.arange(lo, hi))
 
 
+@pytest.mark.statistical
 @pytest.mark.parametrize(
     "check_module, kwargs",
     [
@@ -272,6 +285,7 @@ def test_rank_checks_are_calibrated_under_exchangeability(check_module, kwargs):
     assert abs(rate - 0.10) < 4 * se, f"rejection {rate:.4f} at nominal 0.10"
 
 
+@pytest.mark.statistical
 def test_c5_and_c6_find_a_strongly_ordered_sequence():
     """A monotonically increasing duration sequence is maximally non-exchangeable."""
     x = np.linspace(1.0, 20.0, 40)
@@ -281,6 +295,7 @@ def test_c5_and_c6_find_a_strongly_ordered_sequence():
     assert c6.run([segment], perm=perm).p_value <= 0.01
 
 
+@pytest.mark.unit
 def test_battery_returns_every_row_and_shares_one_permutation_set():
     rng = np.random.default_rng(11)
     segment = exponential_segment(40, rng)
@@ -296,6 +311,7 @@ def test_battery_returns_every_row_and_shares_one_permutation_set():
     assert standalone.p_value == pytest.approx(battery_c1.p_value)
 
 
+@pytest.mark.unit
 def test_battery_drops_only_the_tau_checks_when_asked():
     rng = np.random.default_rng(12)
     segment = exponential_segment(30, rng)
@@ -315,6 +331,7 @@ def test_battery_drops_only_the_tau_checks_when_asked():
     assert len(keys) == 4
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize(
     "segment, match",
     [
@@ -332,6 +349,7 @@ def test_validate_segment_raises_rather_than_returning_nonsense(segment, match):
 # ------------------------------------------------------- the batch/segment paths
 
 
+@pytest.mark.statistical
 @pytest.mark.parametrize("sizes", [[6], [4, 5], [3, 3, 4]])
 def test_statistic_batch_reproduces_the_statistic_under_the_identity_permutation(sizes):
     """A misalignment between `segments` and `perm.blocks()` would compute the observed
@@ -378,6 +396,7 @@ def _gapped_record():
     return _carve_windows(t, pre + post)
 
 
+@pytest.mark.unit
 def test_the_gapped_record_really_hides_its_gap_from_the_window_table():
     """Positive control for the two tests below: without this, they could pass because the
     carve marked the gap and `gap_spans_s` changed nothing."""
@@ -388,6 +407,7 @@ def test_the_gapped_record_really_hides_its_gap_from_the_window_table():
     )
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize("clock", [CLOCK_IN_SPEC, CLOCK_CALENDAR])
 def test_segments_split_on_gap_spans_the_birth_taxonomy_cannot_see(clock):
     frame, gaps = _gapped_record()
@@ -397,6 +417,7 @@ def test_segments_split_on_gap_spans_the_birth_taxonomy_cannot_see(clock):
     assert len(split) == 2, f"gap_spans_s should split it; got {len(split)}"
 
 
+@pytest.mark.unit
 def test_the_merged_calendar_segment_contains_a_fabricated_inter_event_gap():
     """Names the damage: on the calendar clock the merged segment reports the 488 s of
     UNOBSERVED time as if it were an observed inter-event interval, and feeds it to
@@ -413,6 +434,7 @@ def test_the_merged_calendar_segment_contains_a_fabricated_inter_event_gap():
         )
 
 
+@pytest.mark.unit
 def test_interior_segments_are_truncated_at_the_gap_start_not_at_an_event():
     """`tau` for an interior segment is when watching STOPPED. Taking it from the last
     window's death is the event-determined boundary eq (7) forbids."""
@@ -425,6 +447,7 @@ def test_interior_segments_are_truncated_at_the_gap_start_not_at_an_event():
     )
 
 
+@pytest.mark.unit
 def test_omitting_gap_spans_keeps_the_old_behaviour():
     """The parameter is optional, and its absence must degrade predictably rather than
     change results for callers that never had a gap."""
@@ -469,6 +492,7 @@ def _record_ending_on_one_in_spec_read() -> list[int]:
     return body + [0, 1]
 
 
+@pytest.mark.unit
 def test_the_fixture_really_ends_in_a_zero_duration_window():
     """Positive control. Without it every test below could pass on a record whose final
     window has an ordinary positive duration, asserting nothing about the degeneracy."""
@@ -481,6 +505,7 @@ def test_the_fixture_really_ends_in_a_zero_duration_window():
     assert float(last["t_birth_s"]) == float(last["t_death_s"])
 
 
+@pytest.mark.unit
 def test_calendar_tau_equals_T_N_when_the_final_window_has_zero_duration():
     """Arithmetic: tau - T_N = t_death[-1] - t_birth[-1], which is 0 for a zero-duration
     final window. Asserted as an exact equality, not a tolerance, because it is an identity
@@ -498,6 +523,7 @@ def test_calendar_tau_equals_T_N_when_the_final_window_has_zero_duration():
     )
 
 
+@pytest.mark.unit
 def test_an_observation_end_at_the_last_read_does_not_clear_the_degeneracy():
     """The correction this measurement forced on SPEC 0008's own R8.1 prescription.
 
@@ -536,6 +562,7 @@ def test_an_observation_end_at_the_last_read_does_not_clear_the_degeneracy():
     assert np.isfinite(c2.statistic(one_interval_past))
 
 
+@pytest.mark.unit
 def test_an_interior_block_ending_in_a_zero_duration_window_is_not_reachable_by_observation_end():
     """Why the truncation rule cannot be the whole fix: `observation_end_s` applies to the
     FINAL block only (`_multiprocess.py:222-229`), so an interior block ending in a
@@ -596,6 +623,7 @@ def _blocked_perm(sizes=SIZES, seed=1) -> PermutationSet:
     return block_permutations(sizes, N_PERM, np.random.default_rng(seed))
 
 
+@pytest.mark.unit
 def test_the_set_it_builds_matches_calling_block_permutations_directly():
     """The extraction must not have changed WHICH permutations are drawn: the same seed has
     to give the same matrix, or every permutation p-value in the package moves."""
@@ -604,6 +632,7 @@ def test_the_set_it_builds_matches_calling_block_permutations_directly():
     assert np.array_equal(direct.indices, viahelper.indices)
 
 
+@pytest.mark.unit
 def test_a_matching_set_is_returned_unchanged_and_not_rebuilt():
     """Identity, not equality: rebuilding would consume the rng and draw different
     permutations while looking correct."""
@@ -611,6 +640,7 @@ def test_a_matching_set_is_returned_unchanged_and_not_rebuilt():
     assert resolve_perm(SIZES, supplied, N_PERM, np.random.default_rng(99)) is supplied
 
 
+@pytest.mark.unit
 def test_a_mismatched_set_raises_rather_than_being_rebuilt():
     """The load-bearing half. A set blocked for different segment sizes belongs to a
     different record; silently rebuilding it would yield a plausible, wrong p-value."""
@@ -619,6 +649,7 @@ def test_a_mismatched_set_raises_rather_than_being_rebuilt():
         resolve_perm(SIZES, wrong, N_PERM, np.random.default_rng(1))
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize("sizes", [[3, 4, 2], (3, 4, 2), np.array([3, 4, 2])])
 def test_both_call_spellings_agree(sizes):
     """The six sites differed only in whether `sizes` arrived as a list from
@@ -628,6 +659,7 @@ def test_both_call_spellings_agree(sizes):
     assert resolve_perm(sizes, supplied, N_PERM, np.random.default_rng(1)) is supplied
 
 
+@pytest.mark.unit
 def test_an_absent_rng_still_raises_block_permutations_own_message():
     """Not duplicated in the helper, so there is one message for that failure rather than two
     that can drift. `AGENTS.md` records why an implicit rng is fatal here."""
@@ -635,6 +667,7 @@ def test_an_absent_rng_still_raises_block_permutations_own_message():
         resolve_perm(SIZES, None, N_PERM, None)
 
 
+@pytest.mark.unit
 def test_an_rng_is_not_required_when_a_usable_set_is_supplied():
     """The construct-or-validate asymmetry, asserted: only the building branch needs a
     generator. This is why the block cannot be expressed as a precondition, and why R8.5b
@@ -643,6 +676,7 @@ def test_an_rng_is_not_required_when_a_usable_set_is_supplied():
     assert resolve_perm(SIZES, supplied, N_PERM, None) is supplied
 
 
+@pytest.mark.policy
 def test_no_call_site_still_carries_its_own_copy():
     """The guard against a seventh copy reappearing, and against this extraction being
     reverted in one file only - which is the `AGENTS.md` section 4 failure exactly."""

@@ -20,6 +20,9 @@ import pytest
 
 from quebra.core.paths import repo_root
 
+pytestmark = pytest.mark.policy
+
+
 PRIVATE_ROOT = repo_root() / "data" / "real_private"
 MANIFEST = PRIVATE_ROOT / "MANIFEST.toml"
 
@@ -40,6 +43,7 @@ def _present_files() -> list[Path]:
     ]
 
 
+@pytest.mark.real
 def test_the_manifest_parses_and_is_not_empty():
     records = _records()
     assert records, "a manifest with no records is not a manifest"
@@ -47,6 +51,7 @@ def test_the_manifest_parses_and_is_not_empty():
         assert record["path"] and record["sha256"] and record["embargo"]
 
 
+@pytest.mark.real
 def test_every_present_file_has_an_entry():
     """A record that arrived without being manifested is invisible to a reviewer."""
     present = {str(p.relative_to(PRIVATE_ROOT)) for p in _present_files()}
@@ -55,6 +60,7 @@ def test_every_present_file_has_an_entry():
     assert not missing, f"present but unmanifested: {missing[:5]}"
 
 
+@pytest.mark.real
 def test_every_manifest_entry_matches_the_file_on_disk():
     """The assertion the manifest exists to support: this digest, this file.
 
@@ -78,6 +84,7 @@ def test_every_manifest_entry_matches_the_file_on_disk():
         pytest.skip("no manifested file is present to verify")
 
 
+@pytest.mark.real
 def test_the_declared_count_matches_the_entries():
     manifest = (
         tomllib.loads(MANIFEST.read_text())

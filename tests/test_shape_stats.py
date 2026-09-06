@@ -39,6 +39,8 @@ from quebra.analyzers.shape_stats import (
     xi_p_value_asymptotic,
 )
 
+pytestmark = pytest.mark.statistical
+
 
 # ------------------------------------------------------------------ xi, tie-free
 

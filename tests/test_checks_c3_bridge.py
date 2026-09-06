@@ -14,6 +14,8 @@ import pytest
 import quebra.analyzers.checks.c3_serial_copula as c3
 from quebra.analyzers.checks.result import Segment
 
+pytestmark = pytest.mark.unit
+
 
 def _segment(n: int = 30, seed: int = 3) -> Segment:
     rng = np.random.default_rng(seed)

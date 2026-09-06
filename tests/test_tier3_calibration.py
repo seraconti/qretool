@@ -73,6 +73,8 @@ from quebra.analyzers.instrument_validation import (
     measure_asymptotic_size,
 )
 
+pytestmark = pytest.mark.statistical
+
 # B is chosen so every alpha below is exactly a grid point: p = k/(B+1) = k/200.
 N_PERM = 199
 ALPHAS = (0.01, 0.05, 0.10)

@@ -27,6 +27,8 @@ from quebra.core.paths import (
     resolve_data_root,
 )
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def isolated(tmp_path, monkeypatch):

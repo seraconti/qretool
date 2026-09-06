@@ -34,6 +34,9 @@ from scipy.stats import rankdata, spearmanr
 from quebra.analyzers.shape_stats import chatterjee_xi, dcor
 from tests.fixtures import R_REFERENCE_INPUTS, R_REFERENCE_VALUES
 
+pytestmark = pytest.mark.statistical
+
+
 _INPUTS = pd.read_csv(R_REFERENCE_INPUTS)
 _VALUES = pd.read_csv(R_REFERENCE_VALUES)
 

@@ -16,6 +16,9 @@ import pytest
 
 from quebra.analyzers import windows
 
+pytestmark = pytest.mark.statistical
+
+
 MINUTE_S = 60.0
 THRESHOLDS = [("3", 3.0, True)]
 

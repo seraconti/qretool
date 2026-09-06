@@ -1,9 +1,28 @@
 # mypy is scoped to the layering root AGENTS.md names, not the whole package. Widening it
 # is deferred: the modules outside this tree do not type-check yet.
 PKG := src/quebra/core
-FAST := -m "not slow and not heavy and not real and not r"
+# One definition, read by this file and by scripts/{check_ci,acceptance}.sh. Spelled in
+# three places it drifts, and check_ci.sh:70 claims all three run the same arguments.
+# `real` is deliberately IN the fast selector: CI has no private tree, so those tests skip
+# there, and excluding them locally would move manifest integrity onto a discipline promise.
+#
+# Resolved against THIS file, not the cwd, and empty is a hard error: pytest reads `-m ""`
+# as "no filter", so a missing file would silently run the excluded tiers and still exit 0.
+HERE := $(dir $(lastword $(MAKEFILE_LIST)))
+FAST_SELECTOR = $(strip $(shell cat $(HERE)scripts/fast-selector.txt 2>/dev/null))
+FAST = -m "$(FAST_SELECTOR)"
 
-.PHONY: check check-ci lint types arch deps test test-all test-r test-real promote docs clean
+## Guard, in the recipe rather than at parse time: `$(error ...)` at the top level fires for
+## EVERY target, so a missing selector would block `make clean` and `make lint` too - the
+## targets you need to recover with.
+require-selector:
+	@test -n '$(FAST_SELECTOR)' || { \
+	  echo "scripts/fast-selector.txt is missing or empty." >&2; \
+	  echo "pytest reads -m \"\" as NO FILTER, so this would silently run the excluded tiers." >&2; \
+	  exit 1; }
+TIERS := unit properties statistical integration validation regression policy
+
+.PHONY: check check-ci lint types arch deps test require-selector test-all test-r test-real tiers promote docs clean $(addprefix tier-,$(TIERS))
 
 ## Run before every checkpoint. This is what the checkpoint banner reports.
 check: lint types arch test
@@ -32,10 +51,11 @@ arch:
 deps:
 	deptry .
 
-test:
+test: require-selector
 	pytest $(FAST)
 
-## Everything a laptop can run without private data.
+## Simulates a reviewer with no private tree. Not a superset of `test`: `test` now
+## includes `real`, so neither selector contains the other.
 test-all:
 	pytest -m "not real"
 
@@ -51,12 +71,29 @@ test-r:
 ## latent, not live: `pytest -m "r"` exits 5 first and make stops on it. It goes live the
 ## moment any test carries the `r` marker.
 ##
-## Both selectors match no test, so both exit 5. That failure is deliberate - a target
-## reporting "selected nothing" as success is how an unrun tier rots unnoticed. `regression`
-## is additionally not a declared marker: it evaluates false in a `-m` expression, and
-## `--strict-markers` will reject the first test that carries it.
+## `real` now has 9 members, so this selects rather than exiting 5. `regression` is a
+## declared marker with no members by decision: its oracle needs a tagged run, and whether
+## values derived from an embargoed record may enter a public history is not settled.
 test-real:
 	pytest -m "real or regression"
+
+## Per-tier selection. The tier axis says what question a test answers; nothing in `check`
+## gates on it, so these are for reading the suite, not for CI.
+##
+## Three tiers are empty and `tier-<name>` exits 5 for each, deliberately. `properties`
+## gains members with the hypothesis work. `validation` is empty because the one place the
+## wiring and the estimator can jointly be wrong is the carve-to-estimator handoff, tested
+## directly rather than through a job. `regression` is empty because its oracle needs a
+## tagged run, and whether values derived from an embargoed record may enter a public
+## history is unsettled.
+$(addprefix tier-,$(TIERS)): tier-%:
+	pytest -m "$*"
+
+## How many tests answer each kind of question.
+tiers:
+	@for t in $(TIERS); do \
+	  printf "%-14s %s\n" "$$t" "$$(pytest --collect-only -q -m "$$t" 2>/dev/null | tail -1)"; \
+	done
 
 ## Commit the provenance of a figure that appears in a publication. output/ is gitignored,
 ## so this copies the kilobytes that make a figure auditable and none of the megabytes.

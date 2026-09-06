@@ -38,8 +38,9 @@ jobs:
       # Invariant: no step here fetches data/real_private/, and none may be added.
       #
       # What keeps the suite green without that tree is per-test `pytest.skip` on the absent
-      # path, NOT the marker selector: no test carries the markers the fast selector names,
-      # so it excludes nothing and the whole suite runs either way.
+      # path, NOT the marker selector. Nine tests carry `real`, and `real` is deliberately
+      # NOT excluded from the fast selector: the marker is local bookkeeping, and the runner
+      # having no tree is the enforcement.
       - name: make check
         run: make check
 

@@ -27,6 +27,9 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.policy
+
+
 REPO = Path(__file__).resolve().parent.parent
 
 # Every package that is part of the pipeline proper. `analyzers` includes `analyzers/checks`

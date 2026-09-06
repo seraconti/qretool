@@ -17,6 +17,8 @@ import pytest
 from quebra.core import paths as paths_module
 from quebra.core.paths import DataUnavailable, resolve_dataset_path
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def fake_repo(tmp_path, monkeypatch):

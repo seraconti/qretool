@@ -92,10 +92,18 @@ select = ["E4", "E7", "E9", "F"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-markers"
+# Two orthogonal axes: tier (exactly one per test) and cost (zero or more).
 markers = [
+  "unit: does this function do the small thing it claims",
+  "properties: mathematical invariants under generated inputs",
+  "statistical: is the estimator correct, against a named oracle",
+  "integration: does the machinery wire up",
+  "validation: does an end-to-end job reach the right verdict on known truth",
+  "regression: did a refactor move a published number",
+  "policy: does the source tree obey a rule we wrote down",
   "slow: full statistical grids; excluded from the fast gate",
   "heavy: large end-to-end job runs; excluded from the fast gate",
-  "real: needs the private dataset tree; never runs in CI",
+  "real: needs the private dataset tree; CI has none, so these skip there",
   "r: needs Rscript plus the copula and randtests packages",
 ]
 

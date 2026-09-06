@@ -20,6 +20,8 @@ import pytest
 
 from quebra.core.paths import default_dataset_root, repo_root, resolve_dataset_path
 
+pytestmark = pytest.mark.unit
+
 
 def test_a_tracked_in_repo_table_resolves(in_repo):
     """The case that forced the fallback: bench tables live inside the repo."""

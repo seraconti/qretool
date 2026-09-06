@@ -31,6 +31,7 @@ import pytest
 from quebra.analyzers import windows
 from quebra.core.paths import repo_root
 
+
 T = np.r_[np.arange(10) * 1.0, np.arange(10) * 1.0 + 110.0]
 Y = np.array(
     [2, 2, 0, 0, 2, 2, 2, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2],
@@ -61,6 +62,7 @@ def _complete(wins: list[dict[str, object]]) -> list[dict[str, object]]:
     ]
 
 
+@pytest.mark.unit
 def test_spacing() -> None:
     median_s, gap_threshold_s, n_gaps, n_nonpositive = windows.spacing(T, gap_mult=10.0)
     assert median_s == 1.0
@@ -69,6 +71,7 @@ def test_spacing() -> None:
     assert n_nonpositive == 0
 
 
+@pytest.mark.statistical
 def test_carving_bounds_births_and_deaths() -> None:
     wins = _carve(T, Y, u=1.0)
     assert len(wins) == 5
@@ -89,6 +92,7 @@ def test_carving_bounds_births_and_deaths() -> None:
     ]
 
 
+@pytest.mark.statistical
 def test_complete_excludes_every_unobserved_endpoint() -> None:
     wins = _carve(T, Y, u=1.0)
     complete = _complete(wins)
@@ -99,6 +103,7 @@ def test_complete_excludes_every_unobserved_endpoint() -> None:
     assert all(w["death_type"] != windows.DEATH_SCAN_END for w in complete)
 
 
+@pytest.mark.unit
 def test_gap_mult_sensitivity() -> None:
     _, gap_threshold_s, n_gaps, _ = windows.spacing(T, gap_mult=200.0)
     assert (gap_threshold_s, n_gaps) == (200.0, 0)
@@ -107,6 +112,7 @@ def test_gap_mult_sensitivity() -> None:
     assert _bounds(wins) == [(0, 2), (4, 7), (8, 13), (14, 20)]
 
 
+@pytest.mark.unit
 def test_duplicate_timestamps_do_not_collapse_the_threshold() -> None:
     t_dup = np.repeat(np.arange(10) * 2.0, 2)
     median_s, gap_threshold_s, _, n_nonpositive = windows.spacing(t_dup, gap_mult=10.0)
@@ -115,6 +121,7 @@ def test_duplicate_timestamps_do_not_collapse_the_threshold() -> None:
     assert gap_threshold_s == 20.0
 
 
+@pytest.mark.unit
 def test_gap_beats_a_simultaneous_down_crossing() -> None:
     # The read after the gap is out-of-spec: the open window must die gap_start, not
     # down_crossing. Gap wins ties because the gap check runs first.
@@ -125,6 +132,40 @@ def test_gap_beats_a_simultaneous_down_crossing() -> None:
     assert wins[0]["death_type"] == windows.DEATH_GAP_START
 
 
+@pytest.mark.unit
+def test_a_reading_exactly_at_the_threshold_is_in_spec_and_the_asymmetry_is_deliberate() -> (
+    None
+):
+    """Oracle: `AGENTS.md` section 5 ("in-spec means at or above the threshold") and the
+    KNOWN DIVERGENCE recorded in `windows.in_spec_mask`'s own docstring.
+
+    Section 5 says none of the domain invariants fails a test, and measured, that was true
+    here: mutating `in_spec_mask`'s `>=` to `>` (and its `<` to `<=`) left the entire suite
+    green, because every carve fixture uses values well clear of its threshold.
+
+    Both directions are pinned, including the asymmetry the docstring calls inherited
+    rather than a typo: with `big_values_good=True` a reading AT the threshold is in spec,
+    and with `big_values_good=False` the same reading is OUT of spec. That second half is
+    the documented divergence from `within_calibration_compute._out_of_spec_mask`, which
+    calls it in spec. Reconciling them changes published numbers, so this test pins the
+    divergence as it stands rather than asserting the pair agree.
+    """
+    at = np.array([5.0])
+    assert windows.in_spec_mask(at, 5.0, big_values_good=True).tolist() == [True]
+    assert windows.in_spec_mask(at, 5.0, big_values_good=False).tolist() == [False]
+    # and the neighbours, so the test fails on a shifted comparison rather than only a
+    # flipped one
+    assert windows.in_spec_mask(np.array([4.99, 5.01]), 5.0, True).tolist() == [
+        False,
+        True,
+    ]
+    assert windows.in_spec_mask(np.array([4.99, 5.01]), 5.0, False).tolist() == [
+        True,
+        False,
+    ]
+
+
+@pytest.mark.unit
 def test_equality_is_not_a_gap() -> None:
     # spacing exactly == gap_threshold must not count; the test is strict `>`.
     t = np.array([0.0, 1.0, 2.0, 12.0])  # median 1.0 -> threshold 10.0, last step 10.0
@@ -199,6 +240,7 @@ def _carve_annotated(*, use_uncertainty: bool):
     )
 
 
+@pytest.mark.unit
 def test_uncertainty_annotates_reads_and_never_moves_a_window_boundary():
     """The contract, on synthetic reads, in CI. Both halves are asserted: the window table
     must be identical AND the read states must actually differ, or the test would pass
@@ -222,6 +264,8 @@ def test_uncertainty_annotates_reads_and_never_moves_a_window_boundary():
     assert any("uncertain" in s for s in states_annotated)
 
 
+@pytest.mark.integration
+@pytest.mark.real
 @pytest.mark.parametrize(
     "stem,qubit",
     [

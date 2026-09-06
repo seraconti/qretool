@@ -14,6 +14,10 @@ from pathlib import Path
 from quebra.core.dataset import Dataset
 from quebra.core.identity import Identity, fold
 from quebra.core.job import Job
+import pytest
+
+pytestmark = pytest.mark.integration
+
 
 # --- fold encoder -----------------------------------------------------------
 

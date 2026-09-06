@@ -29,6 +29,9 @@ from quebra.panels._across_calibration_compute import (
 from quebra.panels.within_calibration import WithinCalibrationPanelData
 from quebra.panels.across_calibration import AcrossCalibrationPanelData
 
+pytestmark = pytest.mark.integration
+
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 

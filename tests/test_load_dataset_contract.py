@@ -30,6 +30,8 @@ from quebra.core.job import _load_dataset
 from quebra.core.types import Norm
 from quebra.schemas.ramsey_series import RamseySeriesSchema
 
+pytestmark = pytest.mark.unit
+
 
 class _ShapelessSchema:
     """A `to_norm` schema for data with no timestamp, no frequency and no qubit.

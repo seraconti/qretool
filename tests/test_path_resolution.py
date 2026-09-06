@@ -25,6 +25,9 @@ from quebra.core.paths import (
 from quebra.core.runner import run_job
 from quebra.provenance import hash_file
 
+pytestmark = pytest.mark.integration
+
+
 # --- pure units -------------------------------------------------------------
 
 

@@ -21,6 +21,9 @@ import quebra.analyzers.t2star as t2star
 import quebra.plots.km_survival_plot as km_plot
 from quebra.core.closure import code_closure
 
+pytestmark = pytest.mark.integration
+
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
 

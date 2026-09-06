@@ -93,8 +93,13 @@ print('fixture ->', len(result.frame), 'T2* points')
 # while six tests failed from anywhere else, so the gate concealed exactly the gap it was
 # written to expose. Pinning the cwd to the repository is the one thing this step must not
 # do.
+FAST_SELECTOR="$(cat "${REPO}/scripts/fast-selector.txt" 2>/dev/null || true)"
+if [ -z "${FAST_SELECTOR}" ]; then
+  echo "scripts/fast-selector.txt is missing or empty; pytest reads -m \"\" as no filter" >&2
+  exit 1
+fi
 step "fast test selector from an unrelated cwd" env -C "${OUTSIDE}" "${VENV}/bin/python" -m pytest \
-  -m "not slow and not heavy and not real and not r" -q "${REPO}/tests"
+  -m "${FAST_SELECTOR}" -q "${REPO}/tests"
 
 echo ""
 echo "=================================="

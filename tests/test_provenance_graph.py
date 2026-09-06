@@ -11,6 +11,9 @@ from __future__ import annotations
 import re
 
 from quebra.provenance import _mermaid_graph
+import pytest
+
+pytestmark = pytest.mark.unit
 
 
 def _ids_and_edges(md: str) -> tuple[set[str], list[tuple[str, str]]]:

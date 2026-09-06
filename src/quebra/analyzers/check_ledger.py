@@ -227,6 +227,22 @@ def make_inputs_from_windows(
     )
 
 
+def stream_for(label: str, clock: str) -> int:
+    """The permutation rng stream for one (threshold label, clock) cell.
+
+    crc32, not `hash()`: Python randomises string hashing per process (PYTHONHASHSEED), so
+    `hash(label)` would make every permutation p-value differ between runs while the
+    provenance record stayed identical - the exact defect the explicit-rng rule exists to
+    prevent. crc32 is stable across processes and versions.
+
+    Public rather than private because the cross-process stability claim above is only
+    testable if a test can call the derivation the shipped code uses. Inlined, it was
+    guarded by a test that re-typed the formula as a string literal and therefore could not
+    fail when this line changed.
+    """
+    return zlib.crc32(f"{label}|{clock}".encode()) & 0x7FFFFFFF
+
+
 def _tie_stats(durations: np.ndarray) -> tuple[int, float]:
     """Distinct value count and the fraction of observations sharing a value."""
     if not len(durations):
@@ -384,11 +400,7 @@ def _rows_for(
     n_events = int(len(durations))
     bench_n = nearest_bracketing_n(grid, n_events)
 
-    # crc32, not hash(): Python randomises string hashing per process (PYTHONHASHSEED),
-    # so `hash(label)` would have made every permutation p-value differ between runs while
-    # the provenance record stayed identical - the exact defect the explicit-rng rule
-    # exists to prevent. crc32 is stable across processes and versions.
-    stream = zlib.crc32(f"{label}|{clock}".encode()) & 0x7FFFFFFF
+    stream = stream_for(label, clock)
     rng = np.random.default_rng([inputs.seed, stream])
     perm = block_permutations(
         [s.n_events for s in segments], inputs.n_permutations, rng

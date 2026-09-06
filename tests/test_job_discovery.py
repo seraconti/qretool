@@ -22,6 +22,8 @@ from quebra.core.discovery import (
     swept,
 )
 
+pytestmark = pytest.mark.unit
+
 REPO_JOBS = (
     pytest.importorskip("pathlib").Path(__file__).resolve().parent.parent / "jobs"
 )

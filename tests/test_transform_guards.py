@@ -24,6 +24,8 @@ from quebra.analyzers.tlf import run as run_tlf
 from quebra.transforms.filter import run as run_filter
 from quebra.transforms.interpolate import run as run_interpolate
 
+pytestmark = pytest.mark.unit
+
 
 def _norm(**overrides) -> dict[str, object]:
     """A minimal well-formed Norm: 10 reads, a clean linear detuning."""

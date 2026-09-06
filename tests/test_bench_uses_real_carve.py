@@ -20,6 +20,9 @@ import pytest
 from quebra.analyzers import windows
 from jobs.bench.carve import BENCH_WINDOW_COLUMNS, carve_windows
 
+pytestmark = pytest.mark.statistical
+
+
 THRESHOLD = 0.0
 
 

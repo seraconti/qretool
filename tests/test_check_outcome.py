@@ -37,6 +37,9 @@ from quebra.analyzers.check_ledger import (
 )
 from quebra.plots.check_outcome_plot import CheckOutcomePlot
 
+pytestmark = pytest.mark.unit
+
+
 THRESHOLD = "3.0 µs"
 DATASETS = ("rec_a", "rec_b")
 CLOCKS = ("in_spec", "calendar")

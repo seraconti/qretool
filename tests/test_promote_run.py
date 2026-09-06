@@ -21,6 +21,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from promote_run import promote  # noqa: E402
 
+pytestmark = pytest.mark.unit
+
 
 def _make_run(tmp_path: Path, *, tree_clean: bool = True, nodes: int = 2) -> Path:
     run = tmp_path / "output" / "demo_job_abc123_20260101_000000"

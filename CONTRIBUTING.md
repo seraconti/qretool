@@ -48,8 +48,12 @@ Response is best effort, be kind <3
 
 **A test that fails without your change.** A test that passes either way documents nothing.
 A test that asserts a statistical result must name its oracle: an analytic value, a
-reference implementation, or a simulation truth. `tests/` is currently flat; the six-tier
-layout described in `AGENTS.md` is not built yet.
+reference implementation, or a simulation truth. `tests/` is flat and stays flat: the
+six-tier directory layout proposed in `spec/quebraplan.md` was declined in
+`spec/spectests06.md`, and the tier is carried by a marker instead. Every test carries
+exactly one of `unit`, `properties`, `statistical`, `integration`, `validation`,
+`regression`, `policy`, enforced by `tests/test_marker_discipline.py`. The cost markers
+`slow`, `heavy`, `real` and `r` are a separate, orthogonal axis.
 
 **Claims that match the code.** A number in a docstring must come from the artifact it
 cites. If a value cannot be checked cheaply, write it as the open question it is rather than

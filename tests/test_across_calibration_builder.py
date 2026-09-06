@@ -19,6 +19,9 @@ from quebra.panels.across_calibration import (
     AcrossCalibrationPanel,
     AcrossCalibrationPanelData,
 )
+import pytest
+
+pytestmark = pytest.mark.unit
 
 
 def _case(

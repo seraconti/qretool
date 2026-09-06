@@ -6,10 +6,13 @@ independently, so a regression that drops one of them fails here rather than in 
 
 from __future__ import annotations
 
+import pathlib
+
 import numpy as np
 import pandas as pd
 import pytest
 
+from quebra.analyzers import windows
 from quebra.analyzers.check_ledger import (
     VERDICT_FAIL,
     VERDICT_NOT_COMPUTED,
@@ -17,8 +20,11 @@ from quebra.analyzers.check_ledger import (
     VERDICT_TIES,
     VERDICT_UNDERPOWERED,
     _verdict,
+    stream_for,
 )
 from quebra.analyzers.checks.result import CALIB_PERMUTATION, CheckResult
+
+pytestmark = pytest.mark.unit
 
 
 def _result(check: str = "c6_exchangeability", p: float | None = 0.4) -> CheckResult:
@@ -96,19 +102,91 @@ def test_the_precedence_is_not_computed_then_ties_then_rejection():
 
 
 def test_the_per_threshold_seed_is_stable_across_processes():
-    """`hash()` is randomised per process; a seed built from it would make every
-    permutation p-value differ between runs while provenance stayed identical."""
+    """Oracle: the shipped `check_ledger.stream_for`, evaluated under three different
+    PYTHONHASHSEED values.
+
+    `hash()` is randomised per process, so a seed built from it would make every
+    permutation p-value differ between runs while provenance stayed identical.
+
+    This test calls the SHIPPED derivation. An earlier version re-typed the crc32
+    expression as a string literal and so asserted only that `zlib.crc32` is a function
+    of its argument - it stayed green when the module was mutated to use `hash()`, which
+    is the whole defect it existed to catch.
+    """
+    import os
     import subprocess
     import sys
 
-    code = "import zlib;print(zlib.crc32('3 \\u00b5s|in_spec'.encode()) & 0x7FFFFFFF)"
-    seen = {
-        subprocess.run(
-            [sys.executable, "-c", code], capture_output=True, text=True
-        ).stdout.strip()
-        for _ in range(3)
-    }
+    code = (
+        "from quebra.analyzers.check_ledger import stream_for;"
+        "print(stream_for('3 \\u00b5s', 'in_spec'))"
+    )
+    seen = set()
+    for hashseed in ("0", "1", "12345"):
+        env = {**os.environ, "PYTHONHASHSEED": hashseed}
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, env=env
+        )
+        assert out.returncode == 0, out.stderr
+        seen.add(out.stdout.strip())
     assert len(seen) == 1, f"per-threshold stream is not stable: {seen}"
+    # In-process agreement too, so a mutation cannot pass by being uniformly wrong across
+    # subprocesses while disagreeing with the value the ledger actually uses.
+    assert seen == {str(stream_for("3 µs", "in_spec"))}
+
+
+def test_the_ledger_derives_its_stream_through_stream_for(monkeypatch):
+    """Oracle: the call site at `check_ledger.run`, not the helper it calls.
+
+    The test above pins `stream_for` itself. That is not enough on its own: extracting the
+    expression narrowed the mutable surface rather than covering it, so re-inlining
+    `hash(...)` at the call site would leave `stream_for` correct, unused, and the suite
+    green. This asserts the routing, so both halves of the seed derivation are pinned.
+    """
+    import quebra.analyzers.check_ledger as ledger_module
+
+    calls: list[tuple[str, str]] = []
+
+    def spy(label: str, clock: str) -> int:
+        calls.append((label, clock))
+        return stream_for(label, clock)
+
+    monkeypatch.setattr(ledger_module, "stream_for", spy)
+
+    t = np.arange(80, dtype=float) * 60.0
+    values = np.where((np.arange(80) // 7) % 2 == 0, 5.0, 1.0)
+    carved = windows.run(
+        windows.WindowsInputs(
+            t_rel_s=t,
+            values=values,
+            thresholds=[("3 µs", 3.0, True)],
+            dataset_id="unit",
+        )
+    )
+    # `Path(__file__)`, not `repo_root()`: the latter is defined by the working directory,
+    # so it breaks when the suite runs from elsewhere. Same idiom as test_checks_cvm.py.
+    bench_csv = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "jobs"
+        / "bench"
+        / "results"
+        / "size_table.csv"
+    )
+    bench = pd.read_csv(bench_csv)
+    ledger_module.run(
+        ledger_module.CheckLedgerInputs(
+            windows=carved.windows,
+            bench_size_table=bench,
+            thresholds=[("3 µs", 3.0, True)],
+            n_permutations=49,
+            seed=7,
+            include_c3=False,
+        )
+    )
+
+    assert calls, "check_ledger.run no longer routes its rng stream through stream_for"
+    assert {clock for _, clock in calls} == {"in_spec", "calendar"}
+    assert {label for label, _ in calls} == {"3 µs"}
 
 
 def test_tie_stats_counts_what_it_says():

@@ -27,6 +27,9 @@ import pytest
 from quebra.analyzers import kaplan_meier
 from quebra.analyzers.kaplan_meier import KNOWN_DEATH_TYPES, KaplanMeierInputs
 
+pytestmark = pytest.mark.policy
+
+
 SRC = Path(__file__).resolve().parents[1] / "src" / "quebra"
 CHECKS = SRC / "analyzers" / "checks"
 

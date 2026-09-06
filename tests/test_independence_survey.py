@@ -32,6 +32,9 @@ from quebra.analyzers.independence_survey import (
 )
 from quebra.plots.independence_survey_plot import SURVEY_PLOTS
 
+pytestmark = pytest.mark.unit
+
+
 REPO = Path(__file__).resolve().parents[1]
 
 

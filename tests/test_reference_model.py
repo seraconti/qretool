@@ -20,6 +20,9 @@ from quebra.core.job import Job
 from quebra.core.reference import ArtifactRef
 from quebra.core.runner import run_job
 
+pytestmark = pytest.mark.integration
+
+
 _SUB_SRC = (
     "from quebra.core.job import Job\n"
     "from quebra.core.dataset import Dataset\n"

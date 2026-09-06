@@ -56,6 +56,9 @@ from quebra.analyzers.checks._multiprocess import (
 from quebra.analyzers.checks.result import Segment, validate_segment
 from tests.fixtures.load_haul_dump import PUBLISHED, TAU_H, gaps_h
 
+pytestmark = pytest.mark.statistical
+
+
 X = gaps_h()
 N = len(X)
 SEGMENT = Segment(x=X, tau=TAU_H, n_censored_dropped=1)

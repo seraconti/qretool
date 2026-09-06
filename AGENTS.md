@@ -297,17 +297,43 @@ See any `jobs/active/ramsey_*.py`.
 
 ## 7. Tests
 
-`tests/` is flat today. A tiered layout is planned in `spec/quebraplan.md` and is not built;
-do not reorganise it without a spec.
+`tests/` is flat and stays flat. `spec/quebraplan.md` 5.1's six-directory layout was measured
+against the suite and **declined** in `spec/spectests06.md`: directories cross-cut the
+oracle-and-subject index below, and several files legitimately hold more than one tier. The tier
+is carried by a **marker**, not a directory.
+
+**Two orthogonal marker axes.** `unit`, `properties`, `statistical`, `integration`, `validation`,
+`regression` and `policy` classify the QUESTION a test answers; every collected test carries
+exactly one, enforced by a guard. `slow`, `heavy`, `real` and `r` classify its COST or
+REQUIREMENT and are independent: a test may be `statistical` and `slow`.
 
 **Oracle rule, effective now.** Any test asserting a statistical result must name its oracle in
 the test name or the first line of the docstring: an analytic value, a reference implementation,
 or a simulation truth. A test that cannot name an oracle is a change detector, not evidence.
 Do not write tests that assert what the code currently returns.
 
+**Naming an oracle is not detecting anything.** A test can cite a source and still be unable to
+fail: because it re-types the value it claims to check, because it divides by the quantity it
+claims to pin, or because both sides of an identity descend from the helper being mutated. All
+three shapes were found in this suite. When a test is the evidence for a claim, break the code it
+guards and confirm it goes red.
+
 **Test files are indexed by oracle and subject, not by source module.** Two test files sharing
 both an oracle and a subject are one file, at any length: splitting them duplicates the fixture
 and leaves neither able to show which one is the evidence.
+
+**Deleting a test.** Volume of deletion is the wrong metric: a deleted test that was catching
+something is an undetectable regression, and it is the one operation whose damage is invisible to
+every gate here. Before removing one, all three must hold.
+
+1. **Name the property it asserts, and name the test that still asserts it.** If no other test
+   does, it is not redundant - it is the only evidence.
+2. **Show the removal is safe by mutation, not by reading.** Break the code the test guards and
+   demonstrate the REMAINING suite goes red. If the suite stays green the deletion is refused and
+   the mutation result is reported, because a test whose guarded code can break with the suite
+   still green has found a second gap rather than proved itself redundant.
+3. **Record it in the checkpoint banner**: the property on `Not done`, the mutation result on
+   `Known risk`.
 
 Tests requiring R **skip** when `Rscript` is absent. They never pass with mocked values.
 

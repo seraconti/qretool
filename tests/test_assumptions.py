@@ -59,12 +59,14 @@ def _record(**overrides) -> Assumption:
 # ------------------------------------------------------------- the shipped registry
 
 
+@pytest.mark.unit
 def test_the_shipped_check_names_are_the_six_modules_own_constants():
     """The oracle for everything below."""
     assert SHIPPED_CHECK_NAMES == frozenset(m.CHECK_NAME for m in EVERY_CHECK)
     assert len(SHIPPED_CHECK_NAMES) == 6
 
 
+@pytest.mark.unit
 def test_a1_is_diagnosed_by_all_six_checks_and_the_count_is_six_not_five():
     """Pins the count against a doc claim that is currently stale.
 
@@ -77,12 +79,14 @@ def test_a1_is_diagnosed_by_all_six_checks_and_the_count_is_six_not_five():
     assert set(names) == SHIPPED_CHECK_NAMES
 
 
+@pytest.mark.unit
 def test_a1_reports_rather_than_raises():
     """A failed check suppresses nothing: SPEC 0008's governing constraint is that the band
     is always drawn and the check outcome is shown beside it."""
     assert ASSUMPTIONS["a1_renewal_durations"].disposition == DISPOSITION_REPORTS
 
 
+@pytest.mark.unit
 def test_every_registry_key_is_its_records_own_id():
     """A mismatched key would make `ASSUMPTIONS[x].id != x`, so a figure looking a record up
     by id would label it with another assumption's name."""
@@ -90,6 +94,7 @@ def test_every_registry_key_is_its_records_own_id():
         assert record.id == key
 
 
+@pytest.mark.unit
 def test_every_shipped_record_is_internally_consistent():
     for record in ASSUMPTIONS.values():
         assert record.disposition in DISPOSITIONS
@@ -99,6 +104,7 @@ def test_every_shipped_record_is_internally_consistent():
 # ------------------------------------------------------------- adding a record is cheap
 
 
+@pytest.mark.unit
 def test_a_new_record_needs_no_second_registry():
     """Expandability, asserted rather than hoped for. `diagnostic_checks` lives ON the
     record, so constructing one is the whole job: there is no parallel mapping a new entry
@@ -109,6 +115,7 @@ def test_a_new_record_needs_no_second_registry():
     assert made.diagnostic_checks == (c5.CHECK_NAME,)
 
 
+@pytest.mark.unit
 def test_a_record_with_no_diagnosing_check_is_allowed_when_it_says_undetected():
     """The shape the next record is likely to need: an assumption the package cannot see
     fail. It must be constructible without widening the vocabulary."""
@@ -117,6 +124,7 @@ def test_a_record_with_no_diagnosing_check_is_allowed_when_it_says_undetected():
     assert made.disposition == DISPOSITION_UNDETECTED
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize("claimed", [DISPOSITION_REPORTS, DISPOSITION_RAISES])
 def test_a_record_with_no_check_cannot_claim_to_report_or_raise(claimed):
     """The guard that stops a record promising a behaviour the package does not have. With
@@ -128,11 +136,13 @@ def test_a_record_with_no_check_cannot_claim_to_report_or_raise(claimed):
 # ------------------------------------------------------------- construction guards
 
 
+@pytest.mark.unit
 def test_naming_a_check_that_does_not_ship_is_refused():
     with pytest.raises(ValueError, match="do not ship"):
         _record(diagnostic_checks=("c9_imaginary",))
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize(
     "field_name", ["id", "statement", "diagnostic", "consequence", "reference"]
 )
@@ -144,6 +154,7 @@ def test_an_empty_field_is_refused_at_construction(field_name):
         _record(**{field_name: "   "})
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize(
     "bad_id", ["A5_Foo", "a_renewal", "renewal_durations", "a5-foo"]
 )
@@ -154,11 +165,13 @@ def test_an_id_outside_the_grep_shape_is_refused(bad_id):
         _record(id=bad_id)
 
 
+@pytest.mark.unit
 def test_an_unknown_disposition_is_refused():
     with pytest.raises(ValueError, match="disposition"):
         _record(disposition="silently_ignores")
 
 
+@pytest.mark.unit
 def test_a_record_cannot_be_edited_after_construction():
     """Frozen on purpose: a caller that could edit a record could make a figure claim a
     diagnostic that never ran."""
@@ -189,6 +202,7 @@ def _citations() -> dict[str, list[str]]:
     return found
 
 
+@pytest.mark.policy
 def test_every_registered_assumption_is_cited_by_a_test():
     # Deliberately no citing test in THIS file. A guard whose only satisfier is a test
     # written to satisfy it proves nothing; the citation lives on a check test that has a
@@ -205,6 +219,7 @@ def test_every_registered_assumption_is_cited_by_a_test():
     )
 
 
+@pytest.mark.policy
 def test_the_matcher_is_not_dead():
     """The liveness half, and the reason this file is not circular.
 

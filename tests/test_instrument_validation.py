@@ -27,6 +27,9 @@ from quebra.analyzers.instrument_validation import (
 )
 from tests.fixtures import R_REFERENCE_INPUTS, R_REFERENCE_VALUES
 
+pytestmark = pytest.mark.statistical
+
+
 REFERENCE = R_REFERENCE_VALUES.parent
 GAPS = pd.read_csv(REFERENCE / "load_haul_dump.csv")
 PUBLISHED = pd.read_csv(REFERENCE / "load_haul_dump_published.csv")

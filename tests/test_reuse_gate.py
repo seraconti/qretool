@@ -18,6 +18,8 @@ from quebra.core.dataset import Dataset
 from quebra.core.job import Job
 from quebra.core.runner import _reuse_eligible_dir, run_job
 
+pytestmark = pytest.mark.unit
+
 
 def _passthrough(x: object) -> object:
     return x

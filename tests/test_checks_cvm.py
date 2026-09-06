@@ -24,6 +24,8 @@ import quebra.analyzers.checks.cvm_cramer_von_mises as cvm
 from quebra.analyzers.checks._permutation import PermutationSet, block_permutations
 from quebra.analyzers.checks.result import CALIB_ASYMPTOTIC, CALIB_PERMUTATION, Segment
 
+pytestmark = pytest.mark.statistical
+
 
 def _segment(n: int, seed: int, slack: float = 1.0) -> Segment:
     g = np.random.default_rng(seed).exponential(size=n)
@@ -185,8 +187,44 @@ def test_the_p_value_is_monotone_across_the_whole_range_including_the_tail():
     )
 
 
-def test_the_reviewers_verdict_flip_case_now_rejects():
-    assert 1.0 - float(cvm.cvm_limiting_cdf(794.4)) == 0.0
+def test_a_saturated_p_value_says_so_in_its_notes():
+    """Oracle: the module's own saturation policy at `_SERIES_Z_MAX`.
+
+    Above the validated range the series is not evaluated at all: `cvm_limiting_cdf`
+    replaces `z` with 1.0 and returns a hardcoded 1.0, so `p = 0.0` arrives by GUARD
+    CLAUSE, not by computation. The verdict is right and the magnitude is not a
+    measurement, so the result must say which it is rather than let a reader quote the
+    zero as a number.
+
+    This replaces a test that asserted only `1 - cvm_limiting_cdf(794.4) == 0.0`. That
+    assertion is implied by the guard clause for every input above the cutoff, it names a
+    reviewer rather than an oracle, and no mutation was found that it caught and
+    `test_the_p_value_is_monotone_across_the_whole_range_including_the_tail` did not.
+    What nothing asserted, and this does, is that the note is attached.
+    """
+    x = np.full(682, 1.0)
+    x[341:] = 3.0  # a step trend: large statistic, comfortably past the cutoff
+    seg = Segment(x=x, tau=float(x.sum() + x.mean()))
+    result = cvm.run([seg], calibration=CALIB_ASYMPTOTIC)
+
+    assert result.statistic > cvm._SERIES_Z_MAX
+    assert result.p_value == 0.0
+    assert f"p_saturated(z>{cvm._SERIES_Z_MAX:g})" in result.notes
+
+
+def test_an_unsaturated_p_value_carries_no_saturation_note():
+    """Negative control for the note above: below the cutoff it must be absent.
+
+    Without this, a change that attached the note unconditionally would pass the test
+    above while making the annotation meaningless.
+    """
+    rng = np.random.default_rng(20260906)
+    x = rng.exponential(size=200)
+    seg = Segment(x=x, tau=float(x.sum() + x.mean()))
+    result = cvm.run([seg], calibration=CALIB_ASYMPTOTIC)
+
+    assert result.statistic < cvm._SERIES_Z_MAX
+    assert "p_saturated" not in result.notes
 
 
 def test_the_series_is_still_exact_where_it_was_pinned():

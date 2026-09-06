@@ -11,17 +11,21 @@ from __future__ import annotations
 
 import matplotlib
 import numpy as np
+import pytest
 
 matplotlib.use("Agg")
 
 from quebra.analyzers import windows
 from quebra.analyzers.within_calibration_compute import (
+    _threshold_in_spec_frac,
     build_within_calibration_panel_data,
 )
 from quebra.panels.within_calibration import (
     WithinCalibrationPanel,
     WithinCalibrationPanelData,
 )
+
+pytestmark = pytest.mark.unit
 
 
 def _carved(t_h, series, thresholds):
@@ -85,7 +89,33 @@ def test_cumulative_time_is_monotonic_and_bounded() -> None:
         assert arr[-1] <= total_h + 1e-9
 
 
+def test_occupancy_equals_a_hand_computed_fraction_of_observed_time() -> None:
+    """Oracle: a four-interval record whose occupancy is 0.5 by inspection.
+
+    Four one-hour intervals on a uniform grid. `_threshold_in_spec_frac` charges an
+    interval to the reading at its LEFT endpoint (`oos[:-1]`), so with readings
+    [10, 5, 1, 1, 10] against a threshold of 5 the out-of-spec intervals are the third
+    and fourth, giving 2 of 4 observed hours and an occupancy of exactly 0.5.
+
+    The reading of exactly 5.0 is the point of the case. `AGENTS.md` section 5 fixes
+    in-spec as `T2* >= threshold`, so a value AT the threshold is in spec and must not be
+    charged. Flipping `_out_of_spec_mask`'s `<` to `<=` moves this to 0.25, which is the
+    boundary convention that no other test in the suite pins.
+    """
+    t_h = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+    series = np.array([10.0, 5.0, 1.0, 1.0, 10.0])
+    frac = _threshold_in_spec_frac(t_h, series, [("5", 5.0, True)])
+    assert frac["5"] == pytest.approx(0.5, abs=1e-12)
+
+
 def test_in_spec_frac_matches_summary() -> None:
+    """Consistency between two consumers of one convention, NOT an oracle for it.
+
+    Both sides descend from `_out_of_spec_mask`, so a mutation to that helper moves them
+    together and this identity still holds. The oracle for the convention itself is the
+    hand-computed case above; this test guards only that the summary and the band do not
+    drift apart.
+    """
     d = _t2star_like()
     for label, summ in d.reliability.threshold_summary.items():
         assert summ is not None  # dense synthetic series

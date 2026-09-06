@@ -23,6 +23,9 @@ from quebra.core.job import Job
 from quebra.core.reference import LocalRef
 from quebra.core.runner import _ancestors
 
+pytestmark = pytest.mark.policy
+
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 JOBS_DIR = REPO_ROOT / "jobs"
 

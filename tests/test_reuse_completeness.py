@@ -31,6 +31,8 @@ from quebra.core.runner import _expected_sink_pkls, run_job
 from quebra.cli import _module_from_path
 from quebra.provenance import get_git_commit, is_tree_clean
 
+pytestmark = pytest.mark.integration
+
 
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(

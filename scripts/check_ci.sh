@@ -76,8 +76,13 @@ step "ruff format"  "${VENV}/bin/ruff" format --check .
 step "mypy"         "${VENV}/bin/mypy" --cache-dir "${CACHE}" --no-incremental src/quebra/core
 step "lint-imports" "${VENV}/bin/lint-imports" --no-cache
 step "deptry"       "${VENV}/bin/deptry" .
+FAST_SELECTOR="$(cat "${REPO}/scripts/fast-selector.txt" 2>/dev/null || true)"
+if [ -z "${FAST_SELECTOR}" ]; then
+  echo "scripts/fast-selector.txt is missing or empty; pytest reads -m \"\" as no filter" >&2
+  exit 1
+fi
 step "pytest"       "${VENV}/bin/python" -m pytest -q \
-  -m "not slow and not heavy and not real and not r"
+  -m "${FAST_SELECTOR}"
 
 echo ""
 echo "=================================="
