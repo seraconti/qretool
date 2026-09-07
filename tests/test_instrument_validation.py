@@ -12,6 +12,8 @@ data wrongly and the report is the one that reaches a figure.
 
 from __future__ import annotations
 
+import functools
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -59,7 +61,9 @@ def _tie_frame() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+@functools.lru_cache(maxsize=1)
 def _build():
+    """Memoised: about 2 s of Monte Carlo per construction, and every test wants the same one."""
     return build_instrument_validation(
         GAPS, PUBLISHED, R_INPUTS, R_VALUES, _tie_frame()
     )
@@ -259,18 +263,57 @@ def test_the_tier_3_rows_quote_a_number_this_run_produced():
     import re
 
     data = _build()
-    for instrument in ("C1 Lewis-Robinson", "C2 Anderson-Darling", "CvM"):
-        row = data.tier_verdict(instrument, 3)
-        assert row is not None
-        match = re.search(r"size measured at tau=(\d+): (0\.\d{4})", row.detail)
-        assert match, (
-            f"{instrument} tier 3 does not quote a measured size: {row.detail!r}"
-        )
-        # The number must be the one the artifact's own measurement produces, not merely
-        # four decimals in the right shape: a regex alone passes "0.9999".
-        from quebra.analyzers.instrument_validation import measure_all_asymptotic_sizes
+    # Driven from the artifact, not from a literal instrument tuple: a hardcoded list is
+    # outrun by the next instrument added, which is what happened when Kaplan-Meier landed
+    # with a tier-3 row this loop could not see.
+    #
+    # Every tier-3 row, not only the passing ones: C1 and C2 are `partial` and still quote
+    # a measured size, and a number that decides a partial verdict has to be as real as one
+    # that decides a pass.
+    #
+    # Not every row quotes a number - C5 and C6 pass on permutation exactness, which is an
+    # identity rather than a measurement. The rule is therefore: any row that CLAIMS a
+    # measured number must be re-derivable here, and a row that says "measured" in a shape
+    # this guard cannot parse is itself a failure.
+    from quebra.analyzers.instrument_validation import (
+        BAND_COVERAGE_REPLICATES,
+        measure_all_asymptotic_sizes,
+        measure_band_coverage,
+    )
 
-        expected = measure_all_asymptotic_sizes(tau=float(match.group(1)))[instrument]
-        assert float(match.group(2)) == pytest.approx(expected, abs=5e-5), (
-            f"{instrument} quotes {match.group(2)} but measures {expected:.4f}"
+    remeasured: set[str] = set()
+    for row in [r for r in data.tiers if r.tier == 3]:
+        size_match = re.search(r"size measured at tau=([\d.]+): (0\.\d{4})", row.detail)
+        band_match = re.search(
+            r"band coverage measured at t=[\d.]+: (0\.\d{4})", row.detail
         )
+        if size_match:
+            expected = measure_all_asymptotic_sizes(tau=float(size_match.group(1)))[
+                row.instrument
+            ]
+            assert float(size_match.group(2)) == pytest.approx(expected, abs=5e-5), (
+                f"{row.instrument} quotes {size_match.group(2)} but measures {expected:.4f}"
+            )
+            remeasured.add(row.instrument)
+        elif band_match:
+            expected_cov = measure_band_coverage(replicates=BAND_COVERAGE_REPLICATES)
+            assert float(band_match.group(1)) == pytest.approx(
+                expected_cov, abs=5e-5
+            ), (
+                f"{row.instrument} quotes {band_match.group(1)} but "
+                f"measures {expected_cov:.4f}"
+            )
+            remeasured.add(row.instrument)
+        else:
+            assert "measured" not in row.detail, (
+                f"{row.instrument} tier 3 says 'measured' but quotes no number this guard "
+                f"can re-derive: {row.detail!r}"
+            )
+
+    assert "Kaplan-Meier" in remeasured, "the KM tier-3 row must be re-measured here"
+    assert remeasured == {
+        "C1 Lewis-Robinson",
+        "C2 Anderson-Darling",
+        "CvM",
+        "Kaplan-Meier",
+    }, f"re-measured {sorted(remeasured)}; a row stopped quoting its number"

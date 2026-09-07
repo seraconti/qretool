@@ -12,7 +12,7 @@ Tiers are independent kinds of evidence, and none subsumes another:
 |---|---|
 | 1 | does the code compute what its source's equation says (review) |
 | 2 | does it reproduce the numbers the source PRINTS, on the source's data |
-| 3 | does its p-value hold its nominal level under a null it is entitled to |
+| 3 | does it hold its nominal level under a null it is entitled to - a p-value's size, or a band's coverage |
 | 4 | does it agree with an independent implementation of the same statistic |
 
 `absent` means no evidence was gathered. It is NOT a failing grade, and it is not
@@ -34,6 +34,7 @@ unable to detect anything on a window this project actually carves. Power is in
 | CvM | pass - four published critical values reproduced | pass - size measured at tau=20: 0.0642 +/- 0.0071 on exponential gaps. Benched over 219 size rows: in the cell arm=A_iid_weibull, clock=in_spec, quantised=False, censoring=0.00, asymptotic size is 0.0610 and 0.0770 at n=20 for Weibull shapes 0.75 and 1.50, and within 0.007 of nominal from n=35 up. Mean |size - 0.05| over those 12 cells is 0.0070, against 0.0072 for C1 and 0.0084 for C2 - CvM is the best calibrated of the three, though the margin is near the 0.005 Monte Carlo error in most cells and only n=20 shape 1.50 separates them clearly | pass - gamma=1 path equals scipy.stats.cramervonmises to 4e-16 |
 | Chatterjee xi | absent | partial - closed-form null holds at nominal on tie-free data; under ties it is not entitled | pass - matches `scipy.stats.chatterjeexi` to 1e-10 on all four cases INCLUDING the tied one, and XICOR to 1e-10 tie-free. Two independent implementations, one of which runs in the suite without R |
 | distance correlation | absent | absent | pass - matches the energy package on three cases |
+| Kaplan-Meier | absent - no published worked example with printed intermediates is in hand, as there is for C1 and C2. The derivation-from-definition evidence that would be tier 1 exists (a censored case hand-derived independently, product-limit, risk sets and Greenwood, in tests/test_kaplan_meier.py) but no renderer draws tier 1, so it is not claimed as a row here | pass - band coverage measured at t=0.5: 0.9462 +/- 0.0032 against S(t)=exp(-t), n=60, administrative censoring at 1.5 (nominal 0.95). Coverage at ONE evaluation time, not a max over a grid, so no multiplicity correction is owed. No direction is claimed | partial - agrees with scipy.stats.ecdf on CensoredData to 1e-12, point estimate and log-log band, over five censoring shapes. The point estimate is compared as step functions on the union grid; the band at Kaplan-Meier's own jump points, where both are finite. PARTIAL and not pass because that comparison runs in the suite and produces no CrossImplementation row here, so this verdict rests on prose rather than on a number this artifact computed - the defect class recorded above for tier 3. scipy is a hard dependency, so computing it in is the fix |
 
 ## Tier 2 detail - published values
 

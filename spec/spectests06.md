@@ -77,7 +77,7 @@ requirements rather than sitting in a footnote.
 
 Phase 5 opens with "your current suite was agent-written, and agent-written tests have a
 characteristic failure mode: they assert what the code currently does", and derives an entry rule
-that every test must name its oracle. **That rule is already `AGENTS.md:303-306` ("Oracle rule,
+that every test must name its oracle. **That rule is already `AGENTS.md` section 7's oracle rule ("Oracle rule,
 effective now") and it is already kept.**
 
 Classification rule, stated so a second rater can disagree with it. **S**: the assertion is about
@@ -233,7 +233,7 @@ Applying the six tier directories to the 40 files:
   records. Neither precondition for the tier exists anyway: no tags, no `published/`.
 - **The `jobs/` tier was budgeted against 63 jobs.** There are 13 in 6 families, and most declare a
   `data/real_private/` dataset, so a CI-runnable version needs synthetic datasets that do not exist.
-- **Directories cross-cut the index `AGENTS.md:308-310` already mandates**, which is by oracle and
+- **Directories cross-cut the index `AGENTS.md` section 7's indexing rule already mandates**, which is by oracle and
   subject. `tests/test_checks_statistics.py` is described by its own docstring as "identities,
   oracles, and the guards", which is three tiers in one file; `tests/test_windows_carve.py` holds
   synthetic contract tests at `:202` and real-record tests at `:243`.
@@ -323,7 +323,7 @@ registered but never reaching a sink is **never executed and never appears in `p
 
 ### R6.0.9 5.4's "cumulative hazard non-decreasing" has no subject
 
-No Nelson-Aalen module ships. `AGENTS.md:11-12` records this and `grep -rli` finds nothing.
+No Nelson-Aalen module ships. `AGENTS.md's not-implemented list` records this and `grep -rli` finds nothing.
 
 **And one shipped field actively manufactures the impression that one does.**
 `analyzers/reliability_band.py:70` declares `cumulative_hazard: dict[str, list[tuple[float, float]]]
@@ -404,7 +404,7 @@ this spec, which is dated, rather than in a document that would go stale silentl
    changing the `GAMMA_COMPLETE` divisor turns 6 tests red and the `GAMMA_TRUNCATED` divisor turns 4
    red, while `test_eq16_reduces_to_eq4_for_a_single_segment` stays green in both cases. So the
    circularity at `:171` is real but **costs zero detection**, and adding a third transcription of
-   the published-values file is what `AGENTS.md:308-310` pushes against. The circularity is recorded
+   the published-values file is what `AGENTS.md` section 7's indexing rule pushes against. The circularity is recorded
    in R6.0.2 as a weak test, not repaired with a redundant one.
 3. `tests/test_within_calibration_builder.py:88` gains an assertion against a hand-computed
    occupancy rather than only against the sibling code path.
@@ -424,7 +424,7 @@ predicate "this test makes a statistical claim" is a judgement, not a decidable 
 guard can enforce the oracle rule as written. A guard over a decidable proxy such as "every test in
 these modules has a non-empty docstring" would enforce something other than the rule and would be a
 test written to satisfy an architecture, which is the failure mode this phase exists to remove. The
-rule stays where it is enforceable: `AGENTS.md:303-306`, `CONTRIBUTING.md`, and review.
+rule stays where it is enforceable: `AGENTS.md` section 7's oracle rule, `CONTRIBUTING.md`, and review.
 
 **Acceptance.**
 
@@ -508,7 +508,7 @@ the day a public record ships, and the emptiness is a recorded decision rather t
 3. A test carrying no tier marker, or two, fails the completeness guard, and the guard's positive
    control demonstrates it can fail.
 4. `regression` selects zero and that is recorded as intended, not as a failure.
-5. `AGENTS.md:300-301` and `CONTRIBUTING.md` record the decision as **declined in favour of a marker
+5. `AGENTS.md` section 7 and `CONTRIBUTING.md` record the decision as **declined in favour of a marker
    axis**, not as "planned and not built". `CONTRIBUTING.md`'s "the six-tier layout described in
    `AGENTS.md`" is a wrong locator today, since `AGENTS.md` describes no such layout and points at
    `quebraplan.md`; both halves are corrected.
@@ -658,7 +658,7 @@ permitted and `tests/test_bench_uses_real_carve.py:21` already does. That permis
 **omission, not a decision**: someone adding `"tests"` to the tuple would break that file while
 believing they were tightening a contract. The reason goes in a comment beside the tuple, where the
 person editing it will read it. A test asserting `"tests" not in PIPELINE_PACKAGES` is declined: it
-would assert what the code currently is, which `AGENTS.md:308-310` bans.
+would assert what the code currently is, which `AGENTS.md` section 7's indexing rule bans.
 
 **Left as open questions**, recorded in `spec/quebraplan.md` §7 rather than built:
 
@@ -685,6 +685,14 @@ would assert what the code currently is, which `AGENTS.md:308-310` bans.
 5. The three open questions are in `spec/quebraplan.md` §7 with their measured reasons.
 6. Collect delta: **+2 to +4**. Files: **1**.
 
+**Landed at +6 across 2 files, and the deviation is recorded rather than absorbed.** The carve
+law and the `tlf` dwell law are separate subjects with separate oracles, so `AGENTS.md` §7's
+index puts them in separate files: `tests/test_carve_duration_law.py` (+2) and
+`tests/test_tlf_dwell_law.py` (+4). The envelope assumed one file because an earlier draft
+treated the `tlf` oracle as a single assertion; it is four, because the sampled law has a mean
+and a CV per state and the two states are no longer interchangeable. 1.5x the stated ceiling,
+inside the §9 2x STOP.
+
 *Derivation.* Carve law: 1 pooled test. `tlf`: 1 to 3, being mean dwell, CV, and optionally
 switching rate - noting per R6.0.5 that at `lambda = mu` the rate assertion is the reciprocal of the
 dwell assertion and not independent evidence, so it is optional for that reason. Files: one new test
@@ -699,7 +707,7 @@ correct sampled one, and nothing new is imported by any pipeline package.
 
 **This is the phase.** R6.0.4 carries the measurement.
 
-One new file, `tests/test_kaplan_meier.py`, indexed by subject per `AGENTS.md:308-310`, with the
+One new file, `tests/test_kaplan_meier.py`, indexed by subject per `AGENTS.md` section 7's indexing rule, with the
 oracle named per test because the oracles differ across the file.
 
 **Analytic.**
@@ -818,9 +826,18 @@ silent on KM would leave a known gap open in the table that exists to prevent it
    direction claim.
 5. The three crude-versus-KM axes are reported as numbers, and no panel artifact changes.
 6. `instrument_validation` carries KM rows, and no row claims evidence that does not exist.
-7. Collect delta: **+14 to +18**, and it is carried **per checkpoint**, not per requirement: 6.5a
-   analytic **+6 to +8**, 6.5b cross-implementation **+3 to +4**, 6.5c simulation and handoff
-   **+3 to +4**, 6.5d MTBF and the ledger rows **+2**. **The 2x STOP applies at each checkpoint**,
+7. Collect delta: **+30 to +38** across **2 new and 4 edited files**, carried **per checkpoint**, not per requirement: 6.5a
+   analytic **+11 to +14**, 6.5b cross-implementation **+9 to +12**, 6.5c simulation and handoff
+   **+6 to +8**, 6.5d MTBF and the ledger rows **+4**.
+
+   **Revised upward during implementation, with the reason, rather than trimmed to fit.** The
+   original envelope (+6..+8, +3..+4, +3..+4, +2) assumed the cross-check would parametrise over
+   "two or three cases". It parametrises over five censoring SHAPES - none, interleaved with a
+   death/censoring tie, censoring-first, heavily censored, tied deaths - across two tests, which
+   is 10 collected where the envelope allowed 4. Each shape exercises a structurally different
+   path and dropping any loses a case, so the envelope was wrong rather than the work. 6.5b
+   landed at 2.75x the original and halted the phase under `AGENTS.md` section 9; the overrun was
+   presented and accepted, and the numbers above are the accepted ones. **The 2x STOP applies at each checkpoint**,
    so the requirement cannot absorb an overrun of +104 while still reporting itself inside a
    requirement-level envelope. Files: **2 new, 2 edited**.
 
@@ -941,7 +958,14 @@ include-cycle coverage.
    identity and dataset-resolution records are asserted to exclude it too.
 3. A `LocalRef` naming an unregistered node id raises a named `ValueError` at `job.step`, not a
    `KeyError` later, and the forward-reference cycle from R6.0.8 is refused at registration.
-4. Reuse is refused end to end under all three mismatches; the existing negative control is cited.
+4. **NOT MET, and recorded as owed rather than carried as satisfied.** The three tests that
+   drive `run_job` twice for real - an identity moved by reached code, an identity moved by
+   input content, and a dirty tree - were not written. Measured: no test anywhere drives
+   `run_job` twice and asserts a REFUSAL under a mismatch, and every end-to-end path
+   monkeypatches `is_tree_clean` to `True`, so the gate's refusal branches are exercised only
+   at the pure helper in `tests/test_reuse_gate.py`. The existing negative control at
+   `tests/test_reuse_completeness.py:296` shows reuse firing, which is the other half. This
+   is why R6.7 landed +5 against a stated +7. It is listed in "Not in this phase".
 5. No test asserts a chain from `runner.py:110`.
 6. Collect delta: **+7**. Files: **2** (`tests/test_dag_contract.py`, `core/job.py`).
 
@@ -1100,17 +1124,22 @@ future phase from being forced to rewrite a shipped spec.
 | R6.2 the tier axis: 7 markers, selector, completeness guard | +1 to +2 | 1 new, ~42 edited | 4-6 |
 | R6.3 cost markers, three selector sites, no private-data guard | +0 | 9 | 1-2 |
 | R6.4 no generator subsystem, no fixture; pooled carve law; tlf oracle | +2 to +4 | 1 | 2-3 |
-| R6.5 Kaplan-Meier oracles | +14 to +18 | 2 new, 2 edited | 8-12 |
+| R6.5 Kaplan-Meier oracles | +30 to +38 | 2 new, 2 edited | 8-12 |
 | R6.6 three properties on one subject | +3 to +4 | 4 | 2-3 |
 | R6.7 runner contract, two gaps, one validation fix | +7 | 2 | 2-3 |
 | R6.8 coverage reported in CI, scipy floor raised to 1.17 | +0 | 4 | 1 |
 | R6.9 deletion discipline | +0 | 1 | 0.5 |
 | R6.10 stale test-reference guard | +1 to +2 | 2 | 0.5 |
-| **Total** | **+28 to +39** | | **24-34** |
+| **Total** | **+44 to +59** | | **24-34** |
 
-535 becomes **563 to 574**. Any difference is explained at the checkpoint, not absorbed. R6.2 and
-R6.3 both touch `pyproject.toml` and the `Makefile`; those are counted once each in R6.3 and are
-not double-counted above.
+535 becomes **579 to 594**. **Measured on completion: 588**, inside that range.
+
+Per requirement, measured rather than projected: R6.1 +3, R6.2 +3, R6.3 +1, R6.4 +6, R6.5 +31
+(30 in `tests/test_kaplan_meier.py` plus the recomputation guard in
+`tests/test_instrument_report_currency.py`), R6.6 +4, R6.7 +5, R6.8 +0, R6.9 +0, R6.10 not yet landed.
+
+R6.2 and R6.3 both touch `pyproject.toml` and the `Makefile`; those are counted once each in R6.3
+and are not double-counted above.
 
 **Two corrections to this spec's own budget arithmetic, recorded rather than quietly fixed.**
 
@@ -1306,6 +1335,29 @@ otherwise.
 - **`reliability_band.cumulative_hazard`.** Declared, never written, and promised by its own module
   docstring (R6.0.9). Removing or populating it is a product change.
 - **`schemas/base.py`, `schemas/calibration_log.py`, `transforms/lookup_prior.py`** (17%).
+- **R6.7's three end-to-end reuse tests.** Owed, not deferred by choice: R6.7 acceptance 4
+  records the measurement. The refusal branches of the reuse gate are covered at the pure
+  helper and not end to end, so a change that broke `run_job`'s wiring to the gate while
+  leaving `_reuse_eligible_dir` correct would pass. Cheap to land and left out only because
+  it was discovered at review rather than written with the requirement.
+- **R6.5 acceptance 6's Greenwood clause is unmeetable as written** and is struck rather than
+  claimed. The `np.inf` sentinel at `kaplan_meier.py` and the `np.isfinite(greenwood)` clause
+  in `_loglog_band`'s mask are both dead - neutering either leaves the suite green - because
+  `denom == 0` implies `deaths == n_j`, which sets `S = 0` and is already excluded by the
+  `survival > 0.0` mask. And `greenwood` is a local list, never stored on
+  `KaplanMeierCurve`, so "assert `greenwood[-1]` is `inf`" cannot be asserted against the
+  shipped artifact at all. Either put it on the artifact or drop the clause; the test now
+  pins the exclusion set, which is what is observable.
+- **The tier-3 definition was widened** from "its p-value holds its nominal level" to also
+  cover "a band's coverage" (`analyzers/instrument_validation.py`), which R6.5 licensed only
+  as reusing `TierRow` and the `TIER_*` verdicts. Recorded here as a decision taken during
+  implementation, dated with this phase.
+- **The `tlf` dwell oracle's noise boundary.** Nothing drives `tlf.run` at separations where
+  the per-read MAP misassigns, so nothing establishes whether the dwell statistics degrade
+  smoothly or silently report three times too short. R6.4 accepted the noise-free draw as a
+  restriction. The misassignment rate at which the oracle stops holding is NOT yet filed
+  anywhere; §7 of `spec/quebraplan.md` carries the 1/f arm, the median-spacing defect and the
+  `allan` denominator, not this. Recorded here as owed.
 - **A `tests/regression/` tier and any golden values from private data.** It asks a data-publication
   question about embargoed records that nobody has answered, and neither precondition exists: no
   tags, no `published/`. The marker is declared so the tier can be populated the day a public record
@@ -1317,7 +1369,7 @@ otherwise.
 - **Populating the `r` marker, and any R CI job.** `quebraplan.md` Phase 6, reserved as SPEC 0007.
   The path past `c3_serial_copula._invoke_rscript` has never executed here, and "no members, reason
   given" must not be read as "R is covered".
-- **Nelson-Aalen, log-rank, RMST, MCF.** Not implemented; `AGENTS.md:11-12` records it.
+- **Nelson-Aalen, log-rank, RMST, MCF.** Not implemented; `AGENTS.md's not-implemented list` records it.
 - **Changing which survival estimator the within-calibration panel draws**, and populating
   `ReliabilityBand.band_lower` / `band_upper`. R6.5 produces the numbers that decision needs and does
   not make it.

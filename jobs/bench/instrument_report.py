@@ -31,7 +31,14 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "jobs" / "bench" / "results" / "instrument_report.md"
 
 
-def main() -> None:
+def render() -> str:
+    """The markdown this writer would emit, from the tracked inputs it reads.
+
+    Split out of `main` so a test can compare the committed file against what the code
+    renders WITHOUT duplicating the input list here - a guard that assembled its own inputs
+    would drift from the writer and then compare two different reports, which is exactly
+    the mistake the first version of that guard made.
+    """
     tie_path = ROOT / "jobs" / "bench" / "results" / "xi_tie_experiment.csv"
     if not tie_path.exists():
         raise FileNotFoundError(
@@ -45,7 +52,11 @@ def main() -> None:
         pd.read_csv(ROOT / "jobs" / "reference" / "r_reference_values.csv"),
         pd.read_csv(tie_path),
     )
-    OUT.write_text(render_tier_table_markdown(data))
+    return render_tier_table_markdown(data)
+
+
+def main() -> None:
+    OUT.write_text(render())
     print(f"wrote {OUT}")
 
 

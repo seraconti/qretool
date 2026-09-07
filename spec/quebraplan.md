@@ -629,7 +629,30 @@ legitimately sit.
    evidence** the new checklist requires.
 6. **Whether any repository does CI diagram-freshness checking** (8.7). Searched, not found.
    Cheap idiom regardless.
-7. **Which check verdicts, if any, should GATE a Kaplan-Meier band rather than annotate it.**
+7. **Does read-level LONG-MEMORY noise reach the durations, where AR(1) does not?**
+   `jobs/bench/arms.py:397` measures that read-level AR(1) induces no positive
+   duration-level dependence at any rho, reaching only -0.086 at rho = 0.99, because the
+   level crossings of a stationary Gaussian process regenerate. That is a SHORT-memory
+   argument and it does not obviously carry to 1/f. If it does not, a 1/f arm would produce
+   duration dependence the battery could be scored against. It is a bench arm and a
+   finding, not a test oracle: its induced duration dependence would have unknown
+   magnitude, whereas Arm E already supplies duration-level dependence with analytic ground
+   truth. SPEC 0006 R6.4 declined to build it for that reason.
+
+8. **The shared median-spacing defect in `analyzers/tlf.py:134` and
+   `analyzers/allan.py:20-25`.** Both take a median of read spacings and treat it as the
+   sample period: `tlf` multiplies run lengths by it to get dwells in seconds, `allan`
+   passes `rate = 1/dt` to `allantools`. On a gapped record neither quantity is elapsed
+   time. `allan` at least filters to positive diffs; `tlf` does not. Fixing either changes
+   a shipped figure, so it is a deliberate decision rather than a passing repair.
+
+9. **`allan.py:141-142` divides `fractional_adev` by `carrier_hz`, the mean of
+   `qubit_frequency_hz`, while mode `"fractional"` at `:63` divides by `f0_hz`, the mean of
+   `delta_hz`.** Two different denominators under one name, which is the unit-suffix bug
+   class `AGENTS.md` section 3 calls the costly one here. Recorded rather than fixed
+   because the choice changes a published figure.
+
+10. **Which check verdicts, if any, should GATE a Kaplan-Meier band rather than annotate it.**
    SPEC 0008 built the annotation and deliberately built no gate: collapsing a ledger to one
    licence is not decidable without the device survey analysed, and every candidate rule
    measured so far revokes on every real record for reasons unrelated to serial independence

@@ -181,7 +181,6 @@ DEP002 = [
   "mypy",
   "pytest",
   "pytest-cov",
-  "hypothesis",
   "import-linter",
   "deptry",
   "build",

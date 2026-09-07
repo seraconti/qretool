@@ -38,6 +38,13 @@ REPO = Path(__file__).resolve().parent.parent
 # `jobs/` deliberately sits at the root, because it is the researcher's
 # analysis configuration rather than library code, and moving it would have put `output/`
 # inside site-packages.
+# `tests` is DELIBERATELY not in this tuple, and adding it would break the suite rather
+# than tighten the contract. The rule being enforced is that the PIPELINE may not import the
+# bench, so that a figure cannot come to depend on a Monte Carlo study. The suite is where
+# the bench is legitimately studied, and `tests/test_bench_uses_real_carve.py` imports
+# `jobs.bench.carve` to pin it column-for-column against `analyzers.windows.run`. Recorded
+# here rather than as a test asserting the tuple's current contents, which would only pin
+# what the code already says.
 PIPELINE_PACKAGES = (
     "src/quebra/analyzers",
     "src/quebra/core",

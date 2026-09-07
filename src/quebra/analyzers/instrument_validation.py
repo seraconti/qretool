@@ -6,7 +6,8 @@ evidence that can, into one typed artifact a figure draws:
 
   Tier 1  the routine computes what its source's equation says          (code review)
   Tier 2  it reproduces the numbers the source PRINTS, from the source's own data
-  Tier 3  its p-value holds its nominal level under a null it is entitled to
+  Tier 3  it holds its nominal level under a null it is entitled to - a p-value's
+          size, or, for an estimator with no p-value, a band's coverage
   Tier 4  it agrees with an independent implementation, usually the authors' own R package
 
 No tier subsumes another. A routine can pass Tier 2 and fail Tier 3 (right arithmetic,
@@ -26,6 +27,7 @@ be perfectly validated here and still be unusable on a short window.
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -167,6 +169,70 @@ def measure_asymptotic_size(
     return rejected / replicates
 
 
+BAND_COVERAGE_SEED = 20260907
+BAND_COVERAGE_REPLICATES = 5000
+BAND_COVERAGE_N = 60
+BAND_COVERAGE_CENSOR_AT = 1.5
+BAND_COVERAGE_EVAL_AT = 0.5
+
+
+# Deterministic in its arguments: same seed and settings, same float. Cached because
+# `build_instrument_validation` is constructed once per test in the instrument suite and
+# 5000 Kaplan-Meier fits per construction is 1 s each time, for a number that cannot change.
+@functools.lru_cache(maxsize=8)
+def measure_band_coverage(
+    *,
+    seed: int = BAND_COVERAGE_SEED,
+    replicates: int = BAND_COVERAGE_REPLICATES,
+    n: int = BAND_COVERAGE_N,
+    censor_at: float = BAND_COVERAGE_CENSOR_AT,
+    eval_at: float = BAND_COVERAGE_EVAL_AT,
+) -> float:
+    """Coverage of Kaplan-Meier's 95% log-log band against a known exponential survival.
+
+    The tier-3 analogue for an estimator that produces a BAND rather than a p-value: the
+    question "does it hold its nominal level under a null it is entitled to" becomes "does
+    the 95% band contain the truth 95% of the time". Same question, different instrument.
+
+    Lives here rather than in the test module for the reason `measure_asymptotic_size`
+    gives above: a tier-3 verdict must quote a number the artifact produced, so the
+    measurement is on this side and the test imports it.
+
+    The truth is `S(t) = exp(-t)` and censoring is administrative at a FIXED time, so it is
+    non-informative by construction and the estimator is entitled to the data. Coverage is
+    the mean over replicates at ONE evaluation time; it is not a max or a min over a grid,
+    which would need a multiplicity correction before any verdict could be read off it.
+
+    Pure compute: seeded generator in, float out, no disk and no matplotlib.
+    """
+    import contextlib
+    import io
+
+    import numpy as _np
+
+    from quebra.analyzers import kaplan_meier as _km
+
+    rng = _np.random.default_rng(seed)
+    truth = float(_np.exp(-eval_at))
+    at = _np.array([eval_at])
+    covered = 0
+    # `kaplan_meier.run` logs one line per call by design; 5000 of them would bury the job's
+    # own output. Suppressed here rather than made conditional in the estimator.
+    with contextlib.redirect_stdout(io.StringIO()):
+        for _ in range(replicates):
+            draw = rng.exponential(size=n)
+            curve = _km.run(
+                _km.KaplanMeierInputs(
+                    duration_min=_np.minimum(draw, censor_at),
+                    death_observed=draw <= censor_at,
+                )
+            )
+            lo = _km._step_eval(curve.time_min, curve.band_lower, at)[0]
+            hi = _km._step_eval(curve.time_min, curve.band_upper, at)[0]
+            covered += int(_np.isfinite(lo) and _np.isfinite(hi) and lo <= truth <= hi)
+    return covered / replicates
+
+
 def asymptotic_size_se(
     size: float, replicates: int = ASYMPTOTIC_SIZE_REPLICATES
 ) -> float:
@@ -180,7 +246,10 @@ def asymptotic_size_se(
 
 
 def measure_all_asymptotic_sizes(
-    *, tau: float = ASYMPTOTIC_SIZE_TAU, seed: int = ASYMPTOTIC_SIZE_SEED
+    *,
+    tau: float = ASYMPTOTIC_SIZE_TAU,
+    seed: int = ASYMPTOTIC_SIZE_SEED,
+    replicates: int = ASYMPTOTIC_SIZE_REPLICATES,
 ) -> dict[str, float]:
     """The three asymptotic instruments' measured size, keyed by the report's own names."""
     import quebra.analyzers.checks.c1_lewis_robinson as _c1
@@ -188,9 +257,12 @@ def measure_all_asymptotic_sizes(
     import quebra.analyzers.checks.cvm_cramer_von_mises as _cvm
 
     return {
-        "C1 Lewis-Robinson": measure_asymptotic_size(_c1, tau=tau, seed=seed),
-        "C2 Anderson-Darling": measure_asymptotic_size(_c2, tau=tau, seed=seed),
-        "CvM": measure_asymptotic_size(_cvm, tau=tau, seed=seed),
+        name: measure_asymptotic_size(mod, tau=tau, seed=seed, replicates=replicates)
+        for name, mod in (
+            ("C1 Lewis-Robinson", _c1),
+            ("C2 Anderson-Darling", _c2),
+            ("CvM", _cvm),
+        )
     }
 
 
@@ -418,13 +490,21 @@ def build_instrument_validation(
     n_perm_in_tie_study: int = 999,
     asymptotic_size_seed: int = ASYMPTOTIC_SIZE_SEED,
     asymptotic_size_tau: float = ASYMPTOTIC_SIZE_TAU,
+    asymptotic_size_replicates: int = ASYMPTOTIC_SIZE_REPLICATES,
+    band_coverage_seed: int = BAND_COVERAGE_SEED,
+    band_coverage_replicates: int = BAND_COVERAGE_REPLICATES,
 ) -> InstrumentValidationData:
     """Assemble the whole artifact. This is the step the job calls."""
     published = build_published_comparisons(gaps_df, published_df)
+    band_coverage = measure_band_coverage(
+        seed=band_coverage_seed, replicates=band_coverage_replicates
+    )
     # Measured HERE, into the artifact, so the tier-3 rows below quote a number this run
     # produced rather than one a docstring remembers.
     sizes = measure_all_asymptotic_sizes(
-        tau=asymptotic_size_tau, seed=asymptotic_size_seed
+        replicates=asymptotic_size_replicates,
+        tau=asymptotic_size_tau,
+        seed=asymptotic_size_seed,
     )
     cross = build_cross_implementation(r_inputs_df, r_values_df)
 
@@ -441,7 +521,7 @@ def build_instrument_validation(
             "C1 Lewis-Robinson",
             3,
             TIER_PARTIAL,
-            f"size measured at tau=20: {sizes['C1 Lewis-Robinson']:.4f} +/- {asymptotic_size_se(sizes['C1 Lewis-Robinson']):.4f} on "
+            f"size measured at tau={asymptotic_size_tau:g}: {sizes['C1 Lewis-Robinson']:.4f} +/- {asymptotic_size_se(sizes['C1 Lewis-Robinson'], asymptotic_size_replicates):.4f} on "
             "exponential gaps (nominal 0.05). The bench measures 0.0640 and 0.0740 on "
             "Weibull shapes 0.75 and 1.50 - but ONLY in the fully specified cell "
             "arm=A_iid_weibull, clock=in_spec, quantised=False, censoring=0.00; "
@@ -461,7 +541,7 @@ def build_instrument_validation(
             "C2 Anderson-Darling",
             3,
             TIER_PARTIAL,
-            f"size measured at tau=20: {sizes['C2 Anderson-Darling']:.4f} +/- {asymptotic_size_se(sizes['C2 Anderson-Darling']):.4f} on exponential "
+            f"size measured at tau={asymptotic_size_tau:g}: {sizes['C2 Anderson-Darling']:.4f} +/- {asymptotic_size_se(sizes['C2 Anderson-Darling'], asymptotic_size_replicates):.4f} on exponential "
             "gaps. Bench 0.0650 and 0.0865 on Weibull shapes 0.75 and 1.50, in the "
             "cell arm=A_iid_weibull, clock=in_spec, quantised=False, censoring=0.00 "
             "only - other rows at n=20 and the same shape run to 0.176",
@@ -522,7 +602,7 @@ def build_instrument_validation(
             "CvM",
             3,
             TIER_PASS,
-            f"size measured at tau=20: {sizes['CvM']:.4f} +/- {asymptotic_size_se(sizes['CvM']):.4f} on exponential gaps. "
+            f"size measured at tau={asymptotic_size_tau:g}: {sizes['CvM']:.4f} +/- {asymptotic_size_se(sizes['CvM'], asymptotic_size_replicates):.4f} on exponential gaps. "
             "Benched over 219 size rows: in the cell arm=A_iid_weibull, "
             "clock=in_spec, quantised=False, censoring=0.00, asymptotic size is 0.0610 "
             "and 0.0770 at n=20 for Weibull shapes 0.75 and 1.50, and within 0.007 of "
@@ -557,6 +637,39 @@ def build_instrument_validation(
             TIER_PASS,
             "matches the energy package on three cases",
         ),
+        TierRow(
+            "Kaplan-Meier",
+            2,
+            TIER_ABSENT,
+            "no published worked example with printed intermediates is in hand, as there "
+            "is for C1 and C2. The derivation-from-definition evidence that would be tier 1 "
+            "exists (a censored case hand-derived independently, product-limit, risk sets "
+            "and Greenwood, in tests/test_kaplan_meier.py) but no renderer draws tier 1, so "
+            "it is not claimed as a row here",
+        ),
+        TierRow(
+            "Kaplan-Meier",
+            3,
+            TIER_PASS,
+            f"band coverage measured at t={BAND_COVERAGE_EVAL_AT:g}: "
+            f"{band_coverage:.4f} +/- {asymptotic_size_se(band_coverage, band_coverage_replicates):.4f} "
+            f"against S(t)=exp(-t), n={BAND_COVERAGE_N}, administrative censoring at "
+            f"{BAND_COVERAGE_CENSOR_AT:g} (nominal 0.95). Coverage at ONE evaluation time, "
+            "not a max over a grid, so no multiplicity correction is owed. No direction is "
+            "claimed",
+        ),
+        TierRow(
+            "Kaplan-Meier",
+            4,
+            TIER_PARTIAL,
+            "agrees with scipy.stats.ecdf on CensoredData to 1e-12, point estimate and "
+            "log-log band, over five censoring shapes. The point estimate is compared as step "
+            "functions on the union grid; the band at Kaplan-Meier's own jump points, "
+            "where both are finite. PARTIAL and not pass because that comparison runs in the suite "
+            "and produces no CrossImplementation row here, so this verdict rests on prose "
+            "rather than on a number this artifact computed - the defect class recorded "
+            "above for tier 3. scipy is a hard dependency, so computing it in is the fix",
+        ),
     ]
 
     divergence = _divergence_points(tie_df, divergence_threshold)
@@ -580,7 +693,14 @@ def build_instrument_validation(
             # label - the same defect class as an un-declared seed.
             "asymptotic_size_seed": asymptotic_size_seed,
             "asymptotic_size_tau": asymptotic_size_tau,
-            "asymptotic_size_replicates": ASYMPTOTIC_SIZE_REPLICATES,
+            "asymptotic_size_replicates": asymptotic_size_replicates,
+            # The seed and replicate count DECIDE the tier-3 band row, so they
+            # belong on the artifact for the same reason the asymptotic ones do.
+            "band_coverage_seed": band_coverage_seed,
+            "band_coverage_replicates": band_coverage_replicates,
+            "band_coverage_n": BAND_COVERAGE_N,
+            "band_coverage_eval_at": BAND_COVERAGE_EVAL_AT,
+            "band_coverage_censor_at": BAND_COVERAGE_CENSOR_AT,
         },
     )
 
@@ -608,7 +728,7 @@ def render_tier_table_markdown(data: InstrumentValidationData) -> str:
         "|---|---|",
         "| 1 | does the code compute what its source's equation says (review) |",
         "| 2 | does it reproduce the numbers the source PRINTS, on the source's data |",
-        "| 3 | does its p-value hold its nominal level under a null it is entitled to |",
+        "| 3 | does it hold its nominal level under a null it is entitled to - a p-value's size, or a band's coverage |",
         "| 4 | does it agree with an independent implementation of the same statistic |",
         "",
         "`absent` means no evidence was gathered. It is NOT a failing grade, and it is not",

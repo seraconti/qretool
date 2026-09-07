@@ -183,3 +183,64 @@ MINOR | AGENTS.md:300 vs spec/quebraplan.md:206-215 | AGENTS.md now says the six
 was "declined"; `quebraplan.md` 5.1 still presents it as the plan, table of directories and all,
 with no pointer to the decision. A reader landing there sees an overruled design as normative. |
 One line at quebraplan 5.1 pointing to the decline.
+
+---
+
+## Extensive review, SPEC 0006 commits 2 and 3 (checkpoints 6.5a-d, 6.4, 6.6, 6.7)
+
+26 findings from 4 lenses; 13 important execution-checked (11 CONFIRMED, 2 PARTLY); survivors
+then adversarially refuted. Zero critical.
+
+# SPEC 0006 commits 2 and 3 - review verdict
+
+## 1. Verdict
+
+**DO-NOT-SHIP** - two of the six new tests are positive controls that cannot fail when the code they guard is broken (the `tlf.py` label map is unguarded across the entire suite), which is the exact defect class this phase exists to remove.
+
+## 2. Must fix before commit
+
+Survived both the execution check and the adversarial pass. Ranked.
+
+1. **`tests/test_tlf_dwell_law.py:117`** - `test_the_two_states_are_ordered_low_then_high` sorts the means it is testing and then compares two quantities that are equal by symmetric construction; inverting `tlf.py:144` leaves the **full suite at 585 passed**. Replace the symmetric draw with `p01=0.15, p10=0.45` and assert `mean_dwell_s0 â dt/p01`, `mean_dwell_s1 â dt/p10` (verified: passes clean, fails inverted); do not assert `switching_rate` on the asymmetric fixture, and record the exception to the `lambda = mu` justification in the module docstring.
+2. **`tests/test_carve_duration_law.py:40,93`** - at `IN_SPEC_P = 0.5` a swap of `windows.in_spec_mask`'s branches passes (chi2 7.30, p=0.199), so the one end-to-end recordâcarveâduration-law test carries no in-spec polarity. Set `IN_SPEC_P = 0.3` **and** generalise the pmf to `(1-p)*p**(k-1)` with tail `p**5` (a bare constant swap makes `chisquare` raise, not assert); verified n=1664, p=0.874 clean, p=0 inverted. This one edit also closes the duplicate "occupancy 1/2 only" absence finding.
+3. **`src/quebra/analyzers/kaplan_meier.py:235`** - `birth_type` is filtered by bare equality with no known-value guard, so `up_crosing` silently returns `n_unobserved_birth_dropped=2` and drops the window while the same typo on `death_type` raises; add `KNOWN_BIRTH_TYPES` beside `KNOWN_DEATH_TYPES` and validate in the same loop.
+4. **`src/quebra/core/job.py:452,462`** - `figure()` and `materialize()` check `isinstance` and `job_ref` but never `node_id in self.dag`, so a ghost sink ref is accepted, creates the timestamped run directory, then dies as `KeyError` at `runner.py:111` - the replacement that the guard's own comment and `test_dag_contract.py`'s docstring assert in the past tense; extract the ownership+membership check into one helper and call it from all three sites.
+5. **`tests/test_kaplan_meier_properties.py:126`** - the fourth property duplicates `tests/test_kaplan_meier.py:122` verbatim (same oracle line, same three assertions, passes and fails together under both sort mutations), and no property with arithmetic content sees censoring: ignoring `death_observed` entirely gives 4 passed. Replace the fourth property with the censoring-shift invariance property (verified: passes clean over 300 draws, fails the mutant) - a replacement, not an addition, since R6.6's envelope is +3 to +4.
+6. **`src/quebra/analyzers/instrument_validation.py:645`** - the KM tier-3 row divides by `BAND_COVERAGE_REPLICATES` while the coverage came from the parameter (at `replicates=200` it prints Â±0.0029 against a true Â±0.0147, understated 5x), and the three asymptotic rows hardcode `tau=20` while `asymptotic_size_tau` is a live parameter; quote the parameter in all four rows. Latent, not shipped - no caller overrides today.
+7. **`spec/spectests06.md:963` (R6.7 acceptance 4)** - the three end-to-end tests that "drive `run_job` twice for real" do not exist anywhere (an AST scan of test functions *and* helpers finds five double-`run_job` tests, none of them a refusal under a code, content or dirty-tree mismatch; every end-to-end `is_tree_clean` is monkeypatched to `True`), landing +5 against +7 with no amendment. Land them or amend R6.7 the way R6.5 acceptance 7 was amended.
+8. **`spec/spectests06.md:1112,1118,1120`** - the phase budget table still reads R6.5 `+14 to +18`, total `+28 to +39`, "535 becomes 563 to 574" while acceptance 7 now says +30 to +38 and the suite collects **587**, 13 above a ceiling the table's arithmetic can no longer reach; update the row, the total and the 535âN sentence. The phase is inside its *amended* envelope - the table is the only thing saying otherwise, and it is the number a reader consults before deciding whether the section 9 STOP fired.
+9. **`tests/test_carve_duration_law.py:1,10`** - the docstring claims "Oracle: Arm B's construction" and a coupling that does not exist (mutating `jobs/bench/arms.py`'s `IN_SPEC_P` or its thresholding rule leaves the file green), and claims arm C never touches a threshold when `arm_c` carves identically to B. Fix the docstring to claim the analytic oracle it actually has, and record the R6.4 deviation (2 files, +6 against Files 1, +2 to +4). Do **not** add the `arm_b` import - see Refuted.
+10. **`jobs/bench/results/instrument_report.md:37`** - the shipped `0.9462` agrees with the code by nobody's assertion; a same-law stream change moves it to 0.9464 with the full suite green, and the report is modified in the working tree right now. Add a `policy`-tier guard that regenerates the row and compares it to the committed file. Do not pin the literal.
+11. **`tests/test_kaplan_meier.py:23`** - the module-level `statistical` mark covers a rendering-contract test, a wiring/composition test and an MTBF raise, breaching R6.2's "per test where it is not" rule and inflating the reported `statistical 203` by ~5. Cheapest honest option: drop the module mark and mark all 30 tests individually (the marks cannot be layered - `test_marker_discipline.py` rejects two tiers on one item). Lowest value per unit of edit on this list; fix it or record the deviation, but do not leave the count reported as if it were clean.
+
+## 3. Refuted - do not re-raise
+
+- "The figure reports dropped births to the reader as an endurance bag" - **execution + refutation**: zero consumers of `n_unobserved_birth_dropped` in `panels/` or `plots/`; prospective only.
+- "No generated input in the properties file carries a single censored observation" - **execution**: `_records()` draws `st.booleans()`; 171 of 200 probe draws were censored. The true cause is that no property with *arithmetic content* sees censoring.
+- "The asymptotic rows carry no such hazard" - **execution + refutation**: they carry the same class on `tau` (literal `tau=20` at :515, :535, :596).
+- "An off-by-one that trades a birth for a death cannot be separated at occupancy 1/2" - **execution**: the `e=j` mutant turns the file red. **Refutation caveat**: it fails via scipy's frequency-sum guard, not the shape test the docstring claims; rescaled to equal totals it passes at p=0.722. Do not credit the docstring's stated mechanism.
+- "The suite cannot see an in-spec inversion" (never claimed, but implied by framing) - **execution + refutation**: 21 tests fail under the mutation, including `test_windows_carve.py::test_a_reading_exactly_at_the_threshold_is_in_spec_and_the_asymmetry_is_deliberate`. The gap is local to the end-to-end test.
+- Remedy "relocate the properties into `tests/test_kaplan_meier.py`; it was available at no cost" - **refutation**: costs a ~34-test per-item marker rewrite, and section 7's index (oracle *and* subject) supports keeping algebraic properties apart from scipy/hand-derivation oracles.
+- Remedy "import `jobs.bench.arms.arm_b`" (R6.4's own plan) - **refutation**: `arm_b` routes through `jobs/bench/carve.py`, returns `list[Segment]` already filtered by `min_events` and stripped of the trailing censored window, so it would test the bench carve (already pinned by `test_bench_uses_real_carve.py`) and lose the birth/death taxonomy. `windows.run` is the right subject; only the docstring is wrong.
+- Remedy "`assert coverage == approx(0.9462)`" - **refutation**: that is section 7's banned change detector and turns any numpy stream change into a contentless failure.
+- Remedy "set `IN_SPEC_P = 0.3`" as a bare constant swap - **execution + refutation**: `chisquare` raises on the frequency-sum check; the pmf must generalise with it.
+- "`tlf_dwell_law` marks all four tests statistical against its own docstring" - **execution + refutation**: two of the four do assert simulation truth of the generating process; only the switching-rate consistency check and the ordering test are unit-shaped.
+- "Nothing pins the coverage number at all" - **execution + refutation**: `tests/test_kaplan_meier.py:374` bounds it to [0.94075, 0.95925]. What is unpinned is the fourth decimal and the report's agreement.
+- Cite `runner.py:110` for the `KeyError` - **execution**: it is `:111`; `:110` is the cycle raise, and the cycle branch is genuinely unreachable through public calls, so `test_dag_contract.py`'s docstring claim about it stands.
+
+## 4. Absences worth recording
+
+**This phase:**
+- **R6.7's three end-to-end reuse tests** (item 7 above). Either land or amend - the Done-when is currently false.
+- **R6.5 acceptance 6 is unmeetable as written.** The `np.inf` Greenwood sentinel (`kaplan_meier.py:311`) and the `np.isfinite(greenwood)` mask clause (`:370`) are both dead - neutering both leaves 585 passed - and `greenwood` is a local list never stored on `KaplanMeierCurve`, so "assert `greenwood[-1]` is `inf`" cannot be asserted against the shipped artifact. Either put `greenwood` on the artifact or strike the clause; do not carry the criterion as satisfied.
+- **The tier-3 definition was widened** from "its p-value holds its nominal level" to also cover "a band's coverage" (`instrument_validation.py:9`) with no record in R6.5, which only licensed reusing `TierRow` and the `TIER_*` verdicts. Record the widening as a dated decision.
+- **Two spec locators no longer resolve**: R6.5:701 and R6.4:755 cite `AGENTS.md:308-310` for the indexing rule; commit 1 moved it. Cite section 7 by section, not by line.
+
+**Not in this phase:**
+- **The tlf dwell oracle's noise boundary.** Nothing drives `tlf.run` at separations where the MAP misassigns, so nothing establishes whether the dwell degrades smoothly, raises, or reports three times too short. R6.4 accepted the noise-free restriction as a restriction; log the measured misassignment rate at which the oracle stops holding in `spec/quebraplan.md` section 7.
+- **Cross-process / cross-numpy determinism of `measure_band_coverage`.** Holds today in fact (0.9462 in two interpreters, numpy 2.4.4) and is not asserted. The policy guard in item 10 covers the shipping risk; a determinism oracle is a separate question.
+- **Recomputation guards for the other `jobs/bench/results/*` artifacts.** None has one, because those studies run about an hour. `measure_band_coverage` runs in about a second, which is why item 10 is affordable and the others are not.
+
+## 5. The honest verdict on the evidence
+
+After commits 2 and 3 the Kaplan-Meier product-limit estimator and its log-log band are genuinely validated against two independent oracles - hand derivation re-checked digit for digit, and scipy's ECDF and log-log interval on a union grid across five distinct censoring shapes - and `windows.run`'s carve is, for the first time, pinned end to end from a metric record to a duration law. The strongest single piece of evidence is the scipy band comparison: it is direction-safe, its positive control demonstrably fails, and it catches the Greenwood `n_j**2` mutation at six node ids, which the property file catches at none. The biggest remaining gap is that the three tests added *outside* Kaplan-Meier are weaker than their docstrings claim: the tlf ordering test cannot fail when the label map it names is inverted (unguarded suite-wide), the carve law is blind to the one domain invariant the repo calls a scientific error, and the property module's arithmetic content never sees a censored observation - so the new coverage is concentrated almost entirely in `kaplan_meier.py`, and the phase's own conformance record (R6.4's coupling, R6.7's three tests, the budget table, the tier counts) overstates what landed. Nothing here is unfixable and most of it is a day's work, but the phase as it stands would ship four claims that execution refutes.

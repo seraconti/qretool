@@ -40,6 +40,8 @@ import pandas as pd
 import icontract
 
 from quebra.analyzers.windows import (
+    BIRTH_GAP_RESUME,
+    BIRTH_SCAN_START,
     BIRTH_UP_CROSSING,
     DEATH_DOWN_CROSSING,
     DEATH_GAP_START,
@@ -49,6 +51,12 @@ from quebra.analyzers.windows import (
 # The codes `windows.carve` emits. Consumed by equality everywhere, so an unrecognised one
 # would read as "not a down-crossing", i.e. silently censored.
 KNOWN_DEATH_TYPES = frozenset({DEATH_DOWN_CROSSING, DEATH_GAP_START, DEATH_SCAN_END})
+# Both taxonomies are guarded, not just the death one. `birth_type` is consumed by a bare
+# equality against BIRTH_UP_CROSSING, so an unrecognised code reads as an endurance bag and
+# the window is DROPPED silently, inflating `n_unobserved_birth_dropped` instead of raising.
+# The same typo on `death_type` already raised; guarding one taxonomy and not its twin is
+# what AGENTS.md section 4 calls fixing one site of a class.
+KNOWN_BIRTH_TYPES = frozenset({BIRTH_UP_CROSSING, BIRTH_SCAN_START, BIRTH_GAP_RESUME})
 
 # Two-sided normal quantile for the confidence band. Named so the figure's band label
 # and this constant cannot disagree.
@@ -223,6 +231,14 @@ def make_inputs_from_windows(
     # NOT a contract: this reads a frame column, and the useful message names the offending
     # values. A precondition would report the whole Series. Same invariant class, different
     # tool, and the boundary is the point rather than an inconsistency.
+    unknown_births = set(windows["birth_type"].unique()) - KNOWN_BIRTH_TYPES
+    if unknown_births:
+        raise ValueError(
+            f"window table carries unknown birth_type(s) {sorted(unknown_births)}. Known: "
+            f"{sorted(KNOWN_BIRTH_TYPES)}. The selection below is an equality against "
+            f"{BIRTH_UP_CROSSING!r}, so an unrecognised code would be dropped as an "
+            f"endurance bag rather than rejected."
+        )
     unknown = set(windows["death_type"].unique()) - KNOWN_DEATH_TYPES
     if unknown:
         raise ValueError(

@@ -61,7 +61,9 @@ echo "wheel: ${WHEEL}"
 
 step "create the venv"  python3 -m venv "${VENV}"
 step "install the wheel" "${VENV}/bin/pip" install --quiet "${WHEEL}"
-step "install pytest"    "${VENV}/bin/pip" install --quiet pytest
+step "install pytest"    "${VENV}/bin/pip" install --quiet pytest hypothesis
+# hypothesis, not only pytest: the repository conftest registers a settings profile at
+# import time, so without it collection fails here and nowhere else.
 
 # Imported from a directory that is NOT the repository, so a stray relative path or a
 # leftover `sys.path` entry cannot mask a packaging error.

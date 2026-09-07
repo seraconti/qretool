@@ -21,8 +21,33 @@ that replaced `pythonpath` and should find this explanation instead of a bare fi
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, Verbosity, settings
 
 REPO_ROOT = Path(__file__).resolve().parent
+
+# Hypothesis is DERANDOMISED here, and that is a contract rather than a preference.
+#
+# This repository treats an unseeded generator as a defect: `checks/_permutation` raises on
+# a `None` rng because defaulting to OS entropy made three consecutive runs on identical
+# input return p = 0.3860 / 0.4040 / 0.3790 while the provenance record stayed unchanged.
+# A property test that draws fresh examples each run is the same failure in a different
+# place - a suite that passes today and fails tomorrow with no diff between them.
+#
+# `derandomize=True` makes each test's example set a deterministic function of its own
+# source, and the example database is disabled so a local `.hypothesis/` cache cannot make
+# one machine's run differ from another's.
+settings.register_profile(
+    "quebra",
+    settings(
+        derandomize=True,
+        database=None,
+        max_examples=100,
+        deadline=None,  # a KM fit on a large draw is slower than the default 200 ms
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+        verbosity=Verbosity.normal,
+    ),
+)
+settings.load_profile("quebra")
 
 
 @pytest.fixture

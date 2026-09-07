@@ -370,6 +370,21 @@ class Job:
                     raise ValueError(
                         "A LocalRef input must belong to the same Job instance"
                     )
+                # Membership, not just ownership. `LocalRef` is a public dataclass, so a
+                # caller can hand one in naming a node that does not exist yet. Without
+                # this, a FORWARD reference is accepted and registration order stops being
+                # a topological order: `job.step(fn, LocalRef(node_id="g", ...), name="f")`
+                # followed by `job.step(fn, f, name="g")` builds a real cycle through public
+                # calls, which `runner._toposort` then reports one node of. A reference to
+                # an id never allocated at all surfaced later as a bare `KeyError` from
+                # inside the traversal rather than an error where the mistake was made.
+                if input_ref.node_id not in self.dag:
+                    raise ValueError(
+                        f"LocalRef names node {input_ref.node_id!r}, which this job has "
+                        f"not registered. Inputs must be references returned by an earlier "
+                        f"step; a forward reference would make the graph cyclic. "
+                        f"Registered: {sorted(self.dag)}"
+                    )
             elif isinstance(input_ref, ArtifactRef):
                 # An ArtifactRef may only be consumed by the composite that created
                 # its include - this is where a foreign ref would actually leak in.
@@ -434,8 +449,7 @@ class Job:
         targets: list[str],
         title: str = "",
     ) -> None:
-        if not isinstance(input, LocalRef) or input.job_ref is not self:
-            raise ValueError("Figure input must be a same-job node (LocalRef)")
+        self._require_own_node(input, "Figure input")
         sink_name = _safe_name(title) if title else f"fig_{input.node_id}"
         self.sinks.append(
             _FigureSink(
@@ -443,7 +457,24 @@ class Job:
             )
         )
 
+    def _require_own_node(self, ref: object, what: str) -> None:
+        """Ownership AND membership, for every site that accepts a node reference.
+
+        `LocalRef` is a public dataclass, so a caller can build one naming a node this job
+        never registered. Checking ownership alone let a ghost sink reference through: the
+        run then created its timestamped output directory before dying as a `KeyError` from
+        inside the traversal. Both SINK sites call this. `_register_node` still carries its
+        own inlined pair of raises, because its messages name the offending input rather than
+        the sink; the two paths are therefore consistent by review, not by construction.
+        """
+        if not isinstance(ref, LocalRef) or ref.job_ref is not self:
+            raise ValueError(f"{what} must be a same-job node (LocalRef)")
+        if ref.node_id not in self.dag:
+            raise ValueError(
+                f"{what} names node {ref.node_id!r}, which this job has not registered. "
+                f"Registered: {sorted(self.dag)}"
+            )
+
     def materialize(self, node: LocalRef, name: str) -> None:
-        if not isinstance(node, LocalRef) or node.job_ref is not self:
-            raise ValueError("Materialized node must be a same-job node (LocalRef)")
+        self._require_own_node(node, "Materialized node")
         self.sinks.append(_MaterializeSink(node=node, name=_safe_name(name)))
