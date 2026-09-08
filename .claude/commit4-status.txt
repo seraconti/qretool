@@ -1,0 +1,14 @@
+ M .github/workflows/ci.yml
+ M CONTRIBUTING.md
+ M Makefile
+ M jobs/bench/arms.py
+ M pyproject.toml
+ M spec/spectests06.md
+ M src/quebra/analyzers/checks/c1_lewis_robinson.py
+ M src/quebra/analyzers/checks/c2_anderson_darling.py
+ M tests/test_r_cross_implementation.py
+?? .claude/commit4-fixlayer-review-partial.md
+?? .claude/commit4-status.txt
+?? .claude/commit4-working-diff.patch
+?? .claude/review-findings-0006-commit4.md
+?? tests/test_stale_references.py

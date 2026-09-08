@@ -237,8 +237,12 @@ Applying the six tier directories to the 40 files:
   subject. `tests/test_checks_statistics.py` is described by its own docstring as "identities,
   oracles, and the guards", which is three tiers in one file; `tests/test_windows_carve.py` holds
   synthetic contract tests at `:202` and real-record tests at `:243`.
-- **31 tracked references from outside `tests/` point at `tests/test_*.py` paths**, and one is
-  already stale: `jobs/bench/arms.py:48` cites `tests/test_checks_c2.py`, which does not exist.
+- **38 citation sites in R6.10's scope point at test modules**, and three are already stale:
+  `jobs/bench/arms.py:48` cites `tests/test_checks_c2.py`, and
+  `src/quebra/analyzers/checks/c1_lewis_robinson.py` and `c2_anderson_darling.py` cite
+  `test_checks_c1.py` and `test_checks_c2.py` in the bare form. None has ever existed. An
+  earlier draft said "31 tracked references from outside `tests/`", which is neither this
+  scope's figure nor that one's.
 
 **What 5.1 gets right and this spec keeps:** the integration-versus-validation distinction is real
 and correctly stated. Integration should pass even if every estimator is wrong; validation should
@@ -348,9 +352,9 @@ resolves the **newest** admissible version on every matrix leg, so no gate ever 
 The consequence is not a red CI leg. It is that **the declared floor is a claim no gate checks**,
 and something already shipped disappears under it. The casualty is not R6.5's `ecdf` oracle, which
 an earlier draft named: `ecdf` and `CensoredData` predate `1.14` and work at the floor. It is
-`scipy.stats.chatterjeexi`. `tests/test_r_cross_implementation.py:265` carries the reason string
-"scipy.stats.chatterjeexi needs scipy >= 1.17" and guards the call with `hasattr` at `:267` and
-`:283`, so below 1.17 a tier-4 cross-implementation oracle **silently skips instead of failing** -
+`scipy.stats.chatterjeexi`. `tests/test_r_cross_implementation.py:268` carries the reason string
+naming the version it needs and guards the call with `hasattr` at `:270` and `:286`, so below that
+version a tier-4 cross-implementation oracle **silently skips instead of failing** -
 the exact "skip, never pass with mocked values" boundary `AGENTS.md` §7 draws, sitting on the wrong
 side of a version bound nothing tests. R6.8 raises the floor rather than testing at it, which needs
 no new environment.
@@ -985,14 +989,26 @@ an end-to-end counterpart to its helper-level unit test.
 numbers happen to be close to the measurement and the closeness is a coincidence worth recording,
 because it is what makes the case:
 
-| 5.6's proposal | Measured here |
+| 5.6's proposal | Measured at CHECKPOINT 6.8 |
 |---|---|
-| roughly 70% overall | **69%**, 6486 statements, 2032 missed |
+| roughly 70% overall | **70%**, 6522 statements, 1961 missed |
 | roughly 90% on identity hashing | `identity.py` 100%, `closure.py` 94%, `provenance.py` 99% |
-| roughly 90% on estimators | `kaplan_meier.py` 76%, `mtbf.py` 66%, `allan.py` 22%, `fidelity.py` 22% |
+| roughly 90% on estimators | `kaplan_meier.py` 79%, `mtbf.py` 80%, `allan.py` 22%, `fidelity.py` 22% |
 | 0% expected on `jobs/active/` | not measurable as written: `--cov=quebra` cannot see `jobs/` |
 
-**And the number that makes the argument: `kaplan_meier.py` is 76% covered with zero oracle tests.**
+From `make cov`: selector `not slow and not heavy and not r`, private tree PRESENT, 589 passed and
+2 skipped. An earlier draft of this table read 69% overall, 6486 statements, `kaplan_meier.py` 76%
+and `mtbf.py` 66%. Those were a planning agent's figures that were never re-run, and R6.5 moved two
+of them. Acceptance 3 below exists to stop exactly that number entering a permanent file, so they
+are replaced rather than carried.
+
+**And the number that made the argument, in the tense it is now true in: `kaplan_meier.py` was 76%
+covered while the only assertion anywhere about its output was `len(curve.time_min) > 1`.** R6.5 is
+what closed it, and what happened to the number is the argument for reporting rather than gating.
+Thirty-four Kaplan-Meier tests - an analytic hand-derived oracle, a scipy cross-implementation, a
+band coverage measurement, four algebraic properties - moved coverage from 76% to **79%**. Three
+points. A gate on this number would have registered almost nothing while the evidence went from
+none to four independent oracles.
 
 **What lands:** a non-gating `make cov` wrapping `pytest --cov=quebra --cov-report=term`, in no
 other target, documented in `CONTRIBUTING.md`. It goes through `pytest --cov` rather than a bare
@@ -1011,20 +1027,38 @@ is not a position this spec can hold.
 The step prints the table to the job summary and **carries a one-line comment stating what it is
 for**: to show whether a module or a suite is executing code nothing checks, which is how
 `kaplan_meier.py` at 76% with no oracle was found. No threshold, no `fail_under`, no diff against a
-previous run, no external coverage service. Cost is one YAML step and roughly 26 s per leg (27.46 s
-bare against 53.25 s under `--cov`).
+previous run, no external coverage service.
+
+Cost, stated as a ratio rather than in seconds: the step is ADDITIVE, a second full run after
+`make check` has already run the suite, so it costs **a whole covered run per leg**, and a covered
+run measures roughly 1.3x to 1.5x a bare one on this machine. An earlier draft quoted the bare
+versus covered *difference* as though it were the added cost, understating it several-fold, and
+then quoted absolute seconds that did not reproduce on a second measurement of the same tree.
+Absolute figures are omitted deliberately: a GitHub runner is neither machine, and three legs pay
+the cost on a workflow that declares no `timeout-minutes`.
 
 **The reported number names the selector and the data state it was measured under**, because the
 value moves depending on whether the private tree is present.
 
-**The `scipy` floor is raised to 1.17, and the reason in the earlier draft was wrong.** That draft
-justified the raise by R6.5's `ecdf(...).sf.confidence_interval(method="log-log")` oracle.
+**The `scipy` floor is raised to 1.15, and two earlier reasons for it were both wrong.** The first
+draft justified a raise by R6.5's `ecdf(...).sf.confidence_interval(method="log-log")` oracle;
 `ecdf` and `CensoredData` predate the declared `>=1.14` floor, so they justify nothing. The real
-argument is `scipy.stats.chatterjeexi`: `tests/test_r_cross_implementation.py:265` carries its own
-reason string "scipy.stats.chatterjeexi needs scipy >= 1.17" and guards the call with
-`hasattr`, so **below 1.17 a tier-4 cross-implementation oracle silently skips** rather than
-failing. Combined with R6.0.10 - CI resolves newest on every leg, so the floor is exercised by
-nothing - the declared floor is a claim no gate checks under which a shipped oracle disappears.
+argument is `scipy.stats.chatterjeexi`, which `tests/test_r_cross_implementation.py:270` and `:286`
+guard with `hasattr`, so below the version that added it a tier-4 cross-implementation oracle
+**silently skips instead of failing**.
+
+The second draft then set the floor at **1.17**, taken from a string inside that same test rather
+than measured. That is a fabricated number, the §4 defect this phase exists to remove, committed
+inside the requirement that raises the floor. Measured instead: the scipy 1.15.0 release notes list
+`chatterjeexi` under new features with the signature the test uses, its versioned API page exists
+at 1.15.0 and 404s at 1.14.1, and 1.15.0 ships `cp311` wheels so the 3.11 CI leg is safe. 1.14
+genuinely lacks it, so raising is right; 1.17 needlessly excluded 1.15 and 1.16, under which the
+oracle runs. The only other post-1.14 scipy API in the tree, `permutation_test(rng=...)` at
+`src/quebra/analyzers/permutation.py:136`, also arrived in 1.15.0, so 1.15 is not too low either.
+Every "1.17" site is corrected, including the test's own docstring.
+
+Combined with R6.0.10 - CI resolves newest on every leg, so the floor is exercised by nothing - the
+declared floor is a claim no gate checks under which a shipped oracle disappears.
 
 **Acceptance.**
 
@@ -1033,12 +1067,15 @@ nothing - the declared floor is a claim no gate checks under which a shipped ora
    state, and cannot fail the build. No `fail_under` anywhere.
 3. The measured numbers in this spec come from the run that produced them, quoted rather than
    estimated.
-4. `scipy`'s floor is raised to 1.17 justified by `chatterjeexi`, not by `ecdf`, and R6.0.10's
+4. `scipy`'s floor is raised to 1.15 justified by `chatterjeexi`, not by `ecdf`, with the version
+   taken from that function's release notes rather than from a string in the test, and R6.0.10's
    finding that the floor is exercised by nothing is recorded so a later reader does not assume CI
-   checks it. The two `hasattr` guards at `tests/test_r_cross_implementation.py:267` and `:283`
+   checks it. The two `hasattr` guards at `tests/test_r_cross_implementation.py:270` and `:286`
    become dead and are recorded as such rather than removed in this phase.
-5. Collect delta: **+0**. Files: **4** (`pyproject.toml`, `Makefile`, `CONTRIBUTING.md`,
-   `.github/workflows/ci.yml`).
+5. Collect delta: **+0**. Files: **6** (`pyproject.toml`, `Makefile`, `CONTRIBUTING.md`,
+   `.github/workflows/ci.yml`, `tests/test_r_cross_implementation.py` for the reason string the
+   corrected floor makes false, and this spec, whose stale figures acceptance 3 requires be
+   replaced by the run that produced them).
 
 **Done when** the number is visible in CI without anyone remembering a command, nothing gates on it,
 and the declared floor is one under which every shipped oracle actually runs.
@@ -1090,17 +1127,42 @@ Roughly fifteen lines: walk the tracked files outside `tests/`, match `tests/tes
 and assert every referenced path exists. A positive control plants a reference to a non-existent
 module and asserts the guard fires.
 
-**Measured today: 70 distinct such references outside `tests/`, of which exactly one is stale** -
-`jobs/bench/arms.py:48` cites `tests/test_checks_c2.py`, which does not exist. That reference is
-corrected in this requirement. A docstring citing a test that was renamed or deleted is a claim
+**Measured in scope: 38 citation sites naming 18 distinct test modules, of which three were
+stale** - `jobs/bench/arms.py:48` citing `tests/test_checks_c2.py`, and
+`src/quebra/analyzers/checks/c1_lewis_robinson.py` and `c2_anderson_darling.py` citing
+`test_checks_c1.py` and `test_checks_c2.py` without the `tests/` prefix. All three are corrected
+in this requirement. Two earlier figures here were wrong and are recorded rather than quietly
+replaced: "70 distinct references outside `tests/`", for which no counting rule produces 70; and
+"48 distinct across 482 sites over all tracked files", which does not reproduce either and was in
+any case not a stable measurement, since most of those sites sit in `.claude/` review ledgers that
+change on every review.
+
+**The pattern admits the bare form, and an earlier draft did not.** Requiring the `tests/` prefix
+made the guard miss the two `checks/` citations above - the same absent module it was written to
+catch in `arms.py`, in `src/`, live at the time the requirement claimed to be total. A guard that
+misses a form the tree writes is not total, so the pattern is `(?:tests/)?test_[a-z_0-9]+\.py` and
+citations are canonicalised to `tests/<name>` before they are resolved or counted. A docstring citing a test that was renamed or deleted is a claim
 about evidence that no longer exists, and `AGENTS.md` §10 forbids inventing a locator; nothing
 currently notices when one goes stale.
 
 **Scope is `src/`, `jobs/`, `docs/`, `scripts/`, `AGENTS.md` and `CONTRIBUTING.md`.** `spec/` is
 excluded deliberately: a spec is a dated record of what was true when it was written, and a phase
-spec citing a test that a later phase renamed is history rather than a defect. Measured: no stale
-reference exists under `spec/` today either, so the exclusion costs nothing now and prevents a
-future phase from being forced to rewrite a shipped spec.
+spec citing a test that a later phase renamed is history rather than a defect. There is a second,
+mechanical reason: this spec quotes the stale `arms.py` path twice as its own example, so a guard
+over `spec/` would flag it for describing the defect correctly.
+
+**The exclusion is not free, and two earlier claims about its cost were both wrong.** The first said
+no stale reference exists under `spec/`. The second said five do, and named lines that do not carry
+citations - it was counting with the prefix-only pattern this requirement then broadened. Measured
+with the pattern the guard actually ships: **nine stale citation sites on seven lines** in the `.md`
+specs. Seven sites are this spec's own and are quotations of the defect rather than defects, at
+`:241`, `:243`, `:1124`, `:1126` and `:1151`, the `:243` and `:1126` pairs being the bare-form
+quotations. The remaining two are a real defect this guard will not catch: `spec/specvalidity08.md:117` and
+`:158` both cite `tests/test_calendar_tau_truncation.py` as pinning the calendar-clock tau
+truncation, and `git log --all` shows that module never existed under any commit. The property is in
+fact covered by `tests/test_checks_statistics.py`. Rewriting a shipped spec is out of scope here, so
+this is recorded as a finding rather than fixed, and the guard's docstring carries it so a reader
+meets the cost where they meet the exclusion.
 
 **Acceptance.**
 
@@ -1109,8 +1171,11 @@ future phase from being forced to rewrite a shipped spec.
 3. `jobs/bench/arms.py:48` is corrected to cite a test that exists, or the sentence is rewritten to
    name the property rather than the file.
 4. `spec/` is out of scope and the reason is stated in the test's docstring, not only here.
-5. Collect delta: **+1 to +2**. Files: **2** (`tests/test_stale_references.py`,
-   `jobs/bench/arms.py`).
+5. Collect delta: **+1 to +3**. Files: **4** (`tests/test_stale_references.py`,
+   `jobs/bench/arms.py`, and `src/quebra/analyzers/checks/c1_lewis_robinson.py` and
+   `c2_anderson_darling.py`, whose bare-form citations the guard only catches once its pattern
+   admits that form. Fixing the pattern without fixing the two sites it then finds would leave
+   the requirement failing its own acceptance 1).
 
 **Done when** a renamed or deleted test module cannot leave a dangling citation behind it.
 
@@ -1127,16 +1192,21 @@ future phase from being forced to rewrite a shipped spec.
 | R6.5 Kaplan-Meier oracles | +30 to +38 | 2 new, 2 edited | 8-12 |
 | R6.6 three properties on one subject | +3 to +4 | 4 | 2-3 |
 | R6.7 runner contract, two gaps, one validation fix | +7 | 2 | 2-3 |
-| R6.8 coverage reported in CI, scipy floor raised to 1.17 | +0 | 4 | 1 |
+| R6.8 coverage reported in CI, scipy floor raised to 1.15 | +0 | 6 | 1 |
 | R6.9 deletion discipline | +0 | 1 | 0.5 |
-| R6.10 stale test-reference guard | +1 to +2 | 2 | 0.5 |
-| **Total** | **+44 to +59** | | **24-34** |
+| R6.10 stale test-reference guard | +1 to +3 | 4 | 0.5 |
+| **Total** | **+44 to +60** | | **24-34** |
 
-535 becomes **579 to 594**. **Measured on completion: 588**, inside that range.
+535 becomes **579 to 595**. **Measured on completion: 592**, inside that range.
 
 Per requirement, measured rather than projected: R6.1 +3, R6.2 +3, R6.3 +1, R6.4 +6, R6.5 +31
 (30 in `tests/test_kaplan_meier.py` plus the recomputation guard in
-`tests/test_instrument_report_currency.py`), R6.6 +4, R6.7 +5, R6.8 +0, R6.9 +0, R6.10 not yet landed.
+`tests/test_instrument_report_currency.py`), R6.6 +4, R6.7 +6, R6.8 +0, R6.9 +0, R6.10 +3.
+These sum to +57, so 535 becomes 592. Two figures read higher than the count recorded at
+their own checkpoint, in both cases because that checkpoint's cold review found a test that
+could not fail: R6.7 is +6 rather than +5 because the sink guard had no test at all, and
+R6.10 is +3 rather than +2 because the citation pattern's lookbehind had none, so deleting
+it left the suite green. The figures are the landed counts, not the counts at the banner.
 
 R6.2 and R6.3 both touch `pyproject.toml` and the `Makefile`; those are counted once each in R6.3
 and are not double-counted above.

@@ -12,8 +12,9 @@ Multi-process, their eq (16) after substituting the optimal eq (15) weights:
 Only eq (16) is implemented. Setting m = 1 in it gives
 `sqrt(12)/sqrt(g^2 tau^2 N) * [sum T - N tau/2]` = `(1/g) sqrt(12)/(tau sqrt(N)) * [...]`,
 which is eq (4) exactly - so a separate single-process path would be a second copy of the
-same formula, free to drift. `test_checks_c1.py` asserts the identity numerically rather
-than trusting the algebra above.
+same formula, free to drift.
+`tests/test_checks_statistics.py::test_eq16_reduces_to_eq4_for_a_single_segment` asserts the
+identity numerically rather than trusting the algebra above.
 
 What the statistic is: `sum_i T_i` is the total of the event times, and `(N/2)*tau` is its
 expectation when events are uniform on `[0, tau]` (the null of no trend). So LR is a

@@ -10,10 +10,11 @@ Kvaloy & Lindqvist, arXiv:1802.08339 eq (7), transcribed from the PDF:
 
 What it is: with `u_i = T_i/tau`, eq (7) at `gamma_hat = 1` is exactly the classical
 Anderson-Darling statistic `A^2 = N * integral (F_N(u) - u)^2 / (u(1-u)) du` testing the
-event times for uniformity on `[0, tau]`. `test_checks_c2.py` asserts that against the
-textbook `-N - (1/N) sum (2i-1)[ln u_i + ln(1 - u_{N+1-i})]` form; agreement is to float
-precision, so the two are the same statistic and the paper's form is shipped because it is
-the citation. The `1/gamma_hat^2` generalises it from Poisson to renewal.
+event times for uniformity on `[0, tau]`.
+`tests/test_checks_statistics.py::test_eq7_is_the_classical_anderson_darling` asserts that
+against the textbook `-N - (1/N) sum (2i-1)[ln u_i + ln(1 - u_{N+1-i})]` form. That test
+enforces `rel=1e-9` and measures 1e-16 to 1e-13 across its sizes, so the two are the same
+statistic and the paper's form is shipped because it is the citation. The `1/gamma_hat^2` generalises it from Poisson to renewal.
 
 **Two things about the calibration are decided by the paper, not by preference.**
 

@@ -252,7 +252,7 @@ def test_the_c3_reference_is_pinned_with_its_simulation_seed():
     "case", ["xi_tie_free", "xi_tied", "xi_tied_y_only", "dcor_nonmonotone"]
 )
 def test_xi_matches_scipys_chatterjeexi(case):
-    """`scipy.stats.chatterjeexi` (scipy >= 1.17) - independent, Python, no R needed.
+    """`scipy.stats.chatterjeexi` (scipy >= 1.15) - independent, Python, no R needed.
 
     This is STRONGER tier-4 evidence than the R fixture, for a reason that has nothing to do
     with which is more authoritative: it runs unconditionally in the suite. The R comparison
@@ -265,10 +265,12 @@ def test_xi_matches_scipys_chatterjeexi(case):
     holds and the tied path gets an exact external check for the first time.
     """
     scipy_xi = pytest.importorskip(
-        "scipy.stats", reason="scipy.stats.chatterjeexi needs scipy >= 1.17"
+        "scipy.stats", reason="scipy.stats is required to compare against it"
     )
     if not hasattr(scipy_xi, "chatterjeexi"):
-        pytest.skip("this scipy has no chatterjeexi; the R fixture still covers tier 4")
+        pytest.skip(
+            "chatterjeexi needs scipy >= 1.15; the R fixture still covers tier 4"
+        )
     x, y = r_inputs(case)
     assert chatterjee_xi(x, y) == pytest.approx(
         float(scipy_xi.chatterjeexi(x, y).statistic), abs=TOL

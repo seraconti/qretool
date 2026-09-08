@@ -22,7 +22,7 @@ require-selector:
 	  exit 1; }
 TIERS := unit properties statistical integration validation regression policy
 
-.PHONY: check check-ci lint types arch deps test require-selector test-all test-r test-real tiers promote docs clean $(addprefix tier-,$(TIERS))
+.PHONY: check check-ci lint types arch deps test require-selector test-all test-r test-real tiers cov promote docs clean $(addprefix tier-,$(TIERS))
 
 ## Run before every checkpoint. This is what the checkpoint banner reports.
 check: lint types arch test
@@ -94,6 +94,14 @@ tiers:
 	@for t in $(TIERS); do \
 	  printf "%-14s %s\n" "$$t" "$$(pytest --collect-only -q -m "$$t" 2>/dev/null | tail -1)"; \
 	done
+
+## Reported, never gated: not in `check`, no `fail_under`. Reads whether a module executes
+## code nothing checks. Via `pytest --cov` because `pytest-cov` is declared and `coverage`
+## is not. The number moves with the selector and the private tree, so both are printed.
+cov: require-selector
+	@echo "selector:          $(FAST_SELECTOR)"
+	@test -d data/real_private && echo "data/real_private: present" || echo "data/real_private: absent"
+	pytest $(FAST) --cov=quebra --cov-report=term
 
 ## Commit the provenance of a figure that appears in a publication. output/ is gitignored,
 ## so this copies the kilobytes that make a figure auditable and none of the megabytes.

@@ -44,8 +44,10 @@ it makes the comparison against their numbers more direct rather than less. `n` 
 throughout; `mean_n_events` in the tables is what was realised.
 
 The exact exponential oracle survives: with `tau` fixed and exponential gaps, conditional
-on `N` the ratios `T_i/tau` are exactly uniform order statistics, which is what
-`tests/test_checks_c2.py` pins.
+on `N` the ratios `T_i/tau` are exactly uniform order statistics. That property is checked
+by `tests/test_checks_statistics.py::test_eq7_at_gamma_one_matches_the_limiting_ad_null`,
+which re-implements the construction rather than importing this module, so it is evidence
+about the property and not a guard on this generator: no test exercises `arm_a`.
 
 **Censoring is realised as SEGMENTS.** A censored unit in this pipeline is a window that
 died at a read gap or at the end of the scan, and each of those terminates a segment. So a

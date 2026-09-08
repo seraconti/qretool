@@ -42,6 +42,10 @@ Response is best effort, be kind <3
    newest version every `>=` admits into a fresh non-editable environment, so `check`
    passing is not by itself evidence that CI will.
 
+   `make cov` reports coverage and is not a gate. Nothing has a threshold and nothing
+   fails on the number. Read it for one thing: a module executing code that no test
+   checks. A high percentage beside no oracle is the signal, not a low one.
+
 4. Open a pull request describing what changed and what you ran.
 
 ### What the reviewer will look for

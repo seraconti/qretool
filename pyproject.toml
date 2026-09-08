@@ -25,7 +25,10 @@ classifiers = [
 #
 dependencies = [
   "numpy>=2.0",
-  "scipy>=1.14",
+  # 1.15 for `scipy.stats.chatterjeexi`, which its release notes list as new there: below it
+  # the tier-4 cross-check in tests/test_r_cross_implementation.py skips instead of failing.
+  # CI resolves newest on every leg, so no gate exercises this floor.
+  "scipy>=1.15",
   "pandas>=2.2",
   "matplotlib>=3.9",
   "plotly>=6.0",
@@ -180,6 +183,7 @@ DEP002 = [
   "ruff",
   "mypy",
   "pytest",
+  # Imported by nothing: it is a pytest plugin, reached via `make cov`'s --cov flag.
   "pytest-cov",
   "import-linter",
   "deptry",
